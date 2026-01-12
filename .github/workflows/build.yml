@@ -33,44 +33,16 @@ jobs:
           echo "Downloading JADX ${JADX_VERSION}..."
           wget -q https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip
           unzip -q jadx-${JADX_VERSION}.zip -d jadx-temp
+          echo "JADX directory structure:"
+          ls -la jadx-temp/lib/
           echo "Installing JADX JAR to local Maven repository..."
           mvn install:install-file \
-            -Dfile=jadx-temp/lib/jadx-core-${JADX_VERSION}.jar \
+            -Dfile=jadx-temp/lib/jadx-${JADX_VERSION}-all.jar \
             -DgroupId=io.github.skylot \
-            -DartifactId=jadx-core \
+            -DartifactId=jadx-all \
             -Dversion=${JADX_VERSION} \
             -Dpackaging=jar
-          mvn install:install-file \
-            -Dfile=jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar \
-            -DgroupId=io.github.skylot \
-            -DartifactId=jadx-gui \
-            -Dversion=${JADX_VERSION} \
-            -Dpackaging=jar
-          # Install jadx-all if available
-          if [ -f "jadx-temp/lib/jadx-all-${JADX_VERSION}.jar" ]; then
-            mvn install:install-file \
-              -Dfile=jadx-temp/lib/jadx-all-${JADX_VERSION}.jar \
-              -DgroupId=io.github.skylot \
-              -DartifactId=jadx-all \
-              -Dversion=${JADX_VERSION} \
-              -Dpackaging=jar
-          else
-            # Create a combined JAR if jadx-all doesn't exist
-            echo "Creating combined JADX JAR..."
-            mkdir -p combined-jar
-            cd combined-jar
-            jar -xf ../jadx-temp/lib/jadx-core-${JADX_VERSION}.jar
-            jar -xf ../jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar
-            jar -cf jadx-all-${JADX_VERSION}.jar *
-            cd ..
-            mvn install:install-file \
-              -Dfile=combined-jar/jadx-all-${JADX_VERSION}.jar \
-              -DgroupId=io.github.skylot \
-              -DartifactId=jadx-all \
-              -Dversion=${JADX_VERSION} \
-              -Dpackaging=jar
-          fi
-          rm -rf jadx-temp jadx-${JADX_VERSION}.zip combined-jar
+          rm -rf jadx-temp jadx-${JADX_VERSION}.zip
           echo "JADX dependencies installed successfully"
 
       - name: Build with Maven
@@ -79,9 +51,24 @@ jobs:
       - name: Get project version
         id: get_version
         run: |
-          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          # Generate date-based version: YYYYMMDD.N
+          BASE_VERSION=$(date +%Y%m%d)
+
+          # Check if this is a tagged release
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # Extract version from tag (e.g., v20260112.1 -> 20260112.1)
+            TAG_VERSION=${GITHUB_REF#refs/tags/v}
+            VERSION=$TAG_VERSION
+            echo "Using tag version: $VERSION"
+          else
+            # For non-tagged builds, use date.build_number format
+            BUILD_NUM=${{ github.run_number }}
+            VERSION="${BASE_VERSION}.${BUILD_NUM}"
+            echo "Using generated version: $VERSION"
+          fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Project version: $VERSION"
+          echo "Final version: $VERSION"
 
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
@@ -126,9 +113,20 @@ jobs:
       - name: Get version from tag
         id: tag_version
         run: |
+          # Extract version from tag (v20260112.1 -> 20260112.1)
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
+
+          # Extract date and build number for display
+          DATE_PART=${VERSION%.*}
+          BUILD_PART=${VERSION##*.}
+          YEAR=${DATE_PART:0:4}
+          MONTH=${DATE_PART:4:2}
+          DAY=${DATE_PART:6:2}
+          DISPLAY_DATE="${YEAR}-${MONTH}-${DAY}"
+          echo "display_date=$DISPLAY_DATE" >> $GITHUB_OUTPUT
+          echo "build_num=$BUILD_PART" >> $GITHUB_OUTPUT
 
       - name: Download JAR artifact
         uses: actions/download-artifact@v4
@@ -148,46 +146,111 @@ jobs:
           cat > release_notes.md << 'EOF'
           ## JADX AI MCP v${{ steps.tag_version.outputs.version }}
 
+          **Release Date**: ${{ steps.tag_version.outputs.display_date }}
+          **Build Number**: #${{ steps.tag_version.outputs.build_num }}
+
+          ---
+
           ### 📦 Downloads
 
-          Download both files to get started:
-          - **jadx-ai-mcp-${{ steps.tag_version.outputs.version }}.jar** - JADX Plugin
-          - **jadx-mcp-server-${{ steps.tag_version.outputs.version }}.zip** - MCP Server
+          Download **BOTH** files to get the complete package:
 
-          ### 🚀 Installation
+          1. **jadx-ai-mcp-${{ steps.tag_version.outputs.version }}.jar** - JADX Plugin (Java)
+          2. **jadx-mcp-server-${{ steps.tag_version.outputs.version }}.zip** - MCP Server (Python)
 
-          **Quick Install (Recommended)**:
+          Both components are required for the system to work.
+
+          ---
+
+          ### 🚀 Quick Installation
+
+          #### Method 1: One-Line Install (Recommended)
           ```bash
           jadx plugins --install "github:zinja-coder:jadx-ai-mcp"
           ```
 
-          **Manual Install**:
-          1. Download the JAR file
-          2. Install via JADX GUI: Plugins → Install Plugin → Select JAR
-          3. Unzip the MCP server archive
-          4. Configure Claude Desktop (see README)
+          #### Method 2: Manual Install
+          1. Download the **JAR** file from above
+          2. Open JADX GUI → Plugins → Install Plugin → Select the JAR file
+          3. Download and unzip the **MCP server** archive
+          4. Follow the configuration guide below
+
+          ---
+
+          ### ⚙️ MCP Server Setup
+
+          ```bash
+          # 1. Unzip the MCP server
+          unzip jadx-mcp-server-${{ steps.tag_version.outputs.version }}.zip
+          cd jadx-mcp-server
+
+          # 2. Install UV (if not already installed)
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+
+          # 3. Run the server
+          uv run jadx_mcp_server.py
+
+          # 4. With authentication (recommended for network exposure)
+          uv run jadx_mcp_server.py --auth-token "YOUR_TOKEN"
+          ```
+
+          Configure in Claude Desktop (`~/.config/Claude/claude_desktop_config.json`):
+          ```json
+          {
+            "mcpServers": {
+              "jadx-mcp-server": {
+                "command": "/path/to/uv",
+                "args": [
+                  "--directory", "/path/to/jadx-mcp-server/",
+                  "run", "jadx_mcp_server.py"
+                ]
+              }
+            }
+          }
+          ```
+
+          ---
+
+          ### ⚡ What's New in v6.0.0
+
+          - 🔐 **Token-based Authentication** - Secure your reverse engineering workflow
+          - 🌐 **Remote Access Support** - Connect to JADX on different machines
+          - 🐍 **Integrated MCP Server** - Python server now included in repository
+          - 📖 **Chinese Documentation** - Complete Chinese README available
+          - 🤖 **GitHub Actions** - Automated builds and releases
+
+          ---
 
           ### 📖 Documentation
 
-          - [English README](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README.md)
-          - [中文文档](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README_ZH.md)
-          - [Authentication Guide](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/jadx-mcp-server/AUTHENTICATION.md)
-          - [Online Docs](https://jadx-ai-mcp.readthedocs.io/)
+          - 📘 [English README](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README.md)
+          - 📗 [中文文档 (Chinese)](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README_ZH.md)
+          - 🔐 [Authentication Guide](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/jadx-mcp-server/AUTHENTICATION.md)
+          - 🌐 [Online Documentation](https://jadx-ai-mcp.readthedocs.io/)
+          - 💡 [MCP Server README](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/jadx-mcp-server/README_SERVER.md)
 
-          ### ⚡ What's New
+          ---
 
-          See [CHANGELOG](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/CHANGELOG.md) for details.
+          ### 🔧 System Requirements
 
-          ### 🔧 Requirements
+          | Component | Requirement |
+          |-----------|-------------|
+          | JADX | 1.5.1+ (r2333+) |
+          | Java | 11 or higher |
+          | Python | 3.10+ (for MCP server) |
+          | UV | Latest version (recommended) |
 
-          - JADX 1.5.1+ (r2333+)
-          - Java 11+
-          - Python 3.10+ (for MCP server)
-          - UV package manager (recommended)
+          ---
 
-          ### 🐛 Issues?
+          ### 🐛 Need Help?
 
-          Report at: https://github.com/zinja-coder/jadx-ai-mcp/issues
+          - **Report Issues**: https://github.com/zinja-coder/jadx-ai-mcp/issues
+          - **Discussions**: https://github.com/zinja-coder/jadx-ai-mcp/discussions
+          - **Documentation**: https://jadx-ai-mcp.readthedocs.io/
+
+          ---
+
+          Built with ❤️ by the JADX AI MCP community
           EOF
 
           cat release_notes.md
@@ -226,44 +289,16 @@ jobs:
           echo "Downloading JADX ${JADX_VERSION}..."
           wget -q https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip
           unzip -q jadx-${JADX_VERSION}.zip -d jadx-temp
+          echo "JADX directory structure:"
+          ls -la jadx-temp/lib/
           echo "Installing JADX JAR to local Maven repository..."
           mvn install:install-file \
-            -Dfile=jadx-temp/lib/jadx-core-${JADX_VERSION}.jar \
+            -Dfile=jadx-temp/lib/jadx-${JADX_VERSION}-all.jar \
             -DgroupId=io.github.skylot \
-            -DartifactId=jadx-core \
+            -DartifactId=jadx-all \
             -Dversion=${JADX_VERSION} \
             -Dpackaging=jar
-          mvn install:install-file \
-            -Dfile=jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar \
-            -DgroupId=io.github.skylot \
-            -DartifactId=jadx-gui \
-            -Dversion=${JADX_VERSION} \
-            -Dpackaging=jar
-          # Install jadx-all if available
-          if [ -f "jadx-temp/lib/jadx-all-${JADX_VERSION}.jar" ]; then
-            mvn install:install-file \
-              -Dfile=jadx-temp/lib/jadx-all-${JADX_VERSION}.jar \
-              -DgroupId=io.github.skylot \
-              -DartifactId=jadx-all \
-              -Dversion=${JADX_VERSION} \
-              -Dpackaging=jar
-          else
-            # Create a combined JAR if jadx-all doesn't exist
-            echo "Creating combined JADX JAR..."
-            mkdir -p combined-jar
-            cd combined-jar
-            jar -xf ../jadx-temp/lib/jadx-core-${JADX_VERSION}.jar
-            jar -xf ../jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar
-            jar -cf jadx-all-${JADX_VERSION}.jar *
-            cd ..
-            mvn install:install-file \
-              -Dfile=combined-jar/jadx-all-${JADX_VERSION}.jar \
-              -DgroupId=io.github.skylot \
-              -DartifactId=jadx-all \
-              -Dversion=${JADX_VERSION} \
-              -Dpackaging=jar
-          fi
-          rm -rf jadx-temp jadx-${JADX_VERSION}.zip combined-jar
+          rm -rf jadx-temp jadx-${JADX_VERSION}.zip
           echo "JADX dependencies installed successfully"
 
       - name: Compile and Test
