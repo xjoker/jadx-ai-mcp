@@ -13,8 +13,10 @@ public class PluginServer {
     private static final Logger logger = LoggerFactory.getLogger(PluginServer.class);
     private final MainWindow mainWindow;
     private final int port;
+    private final String bindAddress;
     private Javalin app;
     private final PaginationUtils paginationUtils;
+    private final AuthConfig authConfig;
     private volatile boolean isRunning = false;
 
     /**
@@ -22,9 +24,20 @@ public class PluginServer {
      * @param port        - The port to listen on
      */
     public PluginServer(MainWindow mainWindow, int port) {
+        this(mainWindow, port, "127.0.0.1");
+    }
+
+    /**
+     * @param mainWindow  - The main Jadx window context
+     * @param port        - The port to listen on
+     * @param bindAddress - The address to bind to (e.g., "127.0.0.1" or "0.0.0.0")
+     */
+    public PluginServer(MainWindow mainWindow, int port, String bindAddress) {
         this.mainWindow = mainWindow;
         this.port = port;
+        this.bindAddress = bindAddress;
         this.paginationUtils = new PaginationUtils();
+        this.authConfig = new AuthConfig();
     }
 
     /**
@@ -50,7 +63,38 @@ public class PluginServer {
             // Configure and start Javalin
             app = Javalin.create(config -> {
                 config.showJavalinBanner = false;
+                config.jetty.defaultHost = bindAddress;
             }).start(port);
+
+            // Add authentication middleware (runs before all routes)
+            app.before(ctx -> {
+                // Skip auth for health check endpoint
+                if (ctx.path().equals("/health")) {
+                    return;
+                }
+
+                // Validate authentication token
+                if (authConfig.isAuthEnabled()) {
+                    String authHeader = ctx.header("Authorization");
+                    String token = null;
+
+                    // Extract token from Authorization header (Bearer token format)
+                    if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                        token = authHeader.substring(7);
+                    }
+
+                    // Validate token
+                    if (!authConfig.validateToken(token)) {
+                        logger.warn("Unauthorized request from " + ctx.ip() + " to " + ctx.path());
+                        ctx.status(401).json(java.util.Map.of(
+                            "error", "Unauthorized",
+                            "message", "Invalid or missing authentication token"
+                        ));
+                        ctx.result();
+                        return;
+                    }
+                }
+            });
 
             // Register all route handlers
             registerRoutes();
@@ -60,8 +104,18 @@ public class PluginServer {
             // Log startup success and banner
             logger.info(JadxAIMCPBanner.banner);
             logger.info("// -------------------- JADX AI MCP PLUGIN -------------------- //");
-            logger.info("JADX AI MCP Plugin HTTP Server Started at http://127.0.0.1:" + port + "/");
-        
+            logger.info("JADX AI MCP Plugin HTTP Server Started at http://" + bindAddress + ":" + port + "/");
+
+            if (authConfig.isAuthEnabled()) {
+                logger.info("Authentication: ENABLED");
+                logger.info("Auth Token: " + authConfig.getAuthToken());
+                logger.info("Config File: " + authConfig.getConfigFilePath());
+            } else {
+                logger.info("Authentication: DISABLED (for security, enable in settings)");
+                logger.info("Auth Token (for future use): " + authConfig.getAuthToken());
+                logger.info("Config File: " + authConfig.getConfigFilePath());
+            }
+
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin Error: Could not start HTTP Server. Exception: " + e.getMessage(), e);
             isRunning = false;
@@ -110,12 +164,28 @@ public class PluginServer {
 
     /**
      * @return int The port number the server is configured to listen on
-     * 
+     *
      * This method returns the port number used by the server.
      * The port is set during construction and remains constant for the server's lifetime.
      */
     public int getPort() {
         return port;
+    }
+
+    /**
+     * @return AuthConfig The authentication configuration object
+     *
+     * This method returns the authentication configuration for managing tokens and auth settings.
+     */
+    public AuthConfig getAuthConfig() {
+        return authConfig;
+    }
+
+    /**
+     * @return String The bind address the server is listening on
+     */
+    public String getBindAddress() {
+        return bindAddress;
     }
 
     /**
