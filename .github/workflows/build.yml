@@ -27,6 +27,52 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Download and Install JADX Dependency
+        run: |
+          JADX_VERSION=1.5.3
+          echo "Downloading JADX ${JADX_VERSION}..."
+          wget -q https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip
+          unzip -q jadx-${JADX_VERSION}.zip -d jadx-temp
+          echo "Installing JADX JAR to local Maven repository..."
+          mvn install:install-file \
+            -Dfile=jadx-temp/lib/jadx-core-${JADX_VERSION}.jar \
+            -DgroupId=io.github.skylot \
+            -DartifactId=jadx-core \
+            -Dversion=${JADX_VERSION} \
+            -Dpackaging=jar
+          mvn install:install-file \
+            -Dfile=jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar \
+            -DgroupId=io.github.skylot \
+            -DartifactId=jadx-gui \
+            -Dversion=${JADX_VERSION} \
+            -Dpackaging=jar
+          # Install jadx-all if available
+          if [ -f "jadx-temp/lib/jadx-all-${JADX_VERSION}.jar" ]; then
+            mvn install:install-file \
+              -Dfile=jadx-temp/lib/jadx-all-${JADX_VERSION}.jar \
+              -DgroupId=io.github.skylot \
+              -DartifactId=jadx-all \
+              -Dversion=${JADX_VERSION} \
+              -Dpackaging=jar
+          else
+            # Create a combined JAR if jadx-all doesn't exist
+            echo "Creating combined JADX JAR..."
+            mkdir -p combined-jar
+            cd combined-jar
+            jar -xf ../jadx-temp/lib/jadx-core-${JADX_VERSION}.jar
+            jar -xf ../jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar
+            jar -cf jadx-all-${JADX_VERSION}.jar *
+            cd ..
+            mvn install:install-file \
+              -Dfile=combined-jar/jadx-all-${JADX_VERSION}.jar \
+              -DgroupId=io.github.skylot \
+              -DartifactId=jadx-all \
+              -Dversion=${JADX_VERSION} \
+              -Dpackaging=jar
+          fi
+          rm -rf jadx-temp jadx-${JADX_VERSION}.zip combined-jar
+          echo "JADX dependencies installed successfully"
+
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
@@ -173,6 +219,52 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
           cache: 'maven'
+
+      - name: Download and Install JADX Dependency
+        run: |
+          JADX_VERSION=1.5.3
+          echo "Downloading JADX ${JADX_VERSION}..."
+          wget -q https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip
+          unzip -q jadx-${JADX_VERSION}.zip -d jadx-temp
+          echo "Installing JADX JAR to local Maven repository..."
+          mvn install:install-file \
+            -Dfile=jadx-temp/lib/jadx-core-${JADX_VERSION}.jar \
+            -DgroupId=io.github.skylot \
+            -DartifactId=jadx-core \
+            -Dversion=${JADX_VERSION} \
+            -Dpackaging=jar
+          mvn install:install-file \
+            -Dfile=jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar \
+            -DgroupId=io.github.skylot \
+            -DartifactId=jadx-gui \
+            -Dversion=${JADX_VERSION} \
+            -Dpackaging=jar
+          # Install jadx-all if available
+          if [ -f "jadx-temp/lib/jadx-all-${JADX_VERSION}.jar" ]; then
+            mvn install:install-file \
+              -Dfile=jadx-temp/lib/jadx-all-${JADX_VERSION}.jar \
+              -DgroupId=io.github.skylot \
+              -DartifactId=jadx-all \
+              -Dversion=${JADX_VERSION} \
+              -Dpackaging=jar
+          else
+            # Create a combined JAR if jadx-all doesn't exist
+            echo "Creating combined JADX JAR..."
+            mkdir -p combined-jar
+            cd combined-jar
+            jar -xf ../jadx-temp/lib/jadx-core-${JADX_VERSION}.jar
+            jar -xf ../jadx-temp/lib/jadx-gui-${JADX_VERSION}.jar
+            jar -cf jadx-all-${JADX_VERSION}.jar *
+            cd ..
+            mvn install:install-file \
+              -Dfile=combined-jar/jadx-all-${JADX_VERSION}.jar \
+              -DgroupId=io.github.skylot \
+              -DartifactId=jadx-all \
+              -Dversion=${JADX_VERSION} \
+              -Dpackaging=jar
+          fi
+          rm -rf jadx-temp jadx-${JADX_VERSION}.zip combined-jar
+          echo "JADX dependencies installed successfully"
 
       - name: Compile and Test
         run: |
