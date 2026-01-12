@@ -65,11 +65,16 @@ public class PluginMenu {
                 JMenuItem statusItem = new JMenuItem("Server Status");
                 statusItem.addActionListener(e -> showServerStatus());
 
-                // 5. Authentication Settings
+                // 5. Configure Bind Address
+                JMenuItem bindAddressItem = new JMenuItem("Configure Bind Address...");
+                bindAddressItem.addActionListener(e -> showBindAddressConfigDialog());
+
+                // 6. Authentication Settings
                 JMenuItem authItem = new JMenuItem("Authentication Settings...");
                 authItem.addActionListener(e -> showAuthSettingsDialog());
 
                 mcpMenu.add(portItem);
+                mcpMenu.add(bindAddressItem);
                 mcpMenu.add(defaultPortItem);
                 mcpMenu.addSeparator();
                 mcpMenu.add(restartItem);
@@ -161,6 +166,61 @@ public class PluginMenu {
     /**
      * @return void
      *
+     * This method displays a dialog for configuring the server bind address.
+     * 1. It shows a combo box with common options: 127.0.0.1 (localhost) and 0.0.0.0 (all interfaces)
+     * 2. It also allows custom input for other addresses
+     * 3. If the address differs from current, it:
+     *    - Updates the bind address configuration
+     *    - Restarts the server on the new address
+     * 
+     * Note: Binding to 0.0.0.0 exposes the server to the network. Use with caution.
+     */
+    private void showBindAddressConfigDialog() {
+        String[] options = {"127.0.0.1 (Localhost only)", "0.0.0.0 (All interfaces - Remote access)"};
+        String currentAddr = plugin.getCurrentBindAddress();
+        
+        // Determine initial selection
+        int initialSelection = currentAddr.equals("0.0.0.0") ? 1 : 0;
+        
+        JComboBox<String> comboBox = new JComboBox<>(options);
+        comboBox.setSelectedIndex(initialSelection);
+        comboBox.setEditable(true);  // Allow custom input
+        
+        // Set the actual current value if it's custom
+        if (!currentAddr.equals("127.0.0.1") && !currentAddr.equals("0.0.0.0")) {
+            comboBox.setSelectedItem(currentAddr);
+        }
+        
+        JPanel panel = new JPanel(new BorderLayout(5, 5));
+        panel.add(new JLabel("Select or enter bind address:"), BorderLayout.NORTH);
+        panel.add(comboBox, BorderLayout.CENTER);
+        panel.add(new JLabel("<html><font color='orange'><b>Warning:</b> Binding to 0.0.0.0 exposes the server to the network.</font></html>"), BorderLayout.SOUTH);
+        
+        int result = JOptionPane.showConfirmDialog(mainWindow, panel, "Configure Bind Address", 
+            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        
+        if (result == JOptionPane.OK_OPTION) {
+            String selected = (String) comboBox.getSelectedItem();
+            // Extract the actual IP from the display string
+            String newBindAddress;
+            if (selected.startsWith("127.0.0.1")) {
+                newBindAddress = "127.0.0.1";
+            } else if (selected.startsWith("0.0.0.0")) {
+                newBindAddress = "0.0.0.0";
+            } else {
+                newBindAddress = selected.trim();
+            }
+            
+            if (!newBindAddress.equals(currentAddr)) {
+                plugin.updateBindAddress(newBindAddress);
+                plugin.restartServer();
+            }
+        }
+    }
+
+    /**
+     * @return void
+     *
      * This method displays the current server status in a dialog.
      * 1. It checks whether the server is currently running
      * 2. It retrieves the configured port number
@@ -175,10 +235,11 @@ public class PluginMenu {
     private void showServerStatus() {
         boolean running = plugin.isServerRunning();
         String status = running ? "Running" : "Stopped";
-        String url = running ? "http://127.0.0.1:" + plugin.getCurrentPort() + "/" : "N/A";
+        String bindAddr = plugin.getCurrentBindAddress();
+        String url = running ? "http://" + bindAddr + ":" + plugin.getCurrentPort() + "/" : "N/A";
 
         JOptionPane.showMessageDialog(mainWindow,
-            "Status " + status + "\nPort: " + plugin.getCurrentPort() + "\nURL: " + url,
+            "Status " + status + "\nBind Address: " + bindAddr + "\nPort: " + plugin.getCurrentPort() + "\nURL: " + url,
             "MCP Server Status", JOptionPane.INFORMATION_MESSAGE);
     }
 
@@ -264,6 +325,7 @@ public class PluginMenu {
 
             if (confirm == JOptionPane.YES_OPTION) {
                 authConfig.regenerateToken();
+                tokenField.setText(authConfig.getAuthToken());  // Update the text field immediately
                 JOptionPane.showMessageDialog(mainWindow,
                     "Token regenerated successfully!\n\n" +
                     "New token: " + authConfig.getAuthToken() + "\n\n" +

@@ -33,10 +33,13 @@ public class JadxAIMCP implements JadxPlugin {
     public static final String PLUGIN_ID = "jadx-ai-mcp";
     private static final Logger logger = LoggerFactory.getLogger(JadxAIMCP.class);
     private static final String PREF_KEY_PORT = "jadx_ai_mcp_port";
+    private static final String PREF_KEY_BIND_ADDRESS = "jadx_ai_mcp_bind_address";
     private static final int DEFAULT_PORT = 8650;
+    private static final String DEFAULT_BIND_ADDRESS = "127.0.0.1";
 
     // Config & State
     private int currentPort = DEFAULT_PORT;
+    private String currentBindAddress = DEFAULT_BIND_ADDRESS;
     private Preferences prefs;
     private ScheduledExecutorService scheduler;
 
@@ -74,6 +77,7 @@ public class JadxAIMCP implements JadxPlugin {
             // 1. Initialize Config
             prefs = Preferences.userNodeForPackage(JadxAIMCP.class);
             currentPort = prefs.getInt(PREF_KEY_PORT, DEFAULT_PORT);
+            currentBindAddress = prefs.get(PREF_KEY_BIND_ADDRESS, DEFAULT_BIND_ADDRESS);
 
             // 2. Initialize UI
             this.pluginMenu = new PluginMenu(mainWindow, this);
@@ -154,7 +158,7 @@ public class JadxAIMCP implements JadxPlugin {
     private void startServer() {
         try {
             if (pluginServer != null) pluginServer.stop();
-            pluginServer = new PluginServer(mainWindow, currentPort);
+            pluginServer = new PluginServer(mainWindow, currentPort, currentBindAddress);
             pluginServer.start();
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin: Failed to start server: " + e.getMessage());
@@ -232,6 +236,45 @@ public class JadxAIMCP implements JadxPlugin {
      */
     public int getCurrentPort() {
         return currentPort;
+    }
+
+    /**
+     * @param newBindAddress The new bind address to configure for the server
+     * @return void
+     * 
+     * This method updates the server bind address configuration and persists it.
+     * 1. It updates the currentBindAddress instance variable with the new value
+     * 2. It saves the new bind address to Java Preferences API for persistence
+     * 
+     * Common values: "127.0.0.1" (localhost only), "0.0.0.0" (all interfaces)
+     * This method does not restart the server automatically. Call restartServer()
+     * after updating the bind address to apply the changes.
+     */
+    public void updateBindAddress(String newBindAddress) {
+        this.currentBindAddress = newBindAddress;
+        prefs.put(PREF_KEY_BIND_ADDRESS, newBindAddress);
+    }
+
+    /**
+     * @return void
+     * 
+     * This method resets the server bind address to the default value (127.0.0.1).
+     * It delegates to updateBindAddress() to handle the actual update and persistence.
+     * 
+     * The server must be restarted for the default bind address to take effect.
+     */
+    public void resetToDefaultBindAddress() {
+        updateBindAddress(DEFAULT_BIND_ADDRESS);
+    }
+
+    /**
+     * @return String The currently configured bind address
+     * 
+     * This method returns the bind address on which the server is configured to listen.
+     * The value is loaded from Java Preferences on plugin initialization.
+     */
+    public String getCurrentBindAddress() {
+        return currentBindAddress;
     }
 
     /**
