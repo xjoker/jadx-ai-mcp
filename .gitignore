@@ -42,3 +42,6 @@ target/
 
 ### dependecy ###
 lib/
+
+### AI Memory ###
+.AIINFO/
