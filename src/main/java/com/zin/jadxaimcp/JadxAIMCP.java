@@ -236,16 +236,26 @@ public class JadxAIMCP implements JadxPlugin {
 
     /**
      * @return boolean True if the server is running, false otherwise
-     * 
+     *
      * This method checks the runtime status of the plugin server.
      * It verifies that:
      * 1. The pluginServer instance is not null
      * 2. The server's internal running state is true
-     * 
+     *
      * This check is used by the delayed initialization mechanism and UI status displays.
      */
     public boolean isServerRunning() {
         return pluginServer != null && pluginServer.isRunning();
+    }
+
+    /**
+     * @return AuthConfig The authentication configuration object, or null if server not initialized
+     *
+     * This method provides access to the authentication configuration for the plugin UI.
+     * It allows the menu system to display and manage authentication settings.
+     */
+    public com.zin.jadxaimcp.server.AuthConfig getAuthConfig() {
+        return pluginServer != null ? pluginServer.getAuthConfig() : null;
     }
 
     // --- Helpers ---
