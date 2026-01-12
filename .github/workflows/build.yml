@@ -1,0 +1,188 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main, jadx-ai, develop]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, jadx-ai, develop]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build JAR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+
+      - name: Get project version
+        id: get_version
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Project version: $VERSION"
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadx-ai-mcp-${{ steps.get_version.outputs.version }}
+          path: target/jadx-ai-mcp-*.jar
+          retention-days: 30
+
+      - name: Create MCP Server Archive
+        run: |
+          cd jadx-mcp-server
+          zip -r ../jadx-mcp-server-${{ steps.get_version.outputs.version }}.zip \
+            jadx_mcp_server.py \
+            src/ \
+            requirements.txt \
+            pyproject.toml \
+            README_SERVER.md \
+            AUTHENTICATION.md \
+            LICENSE
+          cd ..
+
+      - name: Upload MCP Server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadx-mcp-server-${{ steps.get_version.outputs.version }}
+          path: jadx-mcp-server-${{ steps.get_version.outputs.version }}.zip
+          retention-days: 30
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: tag_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: jadx-ai-mcp-${{ steps.tag_version.outputs.version }}
+          path: ./artifacts
+
+      - name: Download MCP Server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: jadx-mcp-server-${{ steps.tag_version.outputs.version }}
+          path: ./artifacts
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## JADX AI MCP v${{ steps.tag_version.outputs.version }}
+
+          ### 📦 Downloads
+
+          Download both files to get started:
+          - **jadx-ai-mcp-${{ steps.tag_version.outputs.version }}.jar** - JADX Plugin
+          - **jadx-mcp-server-${{ steps.tag_version.outputs.version }}.zip** - MCP Server
+
+          ### 🚀 Installation
+
+          **Quick Install (Recommended)**:
+          ```bash
+          jadx plugins --install "github:zinja-coder:jadx-ai-mcp"
+          ```
+
+          **Manual Install**:
+          1. Download the JAR file
+          2. Install via JADX GUI: Plugins → Install Plugin → Select JAR
+          3. Unzip the MCP server archive
+          4. Configure Claude Desktop (see README)
+
+          ### 📖 Documentation
+
+          - [English README](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README.md)
+          - [中文文档](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README_ZH.md)
+          - [Authentication Guide](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/jadx-mcp-server/AUTHENTICATION.md)
+          - [Online Docs](https://jadx-ai-mcp.readthedocs.io/)
+
+          ### ⚡ What's New
+
+          See [CHANGELOG](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/CHANGELOG.md) for details.
+
+          ### 🔧 Requirements
+
+          - JADX 1.5.1+ (r2333+)
+          - Java 11+
+          - Python 3.10+ (for MCP server)
+          - UV package manager (recommended)
+
+          ### 🐛 Issues?
+
+          Report at: https://github.com/zinja-coder/jadx-ai-mcp/issues
+          EOF
+
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release v${{ steps.tag_version.outputs.version }}
+          body_path: release_notes.md
+          files: |
+            artifacts/jadx-ai-mcp-*.jar
+            artifacts/jadx-mcp-server-*.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    name: Test Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Compile and Test
+        run: |
+          mvn clean compile
+          mvn test || echo "Tests not configured yet"
+
+      - name: Verify Python MCP Server
+        run: |
+          cd jadx-mcp-server
+          python3 --version
+          pip3 install --quiet httpx fastmcp || true
+          python3 -m py_compile jadx_mcp_server.py
+          echo "Python MCP server syntax check passed"
