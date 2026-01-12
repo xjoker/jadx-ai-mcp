@@ -70,11 +70,21 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Final version: $VERSION"
 
+      - name: Rename JAR with version
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          # Find the built JAR and rename it
+          ORIGINAL_JAR=$(ls target/jadx-ai-mcp-*.jar | head -1)
+          NEW_JAR="target/jadx-ai-mcp-${VERSION}.jar"
+          echo "Renaming $ORIGINAL_JAR to $NEW_JAR"
+          mv "$ORIGINAL_JAR" "$NEW_JAR"
+          ls -la target/*.jar
+
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
         with:
           name: jadx-ai-mcp-${{ steps.get_version.outputs.version }}
-          path: target/jadx-ai-mcp-*.jar
+          path: target/jadx-ai-mcp-${{ steps.get_version.outputs.version }}.jar
           retention-days: 30
 
       - name: Create MCP Server Archive
@@ -261,8 +271,8 @@ jobs:
           name: Release v${{ steps.tag_version.outputs.version }}
           body_path: release_notes.md
           files: |
-            artifacts/jadx-ai-mcp-*.jar
-            artifacts/jadx-mcp-server-*.zip
+            artifacts/jadx-ai-mcp-${{ steps.tag_version.outputs.version }}.jar
+            artifacts/jadx-mcp-server-${{ steps.tag_version.outputs.version }}.zip
           draft: false
           prerelease: false
         env:
