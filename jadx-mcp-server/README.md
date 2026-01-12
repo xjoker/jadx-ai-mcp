@@ -4,11 +4,11 @@
 
 ⚡ Fully automated MCP server built to communicate with JADX-AI-MCP Plugin to analyze Android APKs using LLMs like Claude — uncover vulnerabilities, parse manifests, and reverse engineer effortlessly.
 
-![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/zinja-coder/jadx-ai-mcp)
-![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/zinja-coder/jadx-mcp-server)
-![GitHub all releases](https://img.shields.io/github/downloads/zinja-coder/jadx-ai-mcp/total)
-![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/zinja-coder/jadx-ai-mcp/latest/total)
-![Latest release](https://img.shields.io/github/release/zinja-coder/jadx-ai-mcp.svg)
+![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
+![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
+![GitHub all releases](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/total)
+![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/latest/total)
+![Latest release](https://img.shields.io/github/release/xjoker/jadx-ai-mcp.svg)
 ![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
@@ -101,13 +101,13 @@ Thanks to these wonderful people for their contributions ⭐
 
 --- 
 
-#### Download now: https://github.com/zinja-coder/jadx-ai-mcp/releases
+#### Download now: https://github.com/xjoker/jadx-ai-mcp/releases
 
 ---
 
 ## 🤖 What is JADX-MCP-SERVER?
 
-**JADX MCP Server** is a standalone Python server that interacts with a modified version of `jadx-gui` (see: [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)) via MCP (Model Context Protocol). It lets LLMs communicate with the decompiled Android app context live.
+**JADX MCP Server** is a standalone Python server that interacts with a modified version of `jadx-gui` (see: [jadx-ai-mcp](https://github.com/xjoker/jadx-ai-mcp)) via MCP (Model Context Protocol). It lets LLMs communicate with the decompiled Android app context live.
 
 
 ## 🤖 What is JADX-AI-MCP?
@@ -153,14 +153,14 @@ https://github.com/user-attachments/assets/f42d8072-0e3e-4f03-93ea-121af4e66eb1
 https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 
 It is combination of two tools:
-1. [JADX-AI-MCP](https://github.com/zinja-coder/jadx-ai-mcp)
+1. [JADX-AI-MCP](https://github.com/xjoker/jadx-ai-mcp)
 2. JADX MCP SERVER
 
 ---
 
-# Zin MCP Suite
+# Zin MCP Suite (Forked)
  - **[APKTool-MCP-Server](https://github.com/zinja-coder/apktool-mcp-server)**
- - **[JAD-AI-MCP-Plugin](https://github.com/zinja-coder/jadx-ai-mcp)**
+ - **[JAD-AI-MCP-Plugin](https://github.com/xjoker/jadx-ai-mcp)**
  - **[ZIN-MCP-Client](https://github.com/zinja-coder/zin-mcp-client)**
 
 ## Current MCP Tools
@@ -262,7 +262,7 @@ The following MCP tools are available:
 
 ## 🛠️ Getting Started
 
-[READ HERE](https://github.com/zinja-coder/jadx-ai-mcp?tab=readme-ov-file#%EF%B8%8F-getting-started)
+[READ HERE](https://github.com/xjoker/jadx-ai-mcp?tab=readme-ov-file#%EF%B8%8F-getting-started)
 
 Demo: **Perform Code Review to Find Vulnerabilities locally**
 
@@ -288,13 +288,15 @@ https://github.com/user-attachments/assets/4cd26715-b5e6-4b4b-95e4-054de6789f42
 
 ## NOTE For Contributors
 
- - The files related to JADX-AI-MCP can be found [here](https://github.com/zinja-coder/jadx-ai-mcp)
+ - The files related to JADX-AI-MCP can be found [here](https://github.com/xjoker/jadx-ai-mcp)
 
  - The files related to **jadx-mcp-server** can be found in this repository only.
 
 ## 🙏 Credits
 
 This project is a plugin for JADX, an amazing open-source Android decompiler created and maintained by [@skylot](https://github.com/skylot). All core decompilation logic belongs to them. I have only extended it to support my MCP server with AI capabilities.
+
+This project is a fork of [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) created by [zinja-coder](https://github.com/zinja-coder). Huge thanks for their original work!
 
 [📎 Original README (JADX)](https://github.com/skylot/jadx)
 
@@ -348,7 +350,7 @@ Use responsibly. Respect intellectual property. Follow ethical hacking practices
 ## 🙌 Contribute or Support
 
 - Found it useful? Give it a ⭐️
-- Got ideas? Open an [issue](https://github.com/zinja-coder/jadx-mcp-server/issues) or submit a PR
+- Got ideas? Open an [issue](https://github.com/xjoker/jadx-ai-mcp/issues) or submit a PR
 - Built something on top? DM me or mention me — I’ll add it to the README!
 
 ---

@@ -6,11 +6,11 @@
 
 [English](README.md) | 简体中文
 
-![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/zinja-coder/jadx-ai-mcp)
-![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/zinja-coder/jadx-mcp-server)
-![GitHub all releases](https://img.shields.io/github/downloads/zinja-coder/jadx-ai-mcp/total)
-![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/zinja-coder/jadx-ai-mcp/latest/total)
-![Latest release](https://img.shields.io/github/release/zinja-coder/jadx-ai-mcp.svg)
+![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
+![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
+![GitHub all releases](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/total)
+![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/latest/total)
+![Latest release](https://img.shields.io/github/release/xjoker/jadx-ai-mcp.svg)
 ![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
@@ -264,7 +264,7 @@ https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 
 ## 🛠️ 快速开始
 
-### 1. 从 Releases 下载：https://github.com/zinja-coder/jadx-ai-mcp/releases
+### 1. 从 Releases 下载：https://github.com/xjoker/jadx-ai-mcp/releases
 
 > [!NOTE]
 >
@@ -273,7 +273,7 @@ https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 
 ```bash
 # 0. 下载 jadx-ai-mcp-<version>.jar 和 jadx-mcp-server-<version>.zip
-https://github.com/zinja-coder/jadx-ai-mcp/releases
+https://github.com/xjoker/jadx-ai-mcp/releases
 
 # 1.
 unzip jadx-ai-mcp-<version>.zip
@@ -291,7 +291,7 @@ unzip jadx-ai-mcp-<version>.zip
 # 有两种方法：
 
 ## 1. 一行命令 - 在 shell 中执行以下命令
-jadx plugins --install "github:zinja-coder:jadx-ai-mcp"
+jadx plugins --install "github:xjoker:jadx-ai-mcp"
 
 ## 上面的一行代码将直接安装最新版本的插件到 jadx，无需下载 jadx-ai-mcp 的 .jar 文件。
 ## 2. 或者你可以使用 JADX-GUI 通过以下图片所示的方式安装：
@@ -377,7 +377,7 @@ nano ~/.config/Claude/claude_desktop_config.json
 你可以使用以下命令直接将 jadx_mcp_server 安装为可执行文件：
 
 ```bash
-uv tool install git+https://github.com/zinja-coder/jadx-mcp-server
+uv tool install "git+https://github.com/xjoker/jadx-ai-mcp.git#subdirectory=jadx-mcp-server"
 ```
 
 然后你只需在 mcp 配置的 `command` 部分提供 `jadx_mcp_server`。
@@ -563,13 +563,13 @@ uv run jadx_mcp_server.py \
 
 ## 故障排除
 
-[点击这里查看](https://github.com/zinja-coder/jadx-ai-mcp/edit/jadx-ai/TROUBLESHOOTING.md)
+[点击这里查看](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/TROUBLESHOOTING.md)
 
 ## 贡献者须知
 
  - 与 JADX-AI-MCP 相关的文件可以在此仓库中找到。
 
- - 与 **jadx-mcp-server** 相关的文件可以在[这里](https://github.com/zinja-coder/jadx-mcp-server)找到。
+ - 与 **jadx-mcp-server** 相关的文件可以在[这里](https://github.com/xjoker/jadx-ai-mcp/tree/jadx-ai/jadx-mcp-server)找到。
 
 ## 报告 Bug、问题、功能建议、性能问题、一般问题、文档问题
 
@@ -580,6 +580,8 @@ uv run jadx_mcp_server.py \
 ## 🙏 致谢
 
 本项目是 JADX 的插件，JADX 是由 [@skylot](https://github.com/skylot) 创建和维护的出色开源 Android 反编译器。所有核心反编译逻辑都归功于他们。我只是扩展了它以支持我的具有 AI 功能的 MCP 服务器。
+
+本项目是 [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) 的 Fork 版本，原作者是 [zinja-coder](https://github.com/zinja-coder)。非常感谢他们的原创工作！
 
 [📎 原始 README（JADX）](https://github.com/skylot/jadx)
 
@@ -627,7 +629,7 @@ JADX-AI-MCP 和所有相关项目继承了原始 JADX 仓库的 Apache 2.0 许�
 ## 🙌 贡献或支持
 
 - 觉得有用？给它一个 ⭐️
-- 有想法？开启一个 [issue](https://github.com/zinja-coder/jadx-ai-mcp/issues) 或提交 PR
+- 有想法？开启一个 [issue](https://github.com/xjoker/jadx-ai-mcp/issues) 或提交 PR
 - 在此基础上构建了什么？DM 我或提到我 — 我会将其添加到 README！
 - 喜欢我的工作并希望它继续下去？赞助此项目。
 

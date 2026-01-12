@@ -6,11 +6,11 @@
 
 English | [简体中文](README_ZH.md)
 
-![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/zinja-coder/jadx-ai-mcp)
-![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/zinja-coder/jadx-mcp-server)
-![GitHub all releases](https://img.shields.io/github/downloads/zinja-coder/jadx-ai-mcp/total)
-![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/zinja-coder/jadx-ai-mcp/latest/total)
-![Latest release](https://img.shields.io/github/release/zinja-coder/jadx-ai-mcp.svg)
+![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
+![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
+![GitHub all releases](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/total)
+![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/latest/total)
+![Latest release](https://img.shields.io/github/release/xjoker/jadx-ai-mcp.svg)
 ![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
@@ -273,7 +273,7 @@ The following MCP tools are available:
 
 ## 🛠️ Getting Started 
 
-### 1. Download from Releases: https://github.com/zinja-coder/jadx-ai-mcp/releases
+### 1. Download from Releases: https://github.com/xjoker/jadx-ai-mcp/releases
 
 > [!NOTE]
 >
@@ -282,7 +282,7 @@ The following MCP tools are available:
 
 ```bash
 # 0. Download the jadx-ai-mcp-<version>.jar and jadx-mcp-server-<version>.zip
-https://github.com/zinja-coder/jadx-ai-mcp/releases
+https://github.com/xjoker/jadx-ai-mcp/releases
 
 # 1. 
 unzip jadx-ai-mcp-<version>.zip
@@ -300,7 +300,7 @@ unzip jadx-ai-mcp-<version>.zip
 # For this you can follow two approaches:
 
 ## 1. One liner - execute below command in your shell
-jadx plugins --install "github:zinja-coder:jadx-ai-mcp"
+jadx plugins --install "github:xjoker:jadx-ai-mcp"
 
 ## The above one line code will install the latest version of the plugin directly into the jadx, no need to download the jadx-ai-mcp's .jar file.
 ## 2. Or you can use JADX-GUI to install it by following images as shown below:
@@ -387,7 +387,7 @@ Then, navigate code and interact via real-time code review prompts using the bui
 or you can install the jadx_mcp_server directly as executable directly using below command:
 
 ```
-uv tool install git+https://github.com/zinja-coder/jadx-mcp-server
+uv tool install "git+https://github.com/xjoker/jadx-ai-mcp.git#subdirectory=jadx-mcp-server"
 ```
 
 and then you can just provide `jadx_mcp_server` in `command` section of mcp configuration.
@@ -574,13 +574,13 @@ This plugin allows total control over the GUI and internal project model to supp
 
 ## Troubleshooting
 
-[Check here](https://github.com/zinja-coder/jadx-ai-mcp/edit/jadx-ai/TROUBLESHOOTING.md)
+[Check here](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/TROUBLESHOOTING.md)
 
 ## NOTE For Contributors
 
  - The files related to JADX-AI-MCP can be found under this repo.
 
- - The files related to **jadx-mcp-server** can be found [here](https://github.com/zinja-coder/jadx-mcp-server).
+ - The files related to **jadx-mcp-server** can be found [here](https://github.com/xjoker/jadx-ai-mcp/tree/jadx-ai/jadx-mcp-server).
 
 ## To report bugs, issues, feature suggestion, Performance issue, general question, Documentation issue.
  - Kindly open an issue with respective template.
@@ -590,6 +590,8 @@ This plugin allows total control over the GUI and internal project model to supp
 ## 🙏 Credits
 
 This project is a plugin for JADX, an amazing open-source Android decompiler created and maintained by [@skylot](https://github.com/skylot). All core decompilation logic belongs to them. I have only extended it to support my MCP server with AI capabilities.
+
+This project is a fork of [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) created by [zinja-coder](https://github.com/zinja-coder). Huge thanks for their original work!
 
 [📎 Original README (JADX)](https://github.com/skylot/jadx)
 
@@ -637,7 +639,7 @@ Use responsibly. Respect intellectual property. Follow ethical hacking practices
 ## 🙌 Contribute or Support
 
 - Found it useful? Give it a ⭐️
-- Got ideas? Open an [issue](https://github.com/zinja-coder/jadx-ai-mcp/issues) or submit a PR
+- Got ideas? Open an [issue](https://github.com/xjoker/jadx-ai-mcp/issues) or submit a PR
 - Built something on top? DM me or mention me — I’ll add it to the README!
 - Do you like my work and keep it going? Sponsor this project.
   

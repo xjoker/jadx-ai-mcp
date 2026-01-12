@@ -57,7 +57,19 @@ async def get_selected_text() -> dict:
 
 @mcp.tool()
 async def get_method_by_name(class_name: str, method_name: str) -> dict:
-    """Fetch the source code of a method from a specific class."""
+    """Fetch the source code of a method from a specific class.
+
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+                    Simple names like 'MainActivity' are NOT supported.
+        method_name: Method name to search for (case-insensitive).
+
+    Note:
+        - For overloaded methods (same name, different parameters), this returns
+          only the FIRST matching method found. Use get_methods_of_class first
+          to see all available method signatures if needed.
+        - Use get_class_source if you need the complete class with all methods.
+    """
     return await tools.search_tools.get_method_by_name(class_name, method_name)
 
 
@@ -69,19 +81,43 @@ async def get_all_classes(offset: int = 0, count: int = 0) -> dict:
 
 @mcp.tool()
 async def get_class_source(class_name: str) -> dict:
-    """Fetch the Java source of a specific class."""
+    """Fetch the Java source of a specific class.
+
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+                    Simple names like 'MainActivity' are NOT supported.
+                    For inner classes, use '$' separator (e.g., 'com.example.Outer$Inner').
+
+    Tip:
+        If you only know the simple class name, use search_classes_by_keyword first
+        to find the fully qualified name, then call this tool.
+    """
     return await tools.class_tools.get_class_source(class_name)
 
 
 @mcp.tool()
 async def search_method_by_name(method_name: str) -> dict:
-    """Search for a method name across all classes."""
+    """Search for a method name across all classes in the APK.
+
+    Args:
+        method_name: Method name to search for (partial matching supported).
+
+    Note:
+        This performs a TEXT SEARCH across all decompiled source code, which means:
+        - Results include both method DEFINITIONS and method INVOCATIONS (call sites)
+        - May return many results for common method names like 'toString' or 'onCreate'
+        - Use search_classes_by_keyword with search_in='method' for more targeted results
+    """
     return await tools.search_tools.search_method_by_name(method_name)
 
 
 @mcp.tool()
 async def get_methods_of_class(class_name: str) -> dict:
-    """List all method names in a class."""
+    """List all method names in a class (useful for seeing overloaded methods).
+
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+    """
     return await tools.class_tools.get_methods_of_class(class_name)
 
 
@@ -140,13 +176,25 @@ async def search_classes_by_keyword(
 
 @mcp.tool()
 async def get_fields_of_class(class_name: str) -> dict:
-    """List all field names in a class."""
+    """List all field names in a class.
+
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+    """
     return await tools.class_tools.get_fields_of_class(class_name)
 
 
 @mcp.tool()
 async def get_smali_of_class(class_name: str) -> dict:
-    """Fetch the smali representation of a class."""
+    """Fetch the smali (Dalvik bytecode) representation of a class.
+
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+
+    Use Case:
+        Useful for analyzing obfuscated code or understanding low-level behavior
+        that may be hidden in decompiled Java source.
+    """
     return await tools.class_tools.get_smali_of_class(class_name)
 
 
@@ -188,7 +236,15 @@ async def get_main_application_classes_code(offset: int = 0, count: int = 0) -> 
 
 @mcp.tool()
 async def get_main_activity_class() -> dict:
-    """Fetch the main activity class from AndroidManifest.xml."""
+    """Fetch the main activity class from AndroidManifest.xml.
+
+    Returns:
+        dict: Contains the fully qualified class name of the main activity
+              (the entry point with LAUNCHER intent filter).
+
+    Tip:
+        After getting the class name, use get_class_source to fetch its code.
+    """
     return await tools.class_tools.get_main_activity_class()
 
 
@@ -236,7 +292,16 @@ async def debug_get_variables() -> dict:
 
 @mcp.tool()
 async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20) -> dict:
-    """Find all references to a class."""
+    """Find all cross-references (xrefs) to a class.
+
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.Helper').
+        offset: Starting index for pagination (default: 0).
+        count: Maximum results to return (default: 20).
+
+    Use Case:
+        Discover where a class is instantiated, extended, or referenced across the codebase.
+    """
     return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count)
 
 
