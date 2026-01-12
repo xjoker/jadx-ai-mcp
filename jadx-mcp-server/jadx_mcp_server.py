@@ -40,85 +40,88 @@ from src.server.tools.debug_tools import (
 from src.server.tools.xrefs_tools import (
     get_xrefs_to_class, get_xrefs_to_method, get_xrefs_to_field
 )
+from src.server.tools.instance_tools import register_instance_tools
+from src.server.instance_registry import InstanceRegistry
 
 
 # CORRECT REGISTRATION PATTERN for FastMCP
-@mcp.tool()
-async def fetch_current_class() -> dict:
-    """Fetch the currently selected class and its code from the JADX-GUI plugin."""
-    return await tools.class_tools.fetch_current_class()
+# All tools support optional instance_id for multi-instance targeting
+from typing import Optional
 
 
 @mcp.tool()
-async def get_selected_text() -> dict:
-    """Returns the currently selected text in the decompiled code view."""
-    return await tools.class_tools.get_selected_text()
+async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
+    """Fetch the currently selected class and its code from the JADX-GUI plugin.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.fetch_current_class(instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_method_by_name(class_name: str, method_name: str) -> dict:
+async def get_selected_text(instance_id: Optional[str] = None) -> dict:
+    """Returns the currently selected text in the decompiled code view.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.get_selected_text(instance_id=instance_id)
+
+
+@mcp.tool()
+async def get_method_by_name(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
     """Fetch the source code of a method from a specific class.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-                    Simple names like 'MainActivity' are NOT supported.
-        method_name: Method name to search for (case-insensitive).
-
-    Note:
-        - For overloaded methods (same name, different parameters), this returns
-          only the FIRST matching method found. Use get_methods_of_class first
-          to see all available method signatures if needed.
-        - Use get_class_source if you need the complete class with all methods.
+        method_name: Method name to search for.
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.search_tools.get_method_by_name(class_name, method_name)
+    return await tools.search_tools.get_method_by_name(class_name, method_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_all_classes(offset: int = 0, count: int = 0) -> dict:
-    """Returns a list of all classes in the project with pagination support."""
-    return await tools.class_tools.get_all_classes(offset, count)
+async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
+    """Returns a list of all classes in the project with pagination support.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.get_all_classes(offset, count, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_class_source(class_name: str) -> dict:
+async def get_class_source(class_name: str, instance_id: Optional[str] = None) -> dict:
     """Fetch the Java source of a specific class.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-                    Simple names like 'MainActivity' are NOT supported.
-                    For inner classes, use '$' separator (e.g., 'com.example.Outer$Inner').
-
-    Tip:
-        If you only know the simple class name, use search_classes_by_keyword first
-        to find the fully qualified name, then call this tool.
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.class_tools.get_class_source(class_name)
+    return await tools.class_tools.get_class_source(class_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def search_method_by_name(method_name: str) -> dict:
+async def search_method_by_name(method_name: str, instance_id: Optional[str] = None) -> dict:
     """Search for a method name across all classes in the APK.
 
     Args:
         method_name: Method name to search for (partial matching supported).
-
-    Note:
-        This performs a TEXT SEARCH across all decompiled source code, which means:
-        - Results include both method DEFINITIONS and method INVOCATIONS (call sites)
-        - May return many results for common method names like 'toString' or 'onCreate'
-        - Use search_classes_by_keyword with search_in='method' for more targeted results
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.search_tools.search_method_by_name(method_name)
+    return await tools.search_tools.search_method_by_name(method_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_methods_of_class(class_name: str) -> dict:
+async def get_methods_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
     """List all method names in a class (useful for seeing overloaded methods).
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.class_tools.get_methods_of_class(class_name)
+    return await tools.class_tools.get_methods_of_class(class_name, instance_id=instance_id)
 
 
 @mcp.tool()
@@ -128,201 +131,226 @@ async def search_classes_by_keyword(
     search_in: str = "code",
     offset: int = 0,
     count: int = 20,
+    instance_id: Optional[str] = None,
 ) -> dict:
     """Search for classes containing a specific keyword with flexible filtering options.
 
-    This tool performs a comprehensive search across decompiled Android code, allowing you to:
-    1. Search within specific packages by providing a package name
-    2. Target specific search scopes (class names, method names, fields, code content, comments)
-    3. Combine multiple search scopes for precise results
-
     Args:
-        search_term: The keyword or string to search for. This is the main search query.
-
-        package (optional): Package name to limit the search scope.
-            - If empty string (default), searches across all packages in the APK
-            - If provided, only searches within classes belonging to the specified package
-            - Example: "com.example.app" to search only in that package
-
-        search_in (optional): Comma-separated list of search scopes to target.
-            Valid values:
-            - "class": Search in class names only
-            - "method": Search in method names only
-            - "field": Search in field names only
-            - "code": Search in code content (method bodies, statements, etc.)
-            - "comment": Search in comments
-
-            You can specify one or multiple scopes:
-            - Single scope: "class" (only class names)
-            - Multiple scopes: "class,method" (class names OR method names)
-            - Combined: "class,method,code" (searches in all three scopes)
-
-            Default: "code" (searches in code content)
-
-        offset (optional): Starting index for pagination. Default: 0
-        count (optional): Maximum number of results to return. Default: 20
-
-    Returns:
-        dict: Paginated list of classes containing the search term, with metadata about matches
-
-    MCP Tool: search_classes_by_keyword
-    Description: Advanced search tool that finds classes matching a keyword with package filtering
-                 and scope targeting capabilities. Use this when you need to find specific code
-                 patterns, class names, method names, or other identifiers across the decompiled APK."""
+        search_term: The keyword or string to search for.
+        package: Package name to limit search scope (optional).
+        search_in: Comma-separated search scopes: class,method,field,code,comment. Default: code
+        offset: Starting index for pagination. Default: 0
+        count: Maximum number of results. Default: 20
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
     return await tools.search_tools.search_classes_by_keyword(
-        search_term, package, search_in, offset, count
+        search_term, package, search_in, offset, count, instance_id=instance_id
     )
 
 
 @mcp.tool()
-async def get_fields_of_class(class_name: str) -> dict:
+async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
     """List all field names in a class.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.class_tools.get_fields_of_class(class_name)
+    return await tools.class_tools.get_fields_of_class(class_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_smali_of_class(class_name: str) -> dict:
+async def get_smali_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
     """Fetch the smali (Dalvik bytecode) representation of a class.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-
-    Use Case:
-        Useful for analyzing obfuscated code or understanding low-level behavior
-        that may be hidden in decompiled Java source.
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.class_tools.get_smali_of_class(class_name)
+    return await tools.class_tools.get_smali_of_class(class_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_android_manifest() -> dict:
-    """Retrieve and return the AndroidManifest.xml content."""
-    return await tools.resource_tools.get_android_manifest()
+async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
+    """Retrieve and return the AndroidManifest.xml content.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.resource_tools.get_android_manifest(instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_strings(offset: int = 0, count: int = 0) -> dict:
-    """Retrieve contents of strings.xml files."""
-    return await tools.resource_tools.get_strings(offset, count)
+async def get_strings(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
+    """Retrieve contents of strings.xml files.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.resource_tools.get_strings(offset, count, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_all_resource_file_names(offset: int = 0, count: int = 0) -> dict:
-    """Retrieve all resource files names."""
-    return await tools.resource_tools.get_all_resource_file_names(offset, count)
+async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
+    """Retrieve all resource files names.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.resource_tools.get_all_resource_file_names(offset, count, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_resource_file(resource_name: str) -> dict:
-    """Retrieve resource file content."""
-    return await tools.resource_tools.get_resource_file(resource_name)
+async def get_resource_file(resource_name: str, instance_id: Optional[str] = None) -> dict:
+    """Retrieve resource file content.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.resource_tools.get_resource_file(resource_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_main_application_classes_names() -> dict:
-    """Fetch main application classes' names from Manifest package."""
-    return await tools.class_tools.get_main_application_classes_names()
+async def get_main_application_classes_names(instance_id: Optional[str] = None) -> dict:
+    """Fetch main application classes' names from Manifest package.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.get_main_application_classes_names(instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_main_application_classes_code(offset: int = 0, count: int = 0) -> dict:
-    """Fetch main application classes' code with pagination."""
-    return await tools.class_tools.get_main_application_classes_code(offset, count)
+async def get_main_application_classes_code(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
+    """Fetch main application classes' code with pagination.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.get_main_application_classes_code(offset, count, instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_main_activity_class() -> dict:
+async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
     """Fetch the main activity class from AndroidManifest.xml.
 
-    Returns:
-        dict: Contains the fully qualified class name of the main activity
-              (the entry point with LAUNCHER intent filter).
-
-    Tip:
-        After getting the class name, use get_class_source to fetch its code.
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.class_tools.get_main_activity_class()
+    return await tools.class_tools.get_main_activity_class(instance_id=instance_id)
 
 
 @mcp.tool()
-async def rename_class(class_name: str, new_name: str) -> dict:
-    """Renames a specific class."""
-    return await tools.refactor_tools.rename_class(class_name, new_name)
+async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+    """Renames a specific class.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.refactor_tools.rename_class(class_name, new_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def rename_method(method_name: str, new_name: str) -> dict:
-    """Renames a specific method."""
-    return await tools.refactor_tools.rename_method(method_name, new_name)
+async def rename_method(method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+    """Renames a specific method.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.refactor_tools.rename_method(method_name, new_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def rename_field(class_name: str, field_name: str, new_name: str) -> dict:
-    """Renames a specific field."""
-    return await tools.refactor_tools.rename_field(class_name, field_name, new_name)
+async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+    """Renames a specific field.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.refactor_tools.rename_field(class_name, field_name, new_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def rename_package(old_package_name: str, new_package_name: str) -> dict:
-    """Renames a package and all its classes."""
-    return await tools.refactor_tools.rename_package(old_package_name, new_package_name)
+async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
+    """Renames a package and all its classes.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.refactor_tools.rename_package(old_package_name, new_package_name, instance_id=instance_id)
 
 
 @mcp.tool()
-async def debug_get_stack_frames() -> dict:
-    """Get current stack frames (call stack)."""
-    return await tools.debug_tools.debug_get_stack_frames()
+async def debug_get_stack_frames(instance_id: Optional[str] = None) -> dict:
+    """Get current stack frames (call stack).
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.debug_tools.debug_get_stack_frames(instance_id=instance_id)
 
 
 @mcp.tool()
-async def debug_get_threads() -> dict:
-    """Get all threads in the debugged process."""
-    return await tools.debug_tools.debug_get_threads()
+async def debug_get_threads(instance_id: Optional[str] = None) -> dict:
+    """Get all threads in the debugged process.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.debug_tools.debug_get_threads(instance_id=instance_id)
 
 
 @mcp.tool()
-async def debug_get_variables() -> dict:
-    """Get current variables when process is suspended."""
-    return await tools.debug_tools.debug_get_variables()
+async def debug_get_variables(instance_id: Optional[str] = None) -> dict:
+    """Get current variables when process is suspended.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.debug_tools.debug_get_variables(instance_id=instance_id)
 
 
 @mcp.tool()
-async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20) -> dict:
+async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
     """Find all cross-references (xrefs) to a class.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.Helper').
         offset: Starting index for pagination (default: 0).
         count: Maximum results to return (default: 20).
-
-    Use Case:
-        Discover where a class is instantiated, extended, or referenced across the codebase.
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count)
+    return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
 
 
 @mcp.tool()
 async def get_xrefs_to_method(
-    class_name: str, method_name: str, offset: int = 0, count: int = 20
+    class_name: str, method_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
 ) -> dict:
-    """Find all references to a method."""
+    """Find all references to a method.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
     return await tools.xrefs_tools.get_xrefs_to_method(
-        class_name, method_name, offset, count
+        class_name, method_name, offset, count, instance_id=instance_id
     )
 
 
 @mcp.tool()
 async def get_xrefs_to_field(
-    class_name: str, field_name: str, offset: int = 0, count: int = 20
+    class_name: str, field_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
 ) -> dict:
-    """Find all references to a field."""
+    """Find all references to a field.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
     return await tools.xrefs_tools.get_xrefs_to_field(
-        class_name, field_name, offset, count
+        class_name, field_name, offset, count, instance_id=instance_id
     )
+
+
 
 
 def main():
@@ -362,19 +390,26 @@ def main():
     )
     parser.add_argument(
         "--auth-token",
-        help="Authentication token for JADX plugin (if authentication is enabled)",
+        help="Authentication token for JADX plugin (shared across all instances)",
+        default=None,
+        type=str
+    )
+    parser.add_argument(
+        "--jadx-instances",
+        help="Initial JADX instances to connect: host:port[:name],host:port[:name]...",
         default=None,
         type=str
     )
     args = parser.parse_args()
 
-    # Configure JADX connection
+    # Configure JADX connection (for backward compatibility)
     config.set_jadx_config(host=args.jadx_host, port=args.jadx_port)
 
-    # Configure authentication
+    # Configure authentication (shared across all instances)
     if args.auth_token:
         config.set_auth_token(args.auth_token)
-        print(f"✓ Authentication enabled (token configured)")
+        InstanceRegistry.set_auth_token(args.auth_token)
+        print(f"✓ Authentication enabled (token configured for all instances)")
     else:
         print("⚠ Authentication disabled (no token provided)")
         print("  If JADX plugin has auth enabled, use --auth-token parameter")
@@ -387,24 +422,67 @@ def main():
             f"[JADX AI MCP Server] v6.0.0 | MCP: {args.host}:{args.port} | JADX: {args.jadx_host}:{args.jadx_port}"
         )
 
-    print(f"Testing JADX AI MCP Plugin connectivity at {args.jadx_host}:{args.jadx_port}...")
-    result = config.health_ping()
-    print(f"Health check result: {result}")
+    # Process initial JADX instances from command line
+    # Format: host:port[:name],host:port[:name],...
+    if args.jadx_instances:
+        import asyncio
+        print(f"\nInitializing JADX instances from command line...")
+        instances_str = args.jadx_instances.split(",")
+        
+        async def init_instances():
+            for inst_str in instances_str:
+                parts = inst_str.strip().split(":")
+                if len(parts) >= 2:
+                    host = parts[0]
+                    try:
+                        port = int(parts[1])
+                        name = parts[2] if len(parts) > 2 else None
+                        result = await InstanceRegistry.add_instance(host, port, name)
+                        if result["success"]:
+                            print(f"  ✓ Added: {result['instance']['name']} ({host}:{port})")
+                        else:
+                            print(f"  ✗ Failed to add {host}:{port}: {result['message']}")
+                    except ValueError:
+                        print(f"  ✗ Invalid port in: {inst_str}")
+                else:
+                    print(f"  ✗ Invalid format: {inst_str} (expected host:port[:name])")
+        
+        asyncio.run(init_instances())
+        print(f"Initialized {InstanceRegistry.get_instance_count()} instance(s)")
+    else:
+        # Add default instance from --jadx-host/--jadx-port
+        print(f"\nTesting JADX AI MCP Plugin connectivity at {args.jadx_host}:{args.jadx_port}...")
+        result = config.health_ping()
+        print(f"Health check result: {result}")
 
-    if isinstance(result, dict) and "error" in result:
-        print("⚠ Warning: Could not connect to JADX plugin. Make sure:")
-        print("  1. JADX GUI is running")
-        print("  2. JADX AI MCP Plugin is installed and active")
-        print("  3. Plugin is listening on the configured host and port")
-        print("  4. If using non-default host, use --jadx-host parameter")
-        print("  5. If auth is enabled, provide --auth-token parameter")
+        if isinstance(result, dict) and "error" in result:
+            print("⚠ Warning: Could not connect to JADX plugin. Make sure:")
+            print("  1. JADX GUI is running")
+            print("  2. JADX AI MCP Plugin is installed and active")
+            print("  3. Plugin is listening on the configured host and port")
+            print("  4. If using non-default host, use --jadx-host parameter")
+            print("  5. If auth is enabled, provide --auth-token parameter")
+        else:
+            # Auto-add the default instance
+            import asyncio
+            async def add_default():
+                await InstanceRegistry.add_instance(args.jadx_host, args.jadx_port)
+            try:
+                asyncio.run(add_default())
+                print(f"✓ Default JADX instance registered")
+            except Exception as e:
+                print(f"⚠ Could not auto-register default instance: {e}")
 
     # Run Server
     if args.http:
         print(f"Starting MCP server in HTTP mode on {args.host}:{args.port}...")
+        # Register instance management tools before running
+        register_instance_tools(mcp)
         mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         print("Starting MCP server in stdio mode...")
+        # Register instance management tools before running
+        register_instance_tools(mcp)
         mcp.run()
 
 

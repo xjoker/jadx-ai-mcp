@@ -2,7 +2,12 @@
 
 # JADX-AI-MCP (Part of Zin MCP Suite)
 
+> 🔱 **This is a fork of [zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)**  
+> Original project created by [@zinja-coder](https://github.com/zinja-coder). This fork adds multi-instance support and other enhancements.
+
 ⚡ Fully automated MCP server + JADX plugin built to communicate with LLM through MCP to analyze Android APKs using LLMs like Claude — uncover vulnerabilities, analyze APK, and reverse engineer effortlessly.
+
+**👉 Original Project**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
 English | [简体中文](README_ZH.md)
 
@@ -113,6 +118,8 @@ Thanks to these wonderful people for their contributions ⭐
 
 **JADX-AI-MCP** is a plugin for the [JADX decompiler](https://github.com/skylot/jadx) that integrates directly with [Model Context Protocol (MCP)](https://github.com/anthropic/mcp) to provide **live reverse engineering support with LLMs like Claude**.
 
+> 💡 This project was originally created by [@zinja-coder](https://github.com/zinja-coder). See the [original repository](https://github.com/zinja-coder/jadx-ai-mcp) for the upstream project.
+
 Think: "Decompile → Context-Aware Code Review → AI Recommendations" — all in real time.
 
 #### High Level Sequence Diagram
@@ -172,36 +179,53 @@ It is combination of two tools:
 
 ## Current MCP Tools
 
-The following MCP tools are available:
+The following MCP tools are available. **All tools support an optional `instance_id` parameter for multi-instance targeting.**
 
-- `fetch_current_class()` — Get the class name and full source of selected class
-- `get_selected_text()` — Get currently selected text
-- `get_all_classes()` — List all classes in the project
-- `get_class_source()` — Get full source of a given class
-- `get_method_by_name()` — Fetch a method's source
-- `search_method_by_name()` — Search method across classes
-- `search_classes_by_keyword()` — Search for classes whose source code contains a specific keyword (supports pagination)
-- `get_methods_of_class()` — List methods in a class
-- `get_fields_of_class()` — List fields in a class
-- `get_smali_of_class()` — Fetch smali of class
-- `get_main_activity_class()` — Fetch main activity from jadx mentioned in AndroidManifest.xml file.
-- `get_main_application_classes_code()` — Fetch all the main application classes' code based on the package name defined in the AndroidManifest.xml.
-- `get_main_application_classes_names()` — Fetch all the main application classes' names based on the package name defined in the AndroidManifest.xml.
-- `get_android_manifest()` — Retrieve and return the AndroidManifest.xml content.
-- `get_strings()` : Fetches the strings.xml file
-- `get_all_resource_file_names()` : Retrieve all resource files names that exists in application
-- `get_resource_file()` : Retrieve resource file content
-- `rename_class()` : Renames the class name
-- `rename_method()` : Renames the method
-- `rename_field()` : Renames the field
-- `rename_package()` : Renames whole package
-- `debug_get_stack_frames()` : Get the stack frames from jadx debugger
-- `debug_get_threads()` : Get the insights of threads from jadx debugger
-- `debug_get_variables()` : Get the variables from jadx debugger
-- `xrefs_to_class()` : Find all references to a class (returns method-level and class-level references, supports pagination)
-- `xrefs_to_method()` : Find all references to a method (includes override-related methods, supports pagination)
-- `xrefs_to_field()` : Find all references to a field (returns methods that access the field, supports pagination)
-  
+### Code Analysis Tools
+- `fetch_current_class(instance_id?)` — Get the class name and full source of selected class
+- `get_selected_text(instance_id?)` — Get currently selected text
+- `get_all_classes(offset, count, instance_id?)` — List all classes in the project
+- `get_class_source(class_name, instance_id?)` — Get full source of a given class
+- `get_method_by_name(class_name, method_name, instance_id?)` — Fetch a method's source
+- `search_method_by_name(method_name, instance_id?)` — Search method across classes
+- `search_classes_by_keyword(search_term, package?, search_in?, offset?, count?, instance_id?)` — Search for classes by keyword
+- `get_methods_of_class(class_name, instance_id?)` — List methods in a class
+- `get_fields_of_class(class_name, instance_id?)` — List fields in a class
+- `get_smali_of_class(class_name, instance_id?)` — Fetch smali of class
+- `get_main_activity_class(instance_id?)` — Fetch main activity from AndroidManifest.xml
+- `get_main_application_classes_code(offset?, count?, instance_id?)` — Fetch main application classes' code
+- `get_main_application_classes_names(instance_id?)` — Fetch main application classes' names
+
+### Resource Tools
+- `get_android_manifest(instance_id?)` — Retrieve AndroidManifest.xml content
+- `get_strings(offset?, count?, instance_id?)` — Fetch strings.xml files
+- `get_all_resource_file_names(offset?, count?, instance_id?)` — List all resource file names
+- `get_resource_file(resource_name, instance_id?)` — Retrieve resource file content
+
+### Refactoring Tools
+- `rename_class(class_name, new_name, instance_id?)` — Rename a class
+- `rename_method(method_name, new_name, instance_id?)` — Rename a method
+- `rename_field(class_name, field_name, new_name, instance_id?)` — Rename a field
+- `rename_package(old_name, new_name, instance_id?)` — Rename a package
+
+### Debug Tools
+- `debug_get_stack_frames(instance_id?)` — Get stack frames from debugger
+- `debug_get_threads(instance_id?)` — Get thread information from debugger
+- `debug_get_variables(instance_id?)` — Get variables from debugger
+
+### Cross-Reference Tools
+- `get_xrefs_to_class(class_name, offset?, count?, instance_id?)` — Find all references to a class
+- `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — Find all references to a method
+- `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — Find all references to a field
+
+### 🆕 Multi-Instance Management Tools (New in v7.0.0)
+- `list_jadx_instances()` — List all connected JADX instances
+- `add_jadx_instance(host, port, name?)` — Add a new JADX instance dynamically
+- `remove_jadx_instance(name)` — Remove a JADX instance
+- `set_default_jadx_instance(name)` — Set the default instance for tool calls
+- `get_jadx_instance_info(name)` — Get detailed info about an instance
+- `health_check_jadx_instances()` — Check health of all instances
+
 ---
 
 ## 🗒️ Sample Prompts
@@ -425,14 +449,17 @@ OR
 uv run jadx_mcp_server.py --http --port 9999
 ```
 
-## 6. Custom port configuration for JADX AI MCP Plugin
+## 6. Plugin Configuration (Unified Settings Panel)
 
-<img width="800" height="335" alt="image" src="https://github.com/user-attachments/assets/6243adc5-5be4-4e2d-aa16-bdaf78a28e36" />
+All plugin settings are now managed through a **unified Settings dialog**:
 
-1. Configure Port: Configure the port on which the JADX AI MCP Plugin will listen on.
-2. Default Port: Revert back the changes and listen on default port.
-3. Restart Server: Force restart the JADX AI MCP Plugin server.
-4. Server Status: Check the status of JADX AI MCP Plugin server.
+**Access**: `Plugins → JADX AI MCP Server → 设置...`
+
+The Settings panel includes:
+- **Server Configuration**: Port, bind address, auto-start options
+- **Instance Settings**: Custom instance name for multi-instance scenarios
+- **Authentication**: Token generation and management
+- **Server Controls**: Start, stop, restart, and status check
 
 To connect with JADX AI MCP Plugin running on custom port, the `--jadx-port` option will be used as shown in following:
 ```
@@ -472,9 +499,10 @@ JADX AI MCP now supports **Token-based authentication** to secure your reverse e
 
 ### Quick Setup
 
-1. **Enable in JADX GUI**: `Plugins → JADX AI MCP Server → Authentication Settings...`
-2. **Copy the token**
-3. **Add to MCP server**:
+1. **Open Settings in JADX GUI**: `Plugins → JADX AI MCP Server → 设置...`
+2. **Configure authentication in the "Authentication" tab**
+3. **Copy the token**
+4. **Add to MCP server**:
 
 ```bash
 uv run jadx_mcp_server.py --auth-token "YOUR_TOKEN_HERE"
@@ -529,12 +557,108 @@ uv run jadx_mcp_server.py \
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--jadx-host` | `127.0.0.1` | JADX plugin IP address |
-| `--jadx-port` | `8650` | JADX plugin port |
+| `--jadx-host` | `127.0.0.1` | JADX plugin IP address (legacy single instance) |
+| `--jadx-port` | `8650` | JADX plugin port (legacy single instance) |
 | `--host` | `127.0.0.1` | MCP server bind address |
 | `--port` | `8651` | MCP server port (HTTP mode) |
-| `--auth-token` | None | Authentication token |
+| `--auth-token` | None | Authentication token (shared across all instances) |
 | `--http` | False | Enable HTTP stream mode |
+| `--jadx-instances` | None | **NEW** Multiple JADX instances: `host:port[:name],...` |
+
+## 8. 🚀 Multi-Instance Management (NEW in v7.0.0)
+
+JADX AI MCP now supports **connecting to multiple JADX instances simultaneously**! This is perfect for:
+
+- ✅ **Comparing different APK versions** side by side
+- ✅ **Analyzing multiple apps** in parallel
+- ✅ **Team collaboration** with different analysis targets
+- ✅ **A/B security testing** across app versions
+
+### Quick Start - Multiple Instances
+
+```bash
+# Connect to multiple JADX instances at startup
+uv run jadx_mcp_server.py \
+  --auth-token "YOUR_TOKEN" \
+  --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2,localhost:8652:dev"
+```
+
+### Instance Naming
+
+- **Auto-naming**: If no name is provided, instances are named from APK info (e.g., `myapp-v123`)
+- **Custom naming**: Specify names using `host:port:name` format
+
+### Using Instance-Targeted Tools
+
+All MCP tools now support the optional `instance_id` parameter:
+
+```python
+# Example: Get class source from a specific instance
+get_class_source(class_name="com.example.MainActivity", instance_id="app-v2")
+
+# Example: Compare manifests between versions
+manifest_v1 = get_android_manifest(instance_id="app-v1")
+manifest_v2 = get_android_manifest(instance_id="app-v2")
+```
+
+### Instance Management Tools
+
+```python
+# List all connected instances
+list_jadx_instances()
+# Returns: {"instances": [{"name": "app-v1", "host": "192.168.1.10", "port": 8650, ...}]}
+
+# Add a new instance dynamically
+add_jadx_instance(host="192.168.1.20", port=8650, name="app-v3")
+
+# Set default instance (used when instance_id is not specified)
+set_default_jadx_instance(name="app-v2")
+
+# Get detailed instance info
+get_jadx_instance_info(name="app-v1")
+# Returns: {"name": "app-v1", "apk_info": {...}, "status": "online", ...}
+
+# Health check all instances
+health_check_jadx_instances()
+# Returns: {"total": 3, "online": 2, "offline": 1, "results": [...]}
+
+# Remove an instance
+remove_jadx_instance(name="app-v3")
+```
+
+### Claude Desktop Configuration for Multi-Instance
+
+```json
+{
+  "mcpServers": {
+    "jadx-mcp-server": {
+      "command": "/path/to/uv",
+      "args": [
+        "--directory",
+        "/path/to/jadx-ai-mcp/jadx-mcp-server/",
+        "run",
+        "jadx_mcp_server.py",
+        "--auth-token",
+        "YOUR_TOKEN",
+        "--jadx-instances",
+        "192.168.1.10:8650:xhs-v8,192.168.1.11:8650:xhs-v9"
+      ]
+    }
+  }
+}
+```
+
+### Sample Multi-Instance Prompts
+
+```
+"Compare the MainActivity between xhs-v8 and xhs-v9 instances"
+
+"List all encryption-related classes in both app versions"
+
+"Check if the vulnerability in v8 was fixed in v9"
+
+"Analyze the network API changes between versions"
+```
 
 ## Give it a shot
 

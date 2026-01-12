@@ -112,13 +112,18 @@ def health_ping() -> Union[str, Dict[str, Any]]:
         return {"error": str(e)}
 
 
-async def get_from_jadx(endpoint: str, params: Dict[str, Any] = {}) -> Union[str, Dict[str, Any]]:
+async def get_from_jadx(
+    endpoint: str, 
+    params: Dict[str, Any] = {},
+    instance_id: Optional[str] = None
+) -> Union[str, Dict[str, Any]]:
     """
     Generic async helper to request data from the JADX plugin.
 
     Args:
         endpoint: API endpoint path (e.g., "class-source", "manifest")
         params: Query parameters dictionary for the request
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         Union[str, Dict[str, Any]]: Parsed JSON response or error dictionary
@@ -129,9 +134,40 @@ async def get_from_jadx(endpoint: str, params: Dict[str, Any] = {}) -> Union[str
     Note:
         Automatically handles JSON parsing with fallback to text response.
         Includes authentication headers if AUTH_TOKEN is configured.
+        Supports multi-instance routing when InstanceRegistry is available.
     """
-    url = f"{JADX_HTTP_BASE}/{endpoint.lstrip('/')}"
-    headers = _get_auth_headers()
+    # Determine the base URL based on instance_id
+    base_url = JADX_HTTP_BASE
+    auth_token = AUTH_TOKEN
+    
+    # Try to use InstanceRegistry for multi-instance support
+    try:
+        from .instance_registry import InstanceRegistry
+        
+        if instance_id:
+            instance = InstanceRegistry.get_instance(instance_id)
+            if not instance:
+                return {"error": f"Instance '{instance_id}' not found"}
+            base_url = instance.url
+        else:
+            # Use default instance if available
+            instance = InstanceRegistry.get_default()
+            if instance:
+                base_url = instance.url
+        
+        # Use shared auth token from InstanceRegistry if available
+        registry_token = InstanceRegistry.get_auth_token()
+        if registry_token:
+            auth_token = registry_token
+            
+    except ImportError:
+        # InstanceRegistry not available, use legacy single-instance mode
+        pass
+    
+    url = f"{base_url}/{endpoint.lstrip('/')}"
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
 
     try:
         async with httpx.AsyncClient() as client:
@@ -155,3 +191,4 @@ async def get_from_jadx(endpoint: str, params: Dict[str, Any] = {}) -> Union[str
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg)
         return {"error": error_msg}
+

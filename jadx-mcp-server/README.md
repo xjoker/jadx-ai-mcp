@@ -2,7 +2,12 @@
 
 # JADX-MCP-SERVER (Part of Zin's Reverse Engineering MCP Suite)
 
+> 🔱 **This is a fork of [zinja-coder/jadx-mcp-server](https://github.com/zinja-coder/jadx-mcp-server)**  
+> Original project created by [@zinja-coder](https://github.com/zinja-coder). This fork adds multi-instance support and other enhancements.
+
 ⚡ Fully automated MCP server built to communicate with JADX-AI-MCP Plugin to analyze Android APKs using LLMs like Claude — uncover vulnerabilities, parse manifests, and reverse engineer effortlessly.
+
+**👉 Original Project**: [github.com/zinja-coder/jadx-mcp-server](https://github.com/zinja-coder/jadx-mcp-server)
 
 ![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
 ![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
@@ -107,12 +112,16 @@ Thanks to these wonderful people for their contributions ⭐
 
 ## 🤖 What is JADX-MCP-SERVER?
 
-**JADX MCP Server** is a standalone Python server that interacts with a modified version of `jadx-gui` (see: [jadx-ai-mcp](https://github.com/xjoker/jadx-ai-mcp)) via MCP (Model Context Protocol). It lets LLMs communicate with the decompiled Android app context live.
+**JADX MCP Server** is a standalone Python server that interacts with the `jadx-ai-mcp` plugin via MCP (Model Context Protocol). It lets LLMs communicate with the decompiled Android app context live.
+
+> 💡 This project was originally created by [@zinja-coder](https://github.com/zinja-coder). See the [original repository](https://github.com/zinja-coder/jadx-mcp-server) for the upstream project.
 
 
 ## 🤖 What is JADX-AI-MCP?
 
 **JADX-AI-MCP** is a plugin for the [JADX decompiler](https://github.com/skylot/jadx) that integrates directly with [Model Context Protocol (MCP)](https://github.com/anthropic/mcp) to provide **live reverse engineering support with LLMs like Claude**.
+
+**Original JADX-AI-MCP Project**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
 Think: "Decompile → Context-Aware Code Review → AI Recommendations" — all in real time.
 
@@ -165,31 +174,56 @@ It is combination of two tools:
 
 ## Current MCP Tools
 
-The following MCP tools are available:
+The following MCP tools are available. **All tools support an optional `instance_id` parameter for multi-instance targeting.**
 
-- `fetch_current_class()` — Get the class name and full source of selected class
-- `get_selected_text()` — Get currently selected text
-- `get_all_classes()` — List all classes in the project
-- `get_class_source()` — Get full source of a given class
-- `get_method_by_name()` — Fetch a method’s source
-- `search_method_by_name()` — Search method across classes
-- `search_classes_by_keyword()` — Search for classes whose source code contains a specific keyword (supports pagination)
-- `get_methods_of_class()` — List methods in a class
-- `get_fields_of_class()` — List fields in a class
-- `get_smali_of_class()` — Fetch smali of class
-- `get_main_activity_class()` — Fetch main activity from jadx mentioned in AndroidManifest.xml file. 
-- `get_main_application_classes_code()` — Fetch all the main application classes' code based on the package name defined in the AndroidManifest.xml.
-- `get_main_application_classes_names()` — Fetch all the main application classes' names based on the package name defined in the AndroidManifest.xml.
-- `get_android_manifest()` — Retrieve and return the AndroidManifest.xml content.
-- `get_strings()` : Fetches the strings.xml file
-- `get_all_resource_file_names()` : Retrieve all resource files names that exists in application
-- `get_resource_file()` : Retrieve resource file content
-- `debug_get_stack_frames()` : Get the stack frames from jadx debugger
-- `debug_get_threads()` : Get the insights of threads from jadx debugger
-- `debug_get_variables()` : Get the variables from jadx debugger
-- `xrefs_to_class()` : Find all references to a class (returns method-level and class-level references, supports pagination)
-- `xrefs_to_method()` : Find all references to a method (includes override-related methods, supports pagination)
-- `xrefs_to_field()` : Find all references to a field (returns methods that access the field, supports pagination)
+### Code Analysis Tools
+- `fetch_current_class(instance_id?)` — Get the class name and full source of selected class
+- `get_selected_text(instance_id?)` — Get currently selected text
+- `get_all_classes(offset, count, instance_id?)` — List all classes in the project
+- `get_class_source(class_name, instance_id?)` — Get full source of a given class
+- `get_method_by_name(class_name, method_name, instance_id?)` — Fetch a method's source
+- `search_method_by_name(method_name, instance_id?)` — Search method across classes
+- `search_classes_by_keyword(search_term, package?, search_in?, offset?, count?, instance_id?)` — Search for classes by keyword
+- `get_methods_of_class(class_name, instance_id?)` — List methods in a class
+- `get_fields_of_class(class_name, instance_id?)` — List fields in a class
+- `get_smali_of_class(class_name, instance_id?)` — Fetch smali of class
+- `get_main_activity_class(instance_id?)` — Fetch main activity from AndroidManifest.xml
+- `get_main_application_classes_code(offset?, count?, instance_id?)` — Fetch main application classes' code
+- `get_main_application_classes_names(instance_id?)` — Fetch main application classes' names
+
+### Resource Tools
+- `get_android_manifest(instance_id?)` — Retrieve AndroidManifest.xml content
+- `get_strings(offset?, count?, instance_id?)` — Fetch strings.xml files
+- `get_all_resource_file_names(offset?, count?, instance_id?)` — List all resource file names
+- `get_resource_file(resource_name, instance_id?)` — Retrieve resource file content
+
+### Debug Tools
+- `debug_get_stack_frames(instance_id?)` — Get stack frames from debugger
+- `debug_get_threads(instance_id?)` — Get thread information from debugger
+- `debug_get_variables(instance_id?)` — Get variables from debugger
+
+### Cross-Reference Tools
+- `get_xrefs_to_class(class_name, offset?, count?, instance_id?)` — Find all references to a class
+- `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — Find all references to a method
+- `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — Find all references to a field
+
+### 🆕 Multi-Instance Management Tools (New in v7.0.0)
+- `list_jadx_instances()` — List all connected JADX instances
+- `add_jadx_instance(host, port, name?)` — Add a new JADX instance dynamically
+- `remove_jadx_instance(name)` — Remove a JADX instance
+- `set_default_jadx_instance(name)` — Set the default instance for tool calls
+- `get_jadx_instance_info(name)` — Get detailed info about an instance
+- `health_check_jadx_instances()` — Check health of all instances
+
+### Multi-Instance Usage
+
+```bash
+# Connect to multiple JADX instances at startup
+uv run jadx_mcp_server.py \
+  --auth-token "YOUR_TOKEN" \
+  --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
+```
+
 ---
 
 #### Note: Tested on Claude Desktop. Support for other LLMs might be tested in future.

@@ -9,16 +9,18 @@ Author: Jafar Pathan (zinja-coder@github)
 License: See LICENSE file
 """
 
+from typing import Optional
 from src.server.config import get_from_jadx
 
 
-async def rename_class(class_name: str, new_name: str) -> dict:
+async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a specific class.
 
     Args:
         class_name: Fully qualified current class name
         new_name: New name for the class (without package)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         dict: Confirmation of rename operation
@@ -26,16 +28,17 @@ async def rename_class(class_name: str, new_name: str) -> dict:
     MCP Tool: rename_class
     Description: Refactors class name across the entire decompiled codebase
     """
-    return await get_from_jadx("rename-class", {"class_name": class_name, "new_name": new_name})
+    return await get_from_jadx("rename-class", {"class_name": class_name, "new_name": new_name}, instance_id=instance_id)
 
 
-async def rename_method(method_name: str, new_name: str) -> dict:
+async def rename_method(method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a specific method.
 
     Args:
         method_name: Current method name (can include signature)
         new_name: New name for the method
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         dict: Confirmation of rename operation
@@ -43,10 +46,10 @@ async def rename_method(method_name: str, new_name: str) -> dict:
     MCP Tool: rename_method
     Description: Refactors method name and updates all call sites
     """
-    return await get_from_jadx("rename-method", {"method_name": method_name, "new_name": new_name})
+    return await get_from_jadx("rename-method", {"method_name": method_name, "new_name": new_name}, instance_id=instance_id)
 
 
-async def rename_field(class_name: str, field_name: str, new_name: str) -> dict:
+async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a specific field.
 
@@ -54,6 +57,7 @@ async def rename_field(class_name: str, field_name: str, new_name: str) -> dict:
         class_name: Fully qualified class name containing the field
         field_name: Current field name
         new_name: New name for the field
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         dict: Confirmation of rename operation
@@ -65,16 +69,17 @@ async def rename_field(class_name: str, field_name: str, new_name: str) -> dict:
         "class_name": class_name,
         "field_name": field_name,
         "new_field_name": new_name
-    })
+    }, instance_id=instance_id)
 
 
-async def rename_package(old_package_name: str, new_package_name: str) -> dict:
+async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a package and all its classes.
 
     Args:
         old_package_name: Current package name (e.g., com.example.old)
         new_package_name: New package name (e.g., com.example.new)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         dict: Confirmation of rename operation
@@ -85,4 +90,4 @@ async def rename_package(old_package_name: str, new_package_name: str) -> dict:
     return await get_from_jadx("rename-package", {
         "old_package_name": old_package_name,
         "new_package_name": new_package_name
-    })
+    }, instance_id=instance_id)

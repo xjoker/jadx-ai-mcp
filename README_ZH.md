@@ -2,7 +2,12 @@
 
 # JADX-AI-MCP (Zin MCP Suite 的一部分)
 
+> 🔱 **这是 [zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) 的 Fork 版本**  
+> 原始项目由 [@zinja-coder](https://github.com/zinja-coder) 创建。本 Fork 添加了多实例支持等增强功能。
+
 ⚡ 全自动化 MCP 服务器 + JADX 插件，通过 MCP 协议与 LLM 通信，使用 Claude 等大语言模型分析 Android APK——轻松发现漏洞、分析 APK、逆向工程。
+
+**👉 原始项目**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
 [English](README.md) | 简体中文
 
@@ -104,6 +109,8 @@
 
 **JADX-AI-MCP** 是 [JADX 反编译器](https://github.com/skylot/jadx)的插件，直接与 [Model Context Protocol (MCP)](https://github.com/anthropic/mcp) 集成，为 **Claude 等 LLM 提供实时逆向工程支持**。
 
+> 💡 本项目最初由 [@zinja-coder](https://github.com/zinja-coder) 创建。查看[原始仓库](https://github.com/zinja-coder/jadx-ai-mcp)了解上游项目。
+
 核心理念："反编译 → 上下文感知代码审查 → AI 建议" — 全部实时完成。
 
 #### 高层序列图
@@ -163,35 +170,52 @@ https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 
 ## 当前 MCP 工具
 
-以下 MCP 工具可用：
+以下 MCP 工具可用。**所有工具都支持可选的 `instance_id` 参数用于多实例定向。**
 
-- `fetch_current_class()` — 获取当前选中类的名称和完整源码
-- `get_selected_text()` — 获取当前选中的文本
-- `get_all_classes()` — 列出项目中的所有类
-- `get_class_source()` — 获取指定类的完整源码
-- `get_method_by_name()` — 获取方法的源码
-- `search_method_by_name()` — 跨类搜索方法
-- `search_classes_by_keyword()` — 搜索源代码中包含特定关键字的类（支持分页）
-- `get_methods_of_class()` — 列出类中的方法
-- `get_fields_of_class()` — 列出类中的字段
-- `get_smali_of_class()` — 获取类的 smali 代码
-- `get_main_activity_class()` — 从 AndroidManifest.xml 中获取主 Activity
-- `get_main_application_classes_code()` — 根据 AndroidManifest.xml 中定义的包名获取所有主应用类的代码
-- `get_main_application_classes_names()` — 根据 AndroidManifest.xml 中定义的包名获取所有主应用类的名称
-- `get_android_manifest()` — 检索并返回 AndroidManifest.xml 内容
-- `get_strings()` : 获取 strings.xml 文件
-- `get_all_resource_file_names()` : 检索应用程序中存在的所有资源文件名
-- `get_resource_file()` : 检索资源文件内容
-- `rename_class()` : 重命名类名
-- `rename_method()` : 重命名方法
-- `rename_field()` : 重命名字段
-- `rename_package()` : 重命名整个包
-- `debug_get_stack_frames()` : 从 jadx 调试器获取堆栈帧
-- `debug_get_threads()` : 从 jadx 调试器获取线程信息
-- `debug_get_variables()` : 从 jadx 调试器获取变量
-- `xrefs_to_class()` : 查找对类的所有引用（返回方法级和类级引用，支持分页）
-- `xrefs_to_method()` : 查找对方法的所有引用（包括重写相关方法，支持分页）
-- `xrefs_to_field()` : 查找对字段的所有引用（返回访问该字段的方法，支持分页）
+### 代码分析工具
+- `fetch_current_class(instance_id?)` — 获取当前选中类的名称和完整源码
+- `get_selected_text(instance_id?)` — 获取当前选中的文本
+- `get_all_classes(offset, count, instance_id?)` — 列出项目中的所有类
+- `get_class_source(class_name, instance_id?)` — 获取指定类的完整源码
+- `get_method_by_name(class_name, method_name, instance_id?)` — 获取方法的源码
+- `search_method_by_name(method_name, instance_id?)` — 跨类搜索方法
+- `search_classes_by_keyword(search_term, package?, search_in?, offset?, count?, instance_id?)` — 按关键字搜索类
+- `get_methods_of_class(class_name, instance_id?)` — 列出类中的方法
+- `get_fields_of_class(class_name, instance_id?)` — 列出类中的字段
+- `get_smali_of_class(class_name, instance_id?)` — 获取类的 smali 代码
+- `get_main_activity_class(instance_id?)` — 从 AndroidManifest.xml 中获取主 Activity
+- `get_main_application_classes_code(offset?, count?, instance_id?)` — 获取主应用类的代码
+- `get_main_application_classes_names(instance_id?)` — 获取主应用类的名称
+
+### 资源工具
+- `get_android_manifest(instance_id?)` — 检索 AndroidManifest.xml 内容
+- `get_strings(offset?, count?, instance_id?)` — 获取 strings.xml 文件
+- `get_all_resource_file_names(offset?, count?, instance_id?)` — 列出所有资源文件名
+- `get_resource_file(resource_name, instance_id?)` — 检索资源文件内容
+
+### 重构工具
+- `rename_class(class_name, new_name, instance_id?)` — 重命名类
+- `rename_method(method_name, new_name, instance_id?)` — 重命名方法
+- `rename_field(class_name, field_name, new_name, instance_id?)` — 重命名字段
+- `rename_package(old_name, new_name, instance_id?)` — 重命名包
+
+### 调试工具
+- `debug_get_stack_frames(instance_id?)` — 从调试器获取堆栈帧
+- `debug_get_threads(instance_id?)` — 从调试器获取线程信息
+- `debug_get_variables(instance_id?)` — 从调试器获取变量
+
+### 交叉引用工具
+- `get_xrefs_to_class(class_name, offset?, count?, instance_id?)` — 查找对类的所有引用
+- `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — 查找对方法的所有引用
+- `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — 查找对字段的所有引用
+
+### 🆕 多实例管理工具（v7.0.0 新增）
+- `list_jadx_instances()` — 列出所有已连接的 JADX 实例
+- `add_jadx_instance(host, port, name?)` — 动态添加新的 JADX 实例
+- `remove_jadx_instance(name)` — 移除 JADX 实例
+- `set_default_jadx_instance(name)` — 设置默认实例
+- `get_jadx_instance_info(name)` — 获取实例详细信息
+- `health_check_jadx_instances()` — 检查所有实例的健康状态
 
 ---
 
@@ -414,14 +438,17 @@ uv run jadx_mcp_server.py --http
 uv run jadx_mcp_server.py --http --port 9999
 ```
 
-## 6. JADX AI MCP Plugin 的自定义端口配置
+## 6. 插件配置（统一设置面板）
 
-<img width="800" height="335" alt="image" src="https://github.com/user-attachments/assets/6243adc5-5be4-4e2d-aa16-bdaf78a28e36" />
+所有插件设置现在通过**统一的设置对话框**管理：
 
-1. 配置端口：配置 JADX AI MCP Plugin 监听的端口。
-2. 默认端口：恢复更改并监听默认端口。
-3. 重启服务器：强制重启 JADX AI MCP Plugin 服务器。
-4. 服务器状态：检查 JADX AI MCP Plugin 服务器的状态。
+**访问方式**：`插件 → JADX AI MCP Server → 设置...`
+
+设置面板包括：
+- **服务器配置**：端口、绑定地址、自动启动选项
+- **实例设置**：用于多实例场景的自定义实例名称
+- **认证设置**：Token 生成和管理
+- **服务器控制**：启动、停止、重启和状态检查
 
 要连接在自定义端口上运行的 JADX AI MCP Plugin，将使用 `--jadx-port` 选项，如下所示：
 ```bash
@@ -461,9 +488,10 @@ JADX AI MCP 现在支持**基于 Token 的认证**来保护你的逆向工程工
 
 ### 快速设置
 
-1. **在 JADX GUI 中启用**：`插件 → JADX AI MCP Server → Authentication Settings...`
-2. **复制 Token**
-3. **添加到 MCP 服务器**：
+1. **在 JADX GUI 中打开设置**：`插件 → JADX AI MCP Server → 设置...`
+2. **在“认证”选项卡中配置认证**
+3. **复制 Token**
+4. **添加到 MCP 服务器**：
 
 ```bash
 uv run jadx_mcp_server.py --auth-token "YOUR_TOKEN_HERE"
@@ -518,12 +546,108 @@ uv run jadx_mcp_server.py \
 
 | 选项 | 默认值 | 描述 |
 |------|--------|------|
-| `--jadx-host` | `127.0.0.1` | JADX 插件 IP 地址 |
-| `--jadx-port` | `8650` | JADX 插件端口 |
+| `--jadx-host` | `127.0.0.1` | JADX 插件 IP 地址（传统单实例） |
+| `--jadx-port` | `8650` | JADX 插件端口（传统单实例） |
 | `--host` | `127.0.0.1` | MCP 服务器绑定地址 |
 | `--port` | `8651` | MCP 服务器端口（HTTP 模式）|
-| `--auth-token` | None | 认证 Token |
+| `--auth-token` | None | 认证 Token（所有实例共享） |
 | `--http` | False | 启用 HTTP stream 模式 |
+| `--jadx-instances` | None | **新增** 多个 JADX 实例：`host:port[:name],...` |
+
+## 8. 🚀 多实例管理（v7.0.0 新增）
+
+JADX AI MCP 现在支持**同时连接多个 JADX 实例**！这非常适合：
+
+- ✅ **并排比较不同 APK 版本**
+- ✅ **并行分析多个应用**
+- ✅ **团队协作**分析不同目标
+- ✅ 跨版本的 **A/B 安全测试**
+
+### 快速开始 - 多实例
+
+```bash
+# 启动时连接多个 JADX 实例
+uv run jadx_mcp_server.py \
+  --auth-token "YOUR_TOKEN" \
+  --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2,localhost:8652:dev"
+```
+
+### 实例命名
+
+- **自动命名**：如果未提供名称，实例将从 APK 信息命名（例如 `myapp-v123`）
+- **自定义命名**：使用 `host:port:name` 格式指定名称
+
+### 使用实例定向工具
+
+所有 MCP 工具现在都支持可选的 `instance_id` 参数：
+
+```python
+# 示例：从特定实例获取类源码
+get_class_source(class_name="com.example.MainActivity", instance_id="app-v2")
+
+# 示例：比较两个版本的 Manifest
+manifest_v1 = get_android_manifest(instance_id="app-v1")
+manifest_v2 = get_android_manifest(instance_id="app-v2")
+```
+
+### 实例管理工具
+
+```python
+# 列出所有已连接的实例
+list_jadx_instances()
+# 返回: {"instances": [{"name": "app-v1", "host": "192.168.1.10", "port": 8650, ...}]}
+
+# 动态添加新实例
+add_jadx_instance(host="192.168.1.20", port=8650, name="app-v3")
+
+# 设置默认实例（未指定 instance_id 时使用）
+set_default_jadx_instance(name="app-v2")
+
+# 获取实例详细信息
+get_jadx_instance_info(name="app-v1")
+# 返回: {"name": "app-v1", "apk_info": {...}, "status": "online", ...}
+
+# 检查所有实例的健康状态
+health_check_jadx_instances()
+# 返回: {"total": 3, "online": 2, "offline": 1, "results": [...]}
+
+# 移除实例
+remove_jadx_instance(name="app-v3")
+```
+
+### 多实例的 Claude Desktop 配置
+
+```json
+{
+  "mcpServers": {
+    "jadx-mcp-server": {
+      "command": "/path/to/uv",
+      "args": [
+        "--directory",
+        "/path/to/jadx-ai-mcp/jadx-mcp-server/",
+        "run",
+        "jadx_mcp_server.py",
+        "--auth-token",
+        "YOUR_TOKEN",
+        "--jadx-instances",
+        "192.168.1.10:8650:xhs-v8,192.168.1.11:8650:xhs-v9"
+      ]
+    }
+  }
+}
+```
+
+### 多实例示例提示词
+
+```
+"比较 xhs-v8 和 xhs-v9 实例之间的 MainActivity"
+
+"列出两个版本中所有与加密相关的类"
+
+"检查 v8 中的漏洞在 v9 中是否已修复"
+
+"分析两个版本之间的网络 API 变化"
+```
 
 ## 试一试
 

@@ -215,6 +215,19 @@ public class AuthConfig {
     }
 
     /**
+     * Sets a custom authentication token.
+     *
+     * @param token The new authentication token
+     */
+    public void setAuthToken(String token) {
+        if (token != null && !token.isEmpty()) {
+            this.authToken = token;
+            saveToken();
+            logger.info("Authentication token updated manually");
+        }
+    }
+
+    /**
      * Gets the configuration file path.
      *
      * @return Path to the auth config file

@@ -5,6 +5,7 @@ import jadx.gui.ui.MainWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.zin.jadxaimcp.JadxAIMCP;
 import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.server.routes.*; // MCP tool call's request handlers
@@ -17,6 +18,7 @@ public class PluginServer {
     private Javalin app;
     private final PaginationUtils paginationUtils;
     private final AuthConfig authConfig;
+    private JadxAIMCP plugin;
     private volatile boolean isRunning = false;
 
     /**
@@ -33,11 +35,29 @@ public class PluginServer {
      * @param bindAddress - The address to bind to (e.g., "127.0.0.1" or "0.0.0.0")
      */
     public PluginServer(MainWindow mainWindow, int port, String bindAddress) {
+        this(mainWindow, port, bindAddress, null);
+    }
+
+    /**
+     * @param mainWindow  - The main Jadx window context
+     * @param port        - The port to listen on
+     * @param bindAddress - The address to bind to
+     * @param plugin      - The plugin instance for APK info access
+     */
+    public PluginServer(MainWindow mainWindow, int port, String bindAddress, JadxAIMCP plugin) {
         this.mainWindow = mainWindow;
         this.port = port;
         this.bindAddress = bindAddress;
         this.paginationUtils = new PaginationUtils();
         this.authConfig = new AuthConfig();
+        this.plugin = plugin;
+    }
+
+    /**
+     * Sets the plugin reference (for lazy initialization).
+     */
+    public void setPlugin(JadxAIMCP plugin) {
+        this.plugin = plugin;
     }
 
     /**
@@ -225,6 +245,12 @@ public class PluginServer {
 
         // --- General & Health ---
         app.get("/health", generalRoutes::handleHealth);
+
+        // --- APK Info (for multi-instance management) ---
+        if (plugin != null) {
+            ApkInfoRoutes apkInfoRoutes = new ApkInfoRoutes(mainWindow, plugin);
+            app.get("/apk-info", apkInfoRoutes::handleApkInfo);
+        }
 
         // --- Class & Code Navigation ---
         app.get("/current-class", classRoutes::handleCurrentClass);

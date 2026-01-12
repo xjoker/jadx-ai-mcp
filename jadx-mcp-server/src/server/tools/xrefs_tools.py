@@ -9,11 +9,12 @@ Author: Jafar Pathan (zinja-coder@github)
 License: See LICENSE file
 """
 
+from typing import Optional
 from src.server.config import get_from_jadx
 from src.PaginationUtils import PaginationUtils
 
 
-async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20) -> dict:
+async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
     """
     Find all references to a class (including constructor calls).
 
@@ -21,6 +22,7 @@ async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20) 
         class_name: Fully qualified class name
         offset: Starting index for pagination (default: 0)
         count: Number of references to return (default: 20)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         dict: Paginated list of locations where the class is referenced
@@ -34,11 +36,11 @@ async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20) 
         count=count,
         additional_params={"class_name": class_name},
         data_extractor=lambda parsed: parsed.get("references", []),
-        fetch_function=get_from_jadx
+        fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id)
     )
 
 
-async def get_xrefs_to_method(class_name: str, method_name: str, offset: int = 0, count: int = 20) -> dict:
+async def get_xrefs_to_method(class_name: str, method_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
     """
     Find all references to a method (includes overrides).
 
@@ -47,6 +49,7 @@ async def get_xrefs_to_method(class_name: str, method_name: str, offset: int = 0
         method_name: Method name (can include signature)
         offset: Starting index for pagination (default: 0)
         count: Number of references to return (default: 20)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         dict: Paginated list of locations where the method is called
@@ -60,11 +63,11 @@ async def get_xrefs_to_method(class_name: str, method_name: str, offset: int = 0
         count=count,
         additional_params={"class_name": class_name, "method_name": method_name},
         data_extractor=lambda parsed: parsed.get("references", []),
-        fetch_function=get_from_jadx
+        fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id)
     )
 
 
-async def get_xrefs_to_field(class_name: str, field_name: str, offset: int = 0, count: int = 20) -> dict:
+async def get_xrefs_to_field(class_name: str, field_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
     """
     Find all references to a field.
 
@@ -73,6 +76,7 @@ async def get_xrefs_to_field(class_name: str, field_name: str, offset: int = 0, 
         field_name: Field/variable name
         offset: Starting index for pagination (default: 0)
         count: Number of references to return (default: 20)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
         dict: Paginated list of locations where the field is accessed
@@ -86,5 +90,5 @@ async def get_xrefs_to_field(class_name: str, field_name: str, offset: int = 0, 
         count=count,
         additional_params={"class_name": class_name, "field_name": field_name},
         data_extractor=lambda parsed: parsed.get("references", []),
-        fetch_function=get_from_jadx
+        fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id)
     )

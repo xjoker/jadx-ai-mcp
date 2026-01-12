@@ -34,12 +34,14 @@ public class JadxAIMCP implements JadxPlugin {
     private static final Logger logger = LoggerFactory.getLogger(JadxAIMCP.class);
     private static final String PREF_KEY_PORT = "jadx_ai_mcp_port";
     private static final String PREF_KEY_BIND_ADDRESS = "jadx_ai_mcp_bind_address";
+    private static final String PREF_KEY_INSTANCE_NAME = "jadx_ai_mcp_instance_name";
     private static final int DEFAULT_PORT = 8650;
     private static final String DEFAULT_BIND_ADDRESS = "127.0.0.1";
 
     // Config & State
     private int currentPort = DEFAULT_PORT;
     private String currentBindAddress = DEFAULT_BIND_ADDRESS;
+    private String instanceName = null;
     private Preferences prefs;
     private ScheduledExecutorService scheduler;
 
@@ -78,6 +80,7 @@ public class JadxAIMCP implements JadxPlugin {
             prefs = Preferences.userNodeForPackage(JadxAIMCP.class);
             currentPort = prefs.getInt(PREF_KEY_PORT, DEFAULT_PORT);
             currentBindAddress = prefs.get(PREF_KEY_BIND_ADDRESS, DEFAULT_BIND_ADDRESS);
+            instanceName = prefs.get(PREF_KEY_INSTANCE_NAME, null);
 
             // 2. Initialize UI
             this.pluginMenu = new PluginMenu(mainWindow, this);
@@ -158,7 +161,7 @@ public class JadxAIMCP implements JadxPlugin {
     private void startServer() {
         try {
             if (pluginServer != null) pluginServer.stop();
-            pluginServer = new PluginServer(mainWindow, currentPort, currentBindAddress);
+            pluginServer = new PluginServer(mainWindow, currentPort, currentBindAddress, this);
             pluginServer.start();
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin: Failed to start server: " + e.getMessage());
@@ -326,5 +329,147 @@ public class JadxAIMCP implements JadxPlugin {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    // --- Instance Management ---
+
+    /**
+     * @return String The configured instance name, or null if not set
+     *
+     * This method returns the user-defined instance name for multi-instance management.
+     * When null, the MCP server will use APK name + versionCode as the identifier.
+     */
+    public String getInstanceName() {
+        return instanceName;
+    }
+
+    /**
+     * @param name The instance name to set, or null to use automatic naming
+     *
+     * This method updates the instance name configuration and persists it.
+     */
+    public void setInstanceName(String name) {
+        this.instanceName = name;
+        if (name != null && !name.isEmpty()) {
+            prefs.put(PREF_KEY_INSTANCE_NAME, name);
+        } else {
+            prefs.remove(PREF_KEY_INSTANCE_NAME);
+        }
+    }
+
+    /**
+     * Stops the plugin server.
+     */
+    public void stopServer() {
+        if (pluginServer != null) {
+            pluginServer.stop();
+            logger.info("JADX-AI-MCP Plugin: Server stopped by user");
+        }
+    }
+
+    /**
+     * @return String Human-readable APK information, or null if no APK loaded
+     *
+     * This method retrieves basic APK information from JADX for display in the UI.
+     * Parses the AndroidManifest.xml to extract package and version info.
+     */
+    public String getApkInfo() {
+        try {
+            if (mainWindow == null) return null;
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            if (wrapper == null) return null;
+            
+            java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
+            if (resources == null || resources.isEmpty()) return null;
+            
+            jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
+            if (manifestFile == null) return null;
+            
+            jadx.core.xmlgen.ResContainer container = manifestFile.loadContent();
+            String manifestXml = container.getText().getCodeStr();
+            
+            String pkgName = extractManifestAttribute(manifestXml, "package");
+            if (pkgName != null) {
+                StringBuilder sb = new StringBuilder(pkgName);
+                String versionName = extractManifestAttribute(manifestXml, "android:versionName");
+                String versionCodeStr = extractManifestAttribute(manifestXml, "android:versionCode");
+                if (versionName != null || versionCodeStr != null) {
+                    sb.append(" (");
+                    if (versionName != null) {
+                        sb.append("v").append(versionName);
+                    }
+                    if (versionCodeStr != null) {
+                        if (versionName != null) sb.append(", ");
+                        sb.append("code: ").append(versionCodeStr);
+                    }
+                    sb.append(")");
+                }
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to get APK info: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * @return String The automatically generated instance name based on APK info
+     *
+     * This method generates a default instance name using APK package name and version code.
+     * Used when user doesn't specify a custom instance name.
+     */
+    public String getAutoInstanceName() {
+        try {
+            if (mainWindow == null) return null;
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            if (wrapper == null) return null;
+            
+            java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
+            if (resources == null || resources.isEmpty()) return null;
+            
+            jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
+            if (manifestFile == null) return null;
+            
+            jadx.core.xmlgen.ResContainer container = manifestFile.loadContent();
+            String manifestXml = container.getText().getCodeStr();
+            
+            String pkgName = extractManifestAttribute(manifestXml, "package");
+            if (pkgName != null) {
+                // Use last part of package name + version code
+                String[] parts = pkgName.split("\\.");
+                String shortName = parts[parts.length - 1];
+                String versionCodeStr = extractManifestAttribute(manifestXml, "android:versionCode");
+                if (versionCodeStr != null) {
+                    return shortName + "-v" + versionCodeStr;
+                }
+                return shortName;
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to generate auto instance name: " + e.getMessage());
+        }
+        return "jadx-" + currentPort;
+    }
+    
+    /**
+     * Helper method to extract attribute from manifest XML
+     */
+    private String extractManifestAttribute(String manifestXml, String attrName) {
+        try {
+            int start = manifestXml.indexOf(attrName + "=\"");
+            if (start == -1) {
+                start = manifestXml.indexOf(attrName + "='");
+            }
+            if (start != -1) {
+                start += attrName.length() + 2;
+                char quote = manifestXml.charAt(start - 1);
+                int end = manifestXml.indexOf(quote, start);
+                if (end != -1) {
+                    return manifestXml.substring(start, end);
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to extract attribute " + attrName);
+        }
+        return null;
     }
 }
