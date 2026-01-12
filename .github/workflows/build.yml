@@ -166,7 +166,7 @@ jobs:
 
           #### Method 1: One-Line Install (Recommended)
           ```bash
-          jadx plugins --install "github:zinja-coder:jadx-ai-mcp"
+          jadx plugins --install "github:xjoker:jadx-ai-mcp"
           ```
 
           #### Method 2: Manual Install
@@ -223,11 +223,11 @@ jobs:
 
           ### 📖 Documentation
 
-          - 📘 [English README](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README.md)
-          - 📗 [中文文档 (Chinese)](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/README_ZH.md)
-          - 🔐 [Authentication Guide](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/jadx-mcp-server/AUTHENTICATION.md)
+          - 📘 [English README](https://github.com/xjoker/jadx-ai-mcp/blob/main/README.md)
+          - 📗 [中文文档 (Chinese)](https://github.com/xjoker/jadx-ai-mcp/blob/main/README_ZH.md)
+          - 🔐 [Authentication Guide](https://github.com/xjoker/jadx-ai-mcp/blob/main/jadx-mcp-server/AUTHENTICATION.md)
           - 🌐 [Online Documentation](https://jadx-ai-mcp.readthedocs.io/)
-          - 💡 [MCP Server README](https://github.com/zinja-coder/jadx-ai-mcp/blob/main/jadx-mcp-server/README_SERVER.md)
+          - 💡 [MCP Server README](https://github.com/xjoker/jadx-ai-mcp/blob/main/jadx-mcp-server/README_SERVER.md)
 
           ---
 
@@ -244,8 +244,8 @@ jobs:
 
           ### 🐛 Need Help?
 
-          - **Report Issues**: https://github.com/zinja-coder/jadx-ai-mcp/issues
-          - **Discussions**: https://github.com/zinja-coder/jadx-ai-mcp/discussions
+          - **Report Issues**: https://github.com/xjoker/jadx-ai-mcp/issues
+          - **Discussions**: https://github.com/xjoker/jadx-ai-mcp/discussions
           - **Documentation**: https://jadx-ai-mcp.readthedocs.io/
 
           ---
