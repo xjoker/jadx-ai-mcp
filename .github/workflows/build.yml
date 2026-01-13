@@ -65,14 +65,28 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Final version: $VERSION"
 
-      - name: Update pom.xml version
+      - name: Update version in all files
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
-          echo "Updating pom.xml version to: $VERSION"
-          # Use sed to replace version in pom.xml
+          echo "Updating version to: $VERSION in all files"
+          
+          # 1. Update pom.xml
+          echo "Updating pom.xml..."
           sed -i "s|<version>6.0.0</version>|<version>${VERSION}</version>|" pom.xml
-          # Verify the change
           grep "<version>" pom.xml | head -1
+          
+          # 2. Update Java Banner (plugin version constant)
+          echo "Updating JadxAIMCPBanner.java..."
+          sed -i "s|VERSION = \".*\"|VERSION = \"${VERSION}\"|" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
+          grep "VERSION =" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
+          
+          # 3. Update Python banner (server version constant)
+          echo "Updating banner.py..."
+          sed -i "s|SERVER_VERSION = \".*\"|SERVER_VERSION = \"${VERSION}\"|" jadx-mcp-server/src/banner.py
+          grep "SERVER_VERSION" jadx-mcp-server/src/banner.py
+          
+          echo "Version updated to $VERSION in all files"
+
 
       - name: Build with Maven
         run: mvn clean package -DskipTests

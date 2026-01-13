@@ -96,13 +96,6 @@
 
 </div>
 
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img.png">
-</div>
-
-#### 阅读文档
-- 在线文档：https://jadx-ai-mcp.readthedocs.io/en/latest/
-
 ---
 
 ## 🤖 什么是 JADX-AI-MCP？
@@ -209,7 +202,7 @@ https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 - `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — 查找对方法的所有引用
 - `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — 查找对字段的所有引用
 
-### 🆕 多实例管理工具（v7.0.0 新增）
+### 多实例管理工具
 - `list_jadx_instances()` — 列出所有已连接的 JADX 实例
 - `add_jadx_instance(host, port, name?)` — 动态添加新的 JADX 实例
 - `remove_jadx_instance(name)` — 移除 JADX 实例
@@ -286,76 +279,28 @@ https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 
 ---
 
-## 🛠️ 快速开始
-
-### 1. 从 Releases 下载：https://github.com/xjoker/jadx-ai-mcp/releases
-
-> [!NOTE]
->
-> 下载 `jadx-ai-mcp-<version>.jar` 和 `jadx-mcp-server-<version>.zip` 两个文件。
-
+## 2. 手动安装
 
 ```bash
-# 0. 下载 jadx-ai-mcp-<version>.jar 和 jadx-mcp-server-<version>.zip
+# 从 Releases 下载两个文件
 https://github.com/xjoker/jadx-ai-mcp/releases
 
-# 1.
-unzip jadx-ai-mcp-<version>.zip
-
-├jadx-mcp-server/
-  ├── jadx_mcp.py
-  ├── requirements.txt
-  ├── README.md
-  ├── LICENSE
-
-├jadx-ai-mcp-<version>.jar
-
-# 2. 安装插件
-
-# 有两种方法：
-
-## 1. 一行命令 - 在 shell 中执行以下命令
+# 通过命令行安装插件
 jadx plugins --install "github:xjoker:jadx-ai-mcp"
 
-## 上面的一行代码将直接安装最新版本的插件到 jadx，无需下载 jadx-ai-mcp 的 .jar 文件。
-## 2. 或者你可以使用 JADX-GUI 通过以下图片所示的方式安装：
-```
+# 或通过 JADX GUI 安装：
+# 插件 → 安装插件 → 选择下载的 JAR 文件
 
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img_1231.png">
-</div>
-
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img_1123.png">
-</div>
-
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img_2122.png">
-</div>
-
-
-```bash
-## 3. GUI 方法，下载 .jar 文件并按照图片中显示的步骤操作
-```
-![img.png](docs/assets/img123.png)
-![img_1.png](docs/assets/img_12.png)
-![img_2.png](docs/assets/img_2.png)
-![img_3.png](docs/assets/img_3.png)
-```bash
-# 3. 导航到 jadx-mcp-server 目录
+# 导航到 jadx-mcp-server 目录
 cd jadx-mcp-server
 
-# 4. 本项目使用 uv - https://github.com/astral-sh/uv 而不是 pip 进行依赖管理。
-    ## a. 安装 uv（如果你还没有）
+# 安装 uv（如果未安装）
 curl -LsSf https://astral.sh/uv/install.sh | sh
-    ## b. 可选，如果由于某些原因在 jadx-mcp-server 中遇到依赖错误，设置环境
-uv venv
-source .venv/bin/activate  # 或在 Windows 上使用 .venv\Scripts\activate
-    ## c. 可选 安装依赖
-uv pip install httpx fastmcp
 
-# jadx-ai-mcp 和 jadx_mcp_server 的设置完成。
+# 运行 MCP 服务器
+uv run jadx_mcp_server.py
 ```
+
 
 ## 🤖 2. 使用 Claude Desktop
 
@@ -475,7 +420,7 @@ uv run jadx_mcp_server.py --jadx-port 8652
 }
 ```
 
-## 7. 🔐 认证与安全（v6.0.0 新增）
+## 7. 🔐 认证与安全
 
 JADX AI MCP 现在支持**基于 Token 的认证**来保护你的逆向工程工作流！
 
@@ -516,8 +461,8 @@ uv run jadx_mcp_server.py --auth-token "YOUR_TOKEN_HERE"
   }
 }
 ```
+```
 
-📖 **完整认证指南**：[jadx-mcp-server/AUTHENTICATION.md](jadx-mcp-server/AUTHENTICATION.md)
 
 ### 远程访问配置
 
@@ -552,9 +497,9 @@ uv run jadx_mcp_server.py \
 | `--port` | `8651` | MCP 服务器端口（HTTP 模式）|
 | `--auth-token` | None | 认证 Token（所有实例共享） |
 | `--http` | False | 启用 HTTP stream 模式 |
-| `--jadx-instances` | None | **新增** 多个 JADX 实例：`host:port[:name],...` |
+| `--jadx-instances` | None | 多个 JADX 实例：`host:port[:name],...` |
 
-## 8. 🚀 多实例管理（v7.0.0 新增）
+## 8. 🚀 多实例管理
 
 JADX AI MCP 现在支持**同时连接多个 JADX 实例**！这非常适合：
 
@@ -649,45 +594,18 @@ remove_jadx_instance(name="app-v3")
 "分析两个版本之间的网络 API 变化"
 ```
 
-## 试一试
-
-1. 运行 jadx-gui 并加载任何 .apk 文件
-
-![img_1.png](docs/assets/img_1.png)
-
-2. 启动 claude - 你应该看到锤子图标
-
-![img2.png](docs/assets/img2.png)
-
-3. 点击 `hammer` 图标，你应该会看到类似以下内容：
-
-![img3.png](docs/assets/img3.png)
-
-4. 运行以下提示词：
-```text
-获取当前选中的类并对其进行快速 SAST
-```
-![img4.png](docs/assets/img4.png)
-
-5. 在提示时允许访问：
-
-![img_1.png](docs/assets/img5.png)
-
-6. 开始逆向工程！
-
-![img_2.png](docs/assets/img6.png)
-
-此插件允许完全控制 GUI 和内部项目模型，以支持更深层次的 LLM 集成，包括：
-
-- 将选定的类导出到 MCP
-- 运行自动化 Claude 分析
-- 内联接收建议
-
 ---
+
 
 ## 故障排除
 
-[点击这里查看](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/TROUBLESHOOTING.md)
+如果遇到问题：
+1. 确保 JADX GUI 正在运行并已加载 APK
+2. 验证插件已安装并启用
+3. 检查 MCP 服务器正在运行
+4. 如果使用认证，确保 Token 匹配
+5. 对于网络问题，检查防火墙设置
+
 
 ## 贡献者须知
 

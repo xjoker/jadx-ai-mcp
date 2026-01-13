@@ -4,10 +4,7 @@ target/
 !**/src/test/**/target/
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -37,11 +34,57 @@ build/
 ### Mac OS ###
 .DS_Store
 
-### RELEASE ###
-target/
-
-### dependecy ###
+### Java/Maven ###
 lib/
+
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+### Python Virtual Environment ###
+.venv/
+venv/
+ENV/
+env/
+
+### UV ###
+.uv/
+uv.lock
+
+### Testing ###
+.pytest_cache/
+.coverage
+htmlcov/
+
+### Environment variables ###
+.env
+.env.local
+
+### Temporary files ###
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+*.log
 
 ### AI Memory ###
 .AIINFO/
+

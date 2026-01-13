@@ -25,10 +25,10 @@ import com.zin.jadxaimcp.JadxAIMCP;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 
 /**
- * APK 信息 API 路由
+ * APK Info API Routes
  * 
- * 提供 /apk-info 接口，返回当前加载的 APK 元数据。
- * 用于多实例管理时识别各 JADX 实例打开的应用。
+ * Provides /apk-info endpoint that returns current loaded APK metadata.
+ * Used for multi-instance management to identify which app each JADX instance has opened.
  *
  * @author JADX AI MCP Team
  */
@@ -45,24 +45,24 @@ public class ApkInfoRoutes {
     /**
      * GET /apk-info
      * 
-     * 返回当前加载的 APK 信息：
-     * - instance_name: 实例名称（用户配置或自动生成）
-     * - apk_package: 包名
-     * - version_name: 版本名
-     * - version_code: 版本号
+     * Returns current loaded APK information:
+     * - instance_name: Instance name (user configured or auto-generated)
+     * - apk_package: Package name
+     * - version_name: Version name
+     * - version_code: Version code
      */
     public void handleApkInfo(Context ctx) {
         try {
             Map<String, Object> result = new HashMap<>();
             
-            // 实例名称
+            // Instance name
             String instanceName = plugin.getInstanceName();
             if (instanceName == null || instanceName.isEmpty()) {
                 instanceName = plugin.getAutoInstanceName();
             }
             result.put("instance_name", instanceName);
             
-            // 获取 JADX Wrapper
+            // Get JADX Wrapper
             JadxWrapper wrapper = mainWindow.getWrapper();
             if (wrapper == null) {
                 result.put("loaded", false);
@@ -71,7 +71,7 @@ public class ApkInfoRoutes {
                 return;
             }
             
-            // 获取 Manifest
+            // Get Manifest
             List<ResourceFile> resources = wrapper.getResources();
             if (resources == null || resources.isEmpty()) {
                 result.put("loaded", false);
@@ -90,11 +90,11 @@ public class ApkInfoRoutes {
             
             result.put("loaded", true);
             
-            // 加载 manifest 内容
+            // Load manifest content
             ResContainer container = manifestFile.loadContent();
             String manifestXml = container.getText().getCodeStr();
             
-            // 使用 DOM 解析 manifest
+            // Parse manifest using DOM
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             DocumentBuilder builder = factory.newDocumentBuilder();
@@ -124,9 +124,12 @@ public class ApkInfoRoutes {
                 }
             }
             
-            // 服务器信息
+            // Server info
             result.put("server_bind_address", plugin.getCurrentBindAddress());
             result.put("server_port", plugin.getCurrentPort());
+            
+            // Plugin version info
+            result.put("plugin_version", com.zin.jadxaimcp.utils.JadxAIMCPBanner.VERSION);
             
             logger.debug("JADX AI MCP Plugin: APK info requested");
             ctx.json(result);

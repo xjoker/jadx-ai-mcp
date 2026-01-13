@@ -102,16 +102,6 @@ Thanks to these wonderful people for their contributions ⭐
 
 <!-- Standalone Plugin for [JADX](https://github.com/skylot/jadx) (Started as Fork) with Model Context Protocol (MCP) integration for AI-powered static code analysis and real-time code review and reverse engineering tasks using Claude.-->
 
-
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img.png">
-</div>
-
-<!-- ![jadx-ai-banner.png](docs/assets/img.png) Image generated using AI tools. -->
-
-#### Read The Docs
- - Read The Docs is now live: https://jadx-ai-mcp.readthedocs.io/en/latest/
-
 ---
 
 ## 🤖 What is JADX-AI-MCP?
@@ -218,7 +208,7 @@ The following MCP tools are available. **All tools support an optional `instance
 - `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — Find all references to a method
 - `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — Find all references to a field
 
-### 🆕 Multi-Instance Management Tools (New in v7.0.0)
+### Multi-Instance Management Tools
 - `list_jadx_instances()` — List all connected JADX instances
 - `add_jadx_instance(host, port, name?)` — Add a new JADX instance dynamically
 - `remove_jadx_instance(name)` — Remove a JADX instance
@@ -295,76 +285,28 @@ The following MCP tools are available. **All tools support an optional `instance
 
 ---
 
-## 🛠️ Getting Started 
-
-### 1. Download from Releases: https://github.com/xjoker/jadx-ai-mcp/releases
-
-> [!NOTE]
->
-> Download both `jadx-ai-mcp-<version>.jar` and `jadx-mcp-server-<version>.zip` files.
-
+## 2. Manual Installation
 
 ```bash
-# 0. Download the jadx-ai-mcp-<version>.jar and jadx-mcp-server-<version>.zip
+# Download both files from releases
 https://github.com/xjoker/jadx-ai-mcp/releases
 
-# 1. 
-unzip jadx-ai-mcp-<version>.zip
-
-├jadx-mcp-server/
-  ├── jadx_mcp.py
-  ├── requirements.txt
-  ├── README.md
-  ├── LICENSE
-
-├jadx-ai-mcp-<version>.jar
-
-# 2. Install the plugin
-
-# For this you can follow two approaches:
-
-## 1. One liner - execute below command in your shell
+# Install plugin via command line
 jadx plugins --install "github:xjoker:jadx-ai-mcp"
 
-## The above one line code will install the latest version of the plugin directly into the jadx, no need to download the jadx-ai-mcp's .jar file.
-## 2. Or you can use JADX-GUI to install it by following images as shown below:
-```
+# Or install via JADX GUI:
+# Plugins → Install Plugin → Select the downloaded JAR file
 
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img_1231.png">
-</div>
-
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img_1123.png">
-</div>
-
-<div align="center">
-    <img alt="banner" height="480px" widht="620px" src="docs/assets/img_2122.png">
-</div>
-
-
-```bash
-## 3. GUI method, download the .jar file and follow below steps shown in images
-```
-![img.png](docs/assets/img123.png)
-![img_1.png](docs/assets/img_12.png)
-![img_2.png](docs/assets/img_2.png)
-![img_3.png](docs/assets/img_3.png)
-```bash
-# 3. Navigate to jadx-mcp-server directory
+# Navigate to jadx-mcp-server directory
 cd jadx-mcp-server
 
-# 4. This project uses uv - https://github.com/astral-sh/uv instead of pip for dependency management.
-    ## a. Install uv (if you dont have it yet)
+# Install uv (if not installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-    ## b. OPTIONAL, if for any reasons, you get dependecy errors in jadx-mcp-server, Set up the environment
-uv venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-    ## c. OPTIONAL Install dependencies
-uv pip install httpx fastmcp
 
-# The setup for jadx-ai-mcp and jadx_mcp_server is done.
+# Run the MCP server
+uv run jadx_mcp_server.py
 ```
+
 
 ## 🤖 2. Use Claude Desktop
 
@@ -486,7 +428,7 @@ The MCP Configuration for above will be as follows for claude:
 }
 ```
 
-## 7. 🔐 Authentication & Security (NEW in v6.0.0)
+## 7. 🔐 Authentication & Security
 
 JADX AI MCP now supports **Token-based authentication** to secure your reverse engineering workflow!
 
@@ -527,8 +469,8 @@ uv run jadx_mcp_server.py --auth-token "YOUR_TOKEN_HERE"
   }
 }
 ```
+```
 
-📖 **Full Authentication Guide**: [jadx-mcp-server/AUTHENTICATION.md](jadx-mcp-server/AUTHENTICATION.md)
 
 ### Remote Access Configuration
 
@@ -563,9 +505,9 @@ uv run jadx_mcp_server.py \
 | `--port` | `8651` | MCP server port (HTTP mode) |
 | `--auth-token` | None | Authentication token (shared across all instances) |
 | `--http` | False | Enable HTTP stream mode |
-| `--jadx-instances` | None | **NEW** Multiple JADX instances: `host:port[:name],...` |
+| `--jadx-instances` | None | Multiple JADX instances: `host:port[:name],...` |
 
-## 8. 🚀 Multi-Instance Management (NEW in v7.0.0)
+## 8. 🚀 Multi-Instance Management
 
 JADX AI MCP now supports **connecting to multiple JADX instances simultaneously**! This is perfect for:
 
@@ -660,45 +602,18 @@ remove_jadx_instance(name="app-v3")
 "Analyze the network API changes between versions"
 ```
 
-## Give it a shot
-
-1. Run jadx-gui and load any .apk file
-
-![img_1.png](docs/assets/img_1.png)
-
-2. Start claude - You must see hammer symbol
-
-![img2.png](docs/assets/img2.png)
-
-3. Click on the `hammer` symbol and you should you see somthing like following:
-
-![img3.png](docs/assets/img3.png)
-
-4. Run following prompt:
-```text
-fetch currently selected class and perform quick sast on it
-```
-![img4.png](docs/assets/img4.png)
-
-5. Allow access when prompted:
-
-![img_1.png](docs/assets/img5.png)
-
-6. HACK!
-
-![img_2.png](docs/assets/img6.png)
-
-This plugin allows total control over the GUI and internal project model to support deeper LLM integration, including:
-
-- Exporting selected class to MCP
-- Running automated Claude analysis
-- Receiving back suggestions inline
-
 ---
+
 
 ## Troubleshooting
 
-[Check here](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/TROUBLESHOOTING.md)
+If you encounter issues:
+1. Ensure JADX GUI is running with an APK loaded
+2. Verify the plugin is installed and enabled
+3. Check that the MCP server is running
+4. If using authentication, ensure tokens match
+5. For network issues, verify firewall settings
+
 
 ## NOTE For Contributors
 

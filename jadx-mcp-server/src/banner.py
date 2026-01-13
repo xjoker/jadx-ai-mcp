@@ -1,6 +1,10 @@
 
 ### print banner
 
+# MCP Server version - updated automatically during build
+# DO NOT CHANGE THIS LINE FORMAT - it is replaced by CI/CD pipeline
+SERVER_VERSION = "DEV"
+
 def jadx_mcp_server_banner() -> str:
     """
     Generate ASCII art banner for server startup.
@@ -11,7 +15,7 @@ def jadx_mcp_server_banner() -> str:
     Note:
         Displayed on server startup if terminal supports Unicode characters
     """
-    return """
+    return f"""
                 ░█████    ░███    ░███████   ░██    ░██       ░███    ░██████   ░███     ░███   ░██████  ░█████████  
                   ░██    ░██░██   ░██   ░██   ░██  ░██       ░██░██     ░██     ░████   ░████  ░██   ░██ ░██     ░██ 
                   ░██   ░██  ░██  ░██    ░██   ░██░██       ░██  ░██    ░██     ░██░██ ░██░██ ░██        ░██     ░██ 
@@ -22,8 +26,10 @@ def jadx_mcp_server_banner() -> str:
             
             
             
-            Author         -> Jafar Pathan (zinja-coder@github)
-            For Issues     -> https://github.com/zinja-coder/jadx-mcp-server
-            Server Version -> v6.0.0
+            Original Author -\u003e Jafar Pathan (zinja-coder@github)
+            Fork Maintainer -\u003e xjoker (https://github.com/xjoker)
+            Project URL     -\u003e https://github.com/xjoker/jadx-ai-mcp
+            Server Version  -\u003e v{SERVER_VERSION}
             
           """
+

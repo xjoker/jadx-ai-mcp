@@ -1,6 +1,26 @@
 package com.zin.jadxaimcp.utils;
 
+/**
+ * JADX AI MCP Plugin Banner and Version Information
+ */
 public class JadxAIMCPBanner {
+    
+    /**
+     * Plugin version - updated automatically during build
+     * DO NOT CHANGE THIS LINE FORMAT - it is replaced by CI/CD pipeline
+     */
+    public static final String VERSION = "DEV";
+    
+    /**
+     * Original author
+     */
+    public static final String ORIGINAL_AUTHOR = "Jafar Pathan (zinja-coder@github)";
+    
+    /**
+     * Project URL
+     */
+    public static final String PROJECT_URL = "https://github.com/xjoker/jadx-ai-mcp";
+    
     public static final String banner = 
             "\n" +
             "    ░█████    ░███    ░███████   ░██    ░██       ░███    ░██████   ░███     ░███   ░██████  ░█████████  \n" +
@@ -11,7 +31,8 @@ public class JadxAIMCPBanner {
             "░██   ░██  ░██    ░██ ░██   ░██   ░██  ░██     ░██    ░██   ░██     ░██       ░██  ░██   ░██ ░██          \n" +
             " ░██████   ░██    ░██ ░███████   ░██    ░██    ░██    ░██ ░██████   ░██       ░██   ░██████  ░██         \n" + 
             "\n\n"+
-            "\nAuthor         -> Jafar Pathan (zinja-coder@github)"+
-            "\nFor Issues     -> https://github.com/zinja-coder/jadx-ai-mcp"+
-            "\nPlugin Version -> v6.0.0";
+            "\nOriginal Author -> " + ORIGINAL_AUTHOR +
+            "\nProject URL     -> " + PROJECT_URL +
+            "\nPlugin Version  -> v" + VERSION;
 }
+

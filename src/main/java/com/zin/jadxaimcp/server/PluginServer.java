@@ -128,12 +128,31 @@ public class PluginServer {
 
             if (authConfig.isAuthEnabled()) {
                 logger.info("Authentication: ENABLED");
-                logger.info("Auth Token: " + authConfig.getAuthToken());
+                logger.info("Auth Token: " + maskToken(authConfig.getAuthToken()));
                 logger.info("Config File: " + authConfig.getConfigFilePath());
             } else {
                 logger.info("Authentication: DISABLED (for security, enable in settings)");
-                logger.info("Auth Token (for future use): " + authConfig.getAuthToken());
+                logger.info("Auth Token (masked): " + maskToken(authConfig.getAuthToken()));
                 logger.info("Config File: " + authConfig.getConfigFilePath());
+                
+                // Security warning when binding to all interfaces without auth
+                if ("0.0.0.0".equals(bindAddress)) {
+                    logger.warn("SECURITY WARNING: Server is bound to 0.0.0.0 without authentication!");
+                    // Show GUI warning dialog on EDT
+                    javax.swing.SwingUtilities.invokeLater(() -> {
+                        javax.swing.JOptionPane.showMessageDialog(
+                            mainWindow,
+                            "<html><b>⚠️ Security Warning</b><br><br>" +
+                            "Server is bound to <b>0.0.0.0</b> (all network interfaces),<br>" +
+                            "but <font color='red'>authentication is disabled</font>!<br><br>" +
+                            "This exposes your decompiled code to anyone on the network.<br><br>" +
+                            "Please enable authentication immediately:<br>" +
+                            "<i>Plugins → JADX AI MCP Server → Settings → Enable Auth</i></html>",
+                            "JADX AI MCP Security Warning",
+                            javax.swing.JOptionPane.WARNING_MESSAGE
+                        );
+                    });
+                }
             }
 
         } catch (Exception e) {
@@ -206,6 +225,19 @@ public class PluginServer {
      */
     public String getBindAddress() {
         return bindAddress;
+    }
+
+    /**
+     * Masks a token for safe logging, showing only first 8 characters.
+     *
+     * @param token The full token
+     * @return Masked token string (e.g., "abcd1234********")
+     */
+    private String maskToken(String token) {
+        if (token == null || token.length() <= 8) {
+            return "********";
+        }
+        return token.substring(0, 8) + "********";
     }
 
     /**

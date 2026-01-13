@@ -20,6 +20,7 @@ JADX_HOST = "127.0.0.1"
 JADX_PORT = 8650
 JADX_HTTP_BASE = f"http://{JADX_HOST}:{JADX_PORT}"
 AUTH_TOKEN: Optional[str] = None
+REQUEST_TIMEOUT: int = 120  # Default timeout in seconds (configurable)
 
 # Logging Setup
 logger = logging.getLogger("jadx-mcp-server")
@@ -27,6 +28,32 @@ logger.setLevel(logging.ERROR)
 handler = logging.StreamHandler(sys.stderr)
 handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(handler)
+
+
+# HTTP Connection Pool Manager
+class HttpClientManager:
+    """
+    Manages a shared HTTP client with connection pooling for better performance.
+    Reuses connections across multiple requests instead of creating new ones.
+    """
+    _client: Optional[httpx.AsyncClient] = None
+    
+    @classmethod
+    def get_client(cls) -> httpx.AsyncClient:
+        """Get or create the shared async HTTP client."""
+        if cls._client is None or cls._client.is_closed:
+            cls._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(REQUEST_TIMEOUT),
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+            )
+        return cls._client
+    
+    @classmethod
+    async def close(cls):
+        """Close the shared HTTP client."""
+        if cls._client is not None and not cls._client.is_closed:
+            await cls._client.aclose()
+            cls._client = None
 
 
 def set_jadx_config(host: str = "127.0.0.1", port: int = 8650):
@@ -77,6 +104,23 @@ def set_auth_token(token: Optional[str]):
         logger.info("Authentication disabled (no token provided)")
 
 
+def set_request_timeout(timeout: int):
+    """
+    Sets the request timeout for JADX plugin requests.
+
+    Args:
+        timeout: Timeout in seconds for HTTP requests
+
+    Side Effects:
+        Updates global REQUEST_TIMEOUT and recreates HTTP client
+    """
+    global REQUEST_TIMEOUT
+    REQUEST_TIMEOUT = timeout
+    # Force client recreation with new timeout
+    HttpClientManager._client = None
+    logger.info(f"Request timeout set to {timeout} seconds")
+
+
 def _get_auth_headers() -> Dict[str, str]:
     """
     Generates authentication headers if token is configured.
@@ -89,24 +133,23 @@ def _get_auth_headers() -> Dict[str, str]:
     return {}
 
 
-def health_ping() -> Union[str, Dict[str, Any]]:
+async def health_ping() -> Union[str, Dict[str, Any]]:
     """
-    Checks if the JADX Java plugin is reachable.
+    Checks if the JADX Java plugin is reachable (async version).
 
     Returns:
         Union[str, Dict[str, Any]]: Success message or error dictionary
 
     Note:
-        Performs synchronous HTTP health check with 60-second timeout.
+        Performs async HTTP health check with configurable timeout.
         Health check does not require authentication.
     """
     print(f"Attempting to connect to {JADX_HTTP_BASE}/health")
     try:
-        with httpx.Client() as client:
-            # Health check endpoint does not require auth
-            resp = client.get(f"{JADX_HTTP_BASE}/health", timeout=60)
-            resp.raise_for_status()
-            return resp.text
+        client = HttpClientManager.get_client()
+        resp = await client.get(f"{JADX_HTTP_BASE}/health")
+        resp.raise_for_status()
+        return resp.text
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return {"error": str(e)}
@@ -135,6 +178,7 @@ async def get_from_jadx(
         Automatically handles JSON parsing with fallback to text response.
         Includes authentication headers if AUTH_TOKEN is configured.
         Supports multi-instance routing when InstanceRegistry is available.
+        Uses connection pooling for better performance.
     """
     # Determine the base URL based on instance_id
     base_url = JADX_HTTP_BASE
@@ -170,15 +214,15 @@ async def get_from_jadx(
         headers["Authorization"] = f"Bearer {auth_token}"
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, params=params, headers=headers, timeout=60)
-            resp.raise_for_status()
+        client = HttpClientManager.get_client()
+        resp = await client.get(url, params=params, headers=headers)
+        resp.raise_for_status()
 
-            # Try to parse JSON, fallback to text if not valid JSON
-            try:
-                return resp.json()
-            except json.JSONDecodeError:
-                return {"response": resp.text}
+        # Try to parse JSON, fallback to text if not valid JSON
+        try:
+            return resp.json()
+        except json.JSONDecodeError:
+            return {"response": resp.text}
 
     except httpx.HTTPStatusError as e:
         error_msg = f"HTTP error {e.response.status_code}: {e.response.text}"

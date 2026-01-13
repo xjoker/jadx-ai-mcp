@@ -8,10 +8,10 @@ import org.slf4j.LoggerFactory;
 import javax.swing.*;
 
 /**
- * 插件菜单
+ * Plugin Menu
  * 
- * 简化后的菜单，只有单个 "设置" 入口，
- * 所有配置整合到 SettingsDialog 中。
+ * Simplified menu with single "Settings" entry,
+ * all configurations are integrated into SettingsDialog.
  *
  * @author JADX AI MCP Team
  */
@@ -26,7 +26,7 @@ public class PluginMenu {
     }
 
     /**
-     * 添加插件菜单项到 JADX 菜单栏
+     * Add plugin menu items to JADX menu bar
      */
     public void addMenuItems() {
         SwingUtilities.invokeLater(() -> {
@@ -40,16 +40,16 @@ public class PluginMenu {
                 JMenu pluginsMenu = findOrCreatePluginsMenu(menuBar);
                 JMenu mcpMenu = new JMenu("JADX AI MCP Server");
 
-                // 单一设置入口
-                JMenuItem settingsItem = new JMenuItem("设置...");
+                // Settings entry
+                JMenuItem settingsItem = new JMenuItem("Settings...");
                 settingsItem.addActionListener(e -> {
                     SettingsDialog dialog = new SettingsDialog(mainWindow, plugin);
                     dialog.setVisible(true);
                 });
                 mcpMenu.add(settingsItem);
 
-                // 快速状态显示
-                JMenuItem statusItem = new JMenuItem("服务器状态");
+                // Quick status display
+                JMenuItem statusItem = new JMenuItem("Server Status");
                 statusItem.addActionListener(e -> showQuickStatus());
                 mcpMenu.add(statusItem);
 
@@ -63,7 +63,7 @@ public class PluginMenu {
     }
     
     /**
-     * 查找或创建 Plugins 菜单
+     * Find or create Plugins menu
      */
     private JMenu findOrCreatePluginsMenu(JMenuBar menuBar) {
         // Look for existing "Plugins" menu
@@ -87,11 +87,11 @@ public class PluginMenu {
     }
 
     /**
-     * 显示快速状态信息
+     * Show quick status information
      */
     private void showQuickStatus() {
         boolean running = plugin.isServerRunning();
-        String status = running ? "● 运行中" : "○ 已停止";
+        String status = running ? "● Running" : "○ Stopped";
         String bindAddr = plugin.getCurrentBindAddress();
         String url = running ? "http://" + bindAddr + ":" + plugin.getCurrentPort() + "/" : "N/A";
 
@@ -103,13 +103,13 @@ public class PluginMenu {
         String apkInfo = plugin.getApkInfo();
 
         StringBuilder msg = new StringBuilder();
-        msg.append("状态: ").append(status).append("\n");
-        msg.append("地址: ").append(bindAddr).append(":").append(plugin.getCurrentPort()).append("\n");
+        msg.append("Status: ").append(status).append("\n");
+        msg.append("Address: ").append(bindAddr).append(":").append(plugin.getCurrentPort()).append("\n");
         msg.append("URL: ").append(url).append("\n");
-        msg.append("实例名称: ").append(instanceName != null ? instanceName : "未设置").append("\n");
-        msg.append("APK: ").append(apkInfo != null ? apkInfo : "未加载");
+        msg.append("Instance: ").append(instanceName != null ? instanceName : "Not set").append("\n");
+        msg.append("APK: ").append(apkInfo != null ? apkInfo : "Not loaded");
 
         JOptionPane.showMessageDialog(mainWindow, msg.toString(),
-            "MCP Server 状态", JOptionPane.INFORMATION_MESSAGE);
+            "MCP Server Status", JOptionPane.INFORMATION_MESSAGE);
     }
 }

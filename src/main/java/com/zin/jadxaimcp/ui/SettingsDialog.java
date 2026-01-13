@@ -14,12 +14,12 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 /**
- * 统一设置对话框
+ * Unified Settings Dialog
  * 
- * 整合所有插件配置到单个界面：
- * - 服务器配置（地址、端口、状态）
- * - 实例信息（名称、APK信息）
- * - 认证配置（Token、启用开关）
+ * Integrates all plugin configurations into a single interface:
+ * - Server configuration (address, port, status)
+ * - Instance information (name, APK info)
+ * - Authentication configuration (Token, enable switch)
  *
  * @author JADX AI MCP Team
  */
@@ -29,25 +29,25 @@ public class SettingsDialog extends JDialog {
     private final MainWindow mainWindow;
     private final JadxAIMCP plugin;
     
-    // 服务器配置组件
+    // Server configuration components
     private JLabel statusLabel;
     private JComboBox<String> bindAddressCombo;
     private JTextField portField;
     private JButton restartButton;
     private JButton stopButton;
     
-    // 实例信息组件
+    // Instance information components
     private JTextField instanceNameField;
     private JLabel apkInfoLabel;
     
-    // 认证配置组件
+    // Authentication configuration components
     private JCheckBox authEnabledCheckbox;
     private JTextField tokenField;
     private JButton copyTokenButton;
     private JButton regenerateButton;
     
     public SettingsDialog(MainWindow mainWindow, JadxAIMCP plugin) {
-        super(mainWindow, "JADX AI MCP Plugin 设置", true);
+        super(mainWindow, "JADX AI MCP Plugin Settings", true);
         this.mainWindow = mainWindow;
         this.plugin = plugin;
         
@@ -63,24 +63,24 @@ public class SettingsDialog extends JDialog {
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
         
-        // 服务器配置面板
+        // Server configuration panel
         mainPanel.add(createServerConfigPanel());
         mainPanel.add(Box.createVerticalStrut(10));
         
-        // 实例信息面板
+        // Instance information panel
         mainPanel.add(createInstanceInfoPanel());
         mainPanel.add(Box.createVerticalStrut(10));
         
-        // 认证配置面板
+        // Authentication configuration panel
         mainPanel.add(createAuthConfigPanel());
         mainPanel.add(Box.createVerticalStrut(15));
         
-        // 底部按钮
+        // Bottom buttons
         mainPanel.add(createBottomButtonPanel());
         
         setContentPane(mainPanel);
         
-        // 窗口关闭事件
+        // Window close event
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -90,13 +90,13 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 创建服务器配置面板
+     * Create server configuration panel
      */
     private JPanel createServerConfigPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createEtchedBorder(), 
-            "服务器配置",
+            "Server Configuration",
             TitledBorder.LEFT, 
             TitledBorder.TOP
         ));
@@ -105,9 +105,9 @@ public class SettingsDialog extends JDialog {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.anchor = GridBagConstraints.WEST;
         
-        // 状态显示
+        // Status display
         gbc.gridx = 0; gbc.gridy = 0;
-        panel.add(new JLabel("状态:"), gbc);
+        panel.add(new JLabel("Status:"), gbc);
         
         gbc.gridx = 1; gbc.gridy = 0; gbc.gridwidth = 2;
         statusLabel = new JLabel();
@@ -116,37 +116,37 @@ public class SettingsDialog extends JDialog {
         
         gbc.gridwidth = 1;
         gbc.gridx = 3; gbc.gridy = 0;
-        restartButton = new JButton("重启");
+        restartButton = new JButton("Restart");
         restartButton.addActionListener(e -> restartServer());
         panel.add(restartButton, gbc);
         
         gbc.gridx = 4; gbc.gridy = 0;
-        stopButton = new JButton("停止");
+        stopButton = new JButton("Stop");
         stopButton.addActionListener(e -> stopServer());
         panel.add(stopButton, gbc);
         
-        // 绑定地址
+        // Bind address
         gbc.gridx = 0; gbc.gridy = 1;
-        panel.add(new JLabel("绑定地址:"), gbc);
+        panel.add(new JLabel("Bind Address:"), gbc);
         
         gbc.gridx = 1; gbc.gridy = 1; gbc.gridwidth = 2;
-        String[] addresses = {"127.0.0.1 (仅本地)", "0.0.0.0 (允许远程)"};
+        String[] addresses = {"127.0.0.1 (Local Only)", "0.0.0.0 (Allow Remote)"};
         bindAddressCombo = new JComboBox<>(addresses);
         bindAddressCombo.setEditable(true);
         panel.add(bindAddressCombo, gbc);
         
-        // 端口
+        // Port
         gbc.gridwidth = 1;
         gbc.gridx = 3; gbc.gridy = 1;
-        panel.add(new JLabel("端口:"), gbc);
+        panel.add(new JLabel("Port:"), gbc);
         
         gbc.gridx = 4; gbc.gridy = 1;
         portField = new JTextField(6);
         panel.add(portField, gbc);
         
-        // 警告标签
+        // Warning label
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 5;
-        JLabel warningLabel = new JLabel("<html><font color='#CC6600'>⚠ 绑定到 0.0.0.0 会将服务暴露到网络</font></html>");
+        JLabel warningLabel = new JLabel("<html><font color='#CC6600'>⚠ Binding to 0.0.0.0 exposes service to network</font></html>");
         warningLabel.setFont(warningLabel.getFont().deriveFont(Font.PLAIN, 11f));
         panel.add(warningLabel, gbc);
         
@@ -154,13 +154,13 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 创建实例信息面板
+     * Create instance information panel
      */
     private JPanel createInstanceInfoPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createEtchedBorder(),
-            "实例信息",
+            "Instance Information",
             TitledBorder.LEFT,
             TitledBorder.TOP
         ));
@@ -169,21 +169,21 @@ public class SettingsDialog extends JDialog {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.anchor = GridBagConstraints.WEST;
         
-        // 实例名称
+        // Instance name
         gbc.gridx = 0; gbc.gridy = 0;
-        panel.add(new JLabel("实例名称:"), gbc);
+        panel.add(new JLabel("Instance Name:"), gbc);
         
         gbc.gridx = 1; gbc.gridy = 0; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         instanceNameField = new JTextField(25);
-        instanceNameField.setToolTipText("自定义实例名称，用于多实例管理时区分。留空则自动使用 APK 名称+版本");
+        instanceNameField.setToolTipText("Custom instance name for multi-instance management. Leave empty to auto-use APK name+version");
         panel.add(instanceNameField, gbc);
         
-        // APK 信息（只读）
+        // APK info (read-only)
         gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
-        panel.add(new JLabel("APK 信息:"), gbc);
+        panel.add(new JLabel("APK Info:"), gbc);
         
         gbc.gridx = 1; gbc.gridy = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
-        apkInfoLabel = new JLabel("未加载");
+        apkInfoLabel = new JLabel("Not loaded");
         apkInfoLabel.setForeground(Color.GRAY);
         panel.add(apkInfoLabel, gbc);
         
@@ -191,13 +191,13 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 创建认证配置面板
+     * Create authentication configuration panel
      */
     private JPanel createAuthConfigPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createEtchedBorder(),
-            "认证配置",
+            "Authentication",
             TitledBorder.LEFT,
             TitledBorder.TOP
         ));
@@ -206,9 +206,9 @@ public class SettingsDialog extends JDialog {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.anchor = GridBagConstraints.WEST;
         
-        // 启用认证
+        // Enable authentication
         gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 4;
-        authEnabledCheckbox = new JCheckBox("启用认证");
+        authEnabledCheckbox = new JCheckBox("Enable Authentication");
         authEnabledCheckbox.addActionListener(e -> updateAuthUI());
         panel.add(authEnabledCheckbox, gbc);
         
@@ -220,23 +220,23 @@ public class SettingsDialog extends JDialog {
         gbc.gridx = 1; gbc.gridy = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
         tokenField = new JTextField(30);
         tokenField.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        tokenField.setToolTipText("可手工编辑 Token");
+        tokenField.setToolTipText("You can manually edit the token");
         panel.add(tokenField, gbc);
         
         gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
         gbc.gridx = 2; gbc.gridy = 1;
-        copyTokenButton = new JButton("复制");
+        copyTokenButton = new JButton("Copy");
         copyTokenButton.addActionListener(e -> copyToken());
         panel.add(copyTokenButton, gbc);
         
         gbc.gridx = 3; gbc.gridy = 1;
-        regenerateButton = new JButton("重新生成");
+        regenerateButton = new JButton("Regenerate");
         regenerateButton.addActionListener(e -> regenerateToken());
         panel.add(regenerateButton, gbc);
         
-        // 提示信息
+        // Note
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 4;
-        JLabel noteLabel = new JLabel("<html><font color='gray'>提示: MCP Server 需使用 --auth-token 参数配置相同的 Token</font></html>");
+        JLabel noteLabel = new JLabel("<html><font color='gray'>Note: MCP Server requires --auth-token parameter with the same token</font></html>");
         noteLabel.setFont(noteLabel.getFont().deriveFont(Font.PLAIN, 11f));
         panel.add(noteLabel, gbc);
         
@@ -244,15 +244,15 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 创建底部按钮面板
+     * Create bottom button panel
      */
     private JPanel createBottomButtonPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         
-        JButton saveButton = new JButton("保存并应用");
+        JButton saveButton = new JButton("Save & Apply");
         saveButton.addActionListener(e -> saveAndApply());
         
-        JButton cancelButton = new JButton("取消");
+        JButton cancelButton = new JButton("Cancel");
         cancelButton.addActionListener(e -> dispose());
         
         panel.add(saveButton);
@@ -262,13 +262,13 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 加载当前设置到 UI
+     * Load current settings to UI
      */
     private void loadCurrentSettings() {
-        // 服务器状态
+        // Server status
         updateServerStatus();
         
-        // 绑定地址
+        // Bind address
         String currentAddr = plugin.getCurrentBindAddress();
         if ("127.0.0.1".equals(currentAddr)) {
             bindAddressCombo.setSelectedIndex(0);
@@ -278,17 +278,17 @@ public class SettingsDialog extends JDialog {
             bindAddressCombo.setSelectedItem(currentAddr);
         }
         
-        // 端口
+        // Port
         portField.setText(String.valueOf(plugin.getCurrentPort()));
         
-        // 实例名称
+        // Instance name
         String instanceName = plugin.getInstanceName();
         instanceNameField.setText(instanceName != null ? instanceName : "");
         
-        // APK 信息
+        // APK info
         updateApkInfo();
         
-        // 认证配置
+        // Authentication configuration
         AuthConfig authConfig = plugin.getAuthConfig();
         if (authConfig != null) {
             authEnabledCheckbox.setSelected(authConfig.isAuthEnabled());
@@ -299,23 +299,23 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 更新服务器状态显示
+     * Update server status display
      */
     private void updateServerStatus() {
         boolean running = plugin.isServerRunning();
         if (running) {
-            statusLabel.setText("● 运行中");
+            statusLabel.setText("● Running");
             statusLabel.setForeground(new Color(0, 128, 0));
             stopButton.setEnabled(true);
         } else {
-            statusLabel.setText("○ 已停止");
+            statusLabel.setText("○ Stopped");
             statusLabel.setForeground(Color.GRAY);
             stopButton.setEnabled(false);
         }
     }
     
     /**
-     * 更新 APK 信息显示
+     * Update APK info display
      */
     private void updateApkInfo() {
         String apkInfo = plugin.getApkInfo();
@@ -323,13 +323,13 @@ public class SettingsDialog extends JDialog {
             apkInfoLabel.setText(apkInfo);
             apkInfoLabel.setForeground(Color.BLACK);
         } else {
-            apkInfoLabel.setText("未加载 APK");
+            apkInfoLabel.setText("No APK loaded");
             apkInfoLabel.setForeground(Color.GRAY);
         }
     }
     
     /**
-     * 更新认证 UI 状态
+     * Update authentication UI state
      */
     private void updateAuthUI() {
         boolean enabled = authEnabledCheckbox.isSelected();
@@ -339,11 +339,11 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 重启服务器
+     * Restart server
      */
     private void restartServer() {
         plugin.restartServer();
-        // 延迟更新状态
+        // Delayed status update
         SwingUtilities.invokeLater(() -> {
             try {
                 Thread.sleep(1500);
@@ -353,7 +353,7 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 停止服务器
+     * Stop server
      */
     private void stopServer() {
         plugin.stopServer();
@@ -361,25 +361,25 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * 复制 Token 到剪贴板
+     * Copy token to clipboard
      */
     private void copyToken() {
         String token = tokenField.getText();
         if (token != null && !token.isEmpty()) {
             Toolkit.getDefaultToolkit().getSystemClipboard()
                 .setContents(new StringSelection(token), null);
-            JOptionPane.showMessageDialog(this, "Token 已复制到剪贴板",
-                "成功", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Token copied to clipboard",
+                "Success", JOptionPane.INFORMATION_MESSAGE);
         }
     }
     
     /**
-     * 重新生成 Token
+     * Regenerate token
      */
     private void regenerateToken() {
         int confirm = JOptionPane.showConfirmDialog(this,
-            "确定要重新生成 Token 吗？\n当前 Token 将失效，需要更新 MCP 客户端配置。",
-            "确认", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            "Are you sure you want to regenerate the token?\nCurrent token will be invalidated, MCP client config needs update.",
+            "Confirm", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         
         if (confirm == JOptionPane.YES_OPTION) {
             AuthConfig authConfig = plugin.getAuthConfig();
@@ -387,34 +387,34 @@ public class SettingsDialog extends JDialog {
                 authConfig.regenerateToken();
                 tokenField.setText(authConfig.getAuthToken());
                 JOptionPane.showMessageDialog(this,
-                    "Token 已重新生成，请更新 MCP 客户端配置。",
-                    "成功", JOptionPane.INFORMATION_MESSAGE);
+                    "Token regenerated. Please update MCP client configuration.",
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
             }
         }
     }
     
     /**
-     * 保存并应用设置
+     * Save and apply settings
      */
     private void saveAndApply() {
-        // 验证端口
+        // Validate port
         int newPort;
         try {
             newPort = Integer.parseInt(portField.getText().trim());
             if (newPort < 1024 || newPort > 65535) {
                 JOptionPane.showMessageDialog(this,
-                    "端口必须在 1024-65535 范围内",
-                    "错误", JOptionPane.ERROR_MESSAGE);
+                    "Port must be between 1024-65535",
+                    "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this,
-                "端口格式无效",
-                "错误", JOptionPane.ERROR_MESSAGE);
+                "Invalid port format",
+                "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
         
-        // 获取绑定地址
+        // Get bind address
         String selectedAddr = (String) bindAddressCombo.getSelectedItem();
         String newBindAddress;
         if (selectedAddr.startsWith("127.0.0.1")) {
@@ -425,33 +425,33 @@ public class SettingsDialog extends JDialog {
             newBindAddress = selectedAddr.trim();
         }
         
-        // 保存实例名称
+        // Save instance name
         String instanceName = instanceNameField.getText().trim();
         plugin.setInstanceName(instanceName.isEmpty() ? null : instanceName);
         
-        // 保存认证配置
+        // Save authentication configuration
         AuthConfig authConfig = plugin.getAuthConfig();
         if (authConfig != null) {
             authConfig.setAuthEnabled(authEnabledCheckbox.isSelected());
-            // 手工修改 Token
+            // Manual token modification
             String newToken = tokenField.getText().trim();
             if (!newToken.isEmpty() && !newToken.equals(authConfig.getAuthToken())) {
                 authConfig.setAuthToken(newToken);
             }
         }
         
-        // 判断是否需要重启服务器
+        // Check if server restart is needed
         boolean needRestart = newPort != plugin.getCurrentPort() ||
                              !newBindAddress.equals(plugin.getCurrentBindAddress());
         
-        // 应用服务器配置
+        // Apply server configuration
         plugin.updatePort(newPort);
         plugin.updateBindAddress(newBindAddress);
         
         if (needRestart && plugin.isServerRunning()) {
             int restart = JOptionPane.showConfirmDialog(this,
-                "服务器配置已更改，需要重启服务器才能生效。\n是否立即重启？",
-                "重启服务器", JOptionPane.YES_NO_OPTION);
+                "Server configuration changed. Restart required for changes to take effect.\nRestart now?",
+                "Restart Server", JOptionPane.YES_NO_OPTION);
             if (restart == JOptionPane.YES_OPTION) {
                 plugin.restartServer();
             }

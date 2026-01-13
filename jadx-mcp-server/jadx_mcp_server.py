@@ -42,6 +42,7 @@ from src.server.tools.xrefs_tools import (
 )
 from src.server.tools.instance_tools import register_instance_tools
 from src.server.instance_registry import InstanceRegistry
+from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
 
 
 # CORRECT REGISTRATION PATTERN for FastMCP
@@ -50,6 +51,7 @@ from typing import Optional
 
 
 @mcp.tool()
+@with_busy_check
 async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
     """Fetch the currently selected class and its code from the JADX-GUI plugin.
     
@@ -60,6 +62,7 @@ async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+@with_busy_check
 async def get_selected_text(instance_id: Optional[str] = None) -> dict:
     """Returns the currently selected text in the decompiled code view.
     
@@ -70,6 +73,7 @@ async def get_selected_text(instance_id: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+@with_busy_check
 async def get_method_by_name(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
     """Fetch the source code of a method from a specific class.
 
@@ -82,6 +86,7 @@ async def get_method_by_name(class_name: str, method_name: str, instance_id: Opt
 
 
 @mcp.tool()
+@with_busy_check
 async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
     """Returns a list of all classes in the project with pagination support.
     
@@ -92,6 +97,7 @@ async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional
 
 
 @mcp.tool()
+@with_busy_check
 async def get_class_source(class_name: str, instance_id: Optional[str] = None) -> dict:
     """Fetch the Java source of a specific class.
 
@@ -103,6 +109,7 @@ async def get_class_source(class_name: str, instance_id: Optional[str] = None) -
 
 
 @mcp.tool()
+@with_busy_check
 async def search_method_by_name(method_name: str, instance_id: Optional[str] = None) -> dict:
     """Search for a method name across all classes in the APK.
 
@@ -114,6 +121,7 @@ async def search_method_by_name(method_name: str, instance_id: Optional[str] = N
 
 
 @mcp.tool()
+@with_busy_check
 async def get_methods_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
     """List all method names in a class (useful for seeing overloaded methods).
 
@@ -125,6 +133,7 @@ async def get_methods_of_class(class_name: str, instance_id: Optional[str] = Non
 
 
 @mcp.tool()
+@with_busy_check
 async def search_classes_by_keyword(
     search_term: str,
     package: str = "",
@@ -149,6 +158,7 @@ async def search_classes_by_keyword(
 
 
 @mcp.tool()
+@with_busy_check
 async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
     """List all field names in a class.
 
@@ -160,6 +170,7 @@ async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None
 
 
 @mcp.tool()
+@with_busy_check
 async def get_smali_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
     """Fetch the smali (Dalvik bytecode) representation of a class.
 
@@ -171,6 +182,7 @@ async def get_smali_of_class(class_name: str, instance_id: Optional[str] = None)
 
 
 @mcp.tool()
+@with_busy_check
 async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
     """Retrieve and return the AndroidManifest.xml content.
     
@@ -181,6 +193,7 @@ async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+@with_busy_check
 async def get_strings(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
     """Retrieve contents of strings.xml files.
     
@@ -191,6 +204,7 @@ async def get_strings(offset: int = 0, count: int = 0, instance_id: Optional[str
 
 
 @mcp.tool()
+@with_busy_check
 async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
     """Retrieve all resource files names.
     
@@ -201,6 +215,7 @@ async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_
 
 
 @mcp.tool()
+@with_busy_check
 async def get_resource_file(resource_name: str, instance_id: Optional[str] = None) -> dict:
     """Retrieve resource file content.
     
@@ -211,6 +226,7 @@ async def get_resource_file(resource_name: str, instance_id: Optional[str] = Non
 
 
 @mcp.tool()
+@with_busy_check
 async def get_main_application_classes_names(instance_id: Optional[str] = None) -> dict:
     """Fetch main application classes' names from Manifest package.
     
@@ -221,6 +237,7 @@ async def get_main_application_classes_names(instance_id: Optional[str] = None) 
 
 
 @mcp.tool()
+@with_busy_check
 async def get_main_application_classes_code(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
     """Fetch main application classes' code with pagination.
     
@@ -231,6 +248,7 @@ async def get_main_application_classes_code(offset: int = 0, count: int = 0, ins
 
 
 @mcp.tool()
+@with_busy_check
 async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
     """Fetch the main activity class from AndroidManifest.xml.
 
@@ -241,6 +259,7 @@ async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+@with_busy_check
 async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """Renames a specific class.
     
@@ -251,6 +270,7 @@ async def rename_class(class_name: str, new_name: str, instance_id: Optional[str
 
 
 @mcp.tool()
+@with_busy_check
 async def rename_method(method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """Renames a specific method.
     
@@ -261,6 +281,7 @@ async def rename_method(method_name: str, new_name: str, instance_id: Optional[s
 
 
 @mcp.tool()
+@with_busy_check
 async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """Renames a specific field.
     
@@ -271,6 +292,7 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
 
 
 @mcp.tool()
+@with_busy_check
 async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
     """Renames a package and all its classes.
     
@@ -281,6 +303,7 @@ async def rename_package(old_package_name: str, new_package_name: str, instance_
 
 
 @mcp.tool()
+@with_busy_check
 async def debug_get_stack_frames(instance_id: Optional[str] = None) -> dict:
     """Get current stack frames (call stack).
     
@@ -291,6 +314,7 @@ async def debug_get_stack_frames(instance_id: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+@with_busy_check
 async def debug_get_threads(instance_id: Optional[str] = None) -> dict:
     """Get all threads in the debugged process.
     
@@ -301,6 +325,7 @@ async def debug_get_threads(instance_id: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+@with_busy_check
 async def debug_get_variables(instance_id: Optional[str] = None) -> dict:
     """Get current variables when process is suspended.
     
@@ -311,6 +336,7 @@ async def debug_get_variables(instance_id: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+@with_busy_check
 async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
     """Find all cross-references (xrefs) to a class.
 
@@ -324,6 +350,7 @@ async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, 
 
 
 @mcp.tool()
+@with_busy_check
 async def get_xrefs_to_method(
     class_name: str, method_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
 ) -> dict:
@@ -338,6 +365,7 @@ async def get_xrefs_to_method(
 
 
 @mcp.tool()
+@with_busy_check
 async def get_xrefs_to_field(
     class_name: str, field_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
 ) -> dict:
@@ -351,6 +379,21 @@ async def get_xrefs_to_field(
     )
 
 
+@mcp.tool()
+async def check_instance_status(instance_name: str = None) -> dict:
+    """Query the busy status of JADX instances.
+    
+    Use this to check if an instance is available before making requests.
+    If an instance is busy, the response will include what operation is running.
+    
+    Args:
+        instance_name: Optional. Specific instance to check. If not provided, returns all instances status.
+    
+    Returns:
+        Single instance: {"instance": "name", "available": true/false, "current_operation": "..."}
+        All instances: {"busy_instances": [...], "count": N}
+    """
+    return await InstanceBusyTracker.get_status(instance_name)
 
 
 def main():
@@ -400,7 +443,27 @@ def main():
         default=None,
         type=str
     )
+    parser.add_argument(
+        "--max-busy-timeout",
+        help="Maximum time (seconds) an instance can be busy before auto-release (default: 300)",
+        default=300,
+        type=int
+    )
+    parser.add_argument(
+        "--request-timeout",
+        help="HTTP request timeout in seconds for JADX plugin requests (default: 120)",
+        default=120,
+        type=int
+    )
     args = parser.parse_args()
+
+    # Configure busy timeout
+    InstanceBusyTracker.set_timeout(args.max_busy_timeout)
+    print(f"✓ Busy timeout set to {args.max_busy_timeout} seconds")
+
+    # Configure request timeout
+    config.set_request_timeout(args.request_timeout)
+    print(f"✓ Request timeout set to {args.request_timeout} seconds")
 
     # Configure JADX connection (for backward compatibility)
     config.set_jadx_config(host=args.jadx_host, port=args.jadx_port)
@@ -418,8 +481,9 @@ def main():
     try:
         print(jadx_mcp_server_banner())
     except:
+        from src.banner import SERVER_VERSION
         print(
-            f"[JADX AI MCP Server] v6.0.0 | MCP: {args.host}:{args.port} | JADX: {args.jadx_host}:{args.jadx_port}"
+            f"[JADX AI MCP Server] v{SERVER_VERSION} | MCP: {args.host}:{args.port} | JADX: {args.jadx_host}:{args.jadx_port}"
         )
 
     # Process initial JADX instances from command line
