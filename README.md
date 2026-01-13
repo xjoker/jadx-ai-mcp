@@ -602,6 +602,37 @@ remove_jadx_instance(name="app-v3")
 "Analyze the network API changes between versions"
 ```
 
+### Connecting to JADX in AI Conversation
+
+If you started the MCP server without `--jadx-instances`, you can tell the AI to connect dynamically:
+
+**Single Instance:**
+```
+Please connect to JADX server at 192.168.1.100:8650
+
+Or more specifically:
+Add JADX instance at host 192.168.1.100, port 8650, name it "my-app"
+```
+
+**Multiple Instances:**
+```
+Please connect to the following JADX instances:
+1. 192.168.1.10:8650 - name it "app-v1"
+2. 192.168.1.11:8650 - name it "app-v2"
+3. localhost:8652 - name it "dev"
+
+Then set "app-v1" as the default instance.
+```
+
+**Check Connection Status:**
+```
+List all connected JADX instances
+
+Check health status of all JADX instances
+
+What APK is loaded in the "app-v1" instance?
+```
+
 ---
 
 
