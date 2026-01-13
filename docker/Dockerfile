@@ -69,8 +69,12 @@ RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/j
 
 # ============================================================================
 # Layer 4: Install plugin using official jadx command
+# NOTE: ARG placed here to only invalidate cache from this layer onwards
+# Change PLUGIN_VERSION to force re-download of plugin when building
 # ============================================================================
-RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp"
+ARG PLUGIN_VERSION=6.0.5
+RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
+    && echo "Plugin version: ${PLUGIN_VERSION}"
 
 # ============================================================================
 # Layer 5: Startup scripts (changes occasionally)
