@@ -41,7 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # noVNC dependencies
     novnc \
     websockify \
-    websockify \
     # Lightweight CJK font (instead of fonts-noto-cjk ~150MB)
     fonts-dejavu \
     fonts-liberation \

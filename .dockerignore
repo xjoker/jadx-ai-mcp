@@ -1,0 +1,34 @@
+# Docker build exclusions
+# Exclude files that should not be included in the Docker build context
+
+# Git
+.git
+.gitignore
+.github
+
+# IDE
+.idea
+.vscode
+*.iml
+
+# Build artifacts (we use jadx plugins --install instead)
+target/
+
+# Documentation (not needed in image)
+*.md
+!docker/README.md
+docs/
+
+# Development files
+.AIINFO/
+AGENTS.md
+
+# Python MCP server (separate deployment)
+jadx-mcp-server/
+
+# macOS
+.DS_Store
+
+# Temp files
+*.log
+*.tmp
