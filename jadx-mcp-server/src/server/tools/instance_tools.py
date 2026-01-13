@@ -1,27 +1,28 @@
 """
-JADX 实例管理 MCP 工具
+JADX Instance Management MCP Tools
 
-提供 5 个工具用于管理多个 JADX 实例：
-- list_jadx_instances: 列出所有实例
-- add_jadx_instance: 添加新实例
-- remove_jadx_instance: 移除实例
-- set_default_jadx_instance: 设置默认实例
-- get_jadx_instance_info: 获取实例详细信息
+Provides 6 tools for managing multiple JADX instances:
+- list_jadx_instances: List all instances
+- add_jadx_instance: Add new instance
+- remove_jadx_instance: Remove instance
+- set_default_jadx_instance: Set default instance
+- get_jadx_instance_info: Get instance details
+- health_check_jadx_instances: Check health of all instances
 """
 
 from ..instance_registry import InstanceRegistry
 
 
 def register_instance_tools(mcp):
-    """注册实例管理工具到 MCP Server"""
+    """Register instance management tools to MCP Server"""
     
     @mcp.tool()
     async def list_jadx_instances() -> dict:
         """
-        列出所有已连接的 JADX 实例。
+        List all connected JADX instances.
         
-        返回每个实例的名称、地址、状态、APK信息等。
-        用于了解当前可用的分析目标。
+        Returns name, address, status, and APK info for each instance.
+        Use this to understand available analysis targets.
         
         Returns:
             {
@@ -55,24 +56,24 @@ def register_instance_tools(mcp):
         name: str = ""
     ) -> dict:
         """
-        动态添加新的 JADX 实例连接。
+        Dynamically add a new JADX instance connection.
         
-        添加后会自动尝试连接并获取 APK 信息。
-        如果是第一个添加的实例，将自动设为默认。
+        After adding, it will automatically try to connect and fetch APK info.
+        If this is the first instance added, it will be set as default.
         
         Args:
-            host: JADX 实例的 IP 地址（如 "192.168.1.10" 或 "localhost"）
-            port: JADX 实例的端口号（如 8650）
-            name: 可选的自定义名称。留空则自动使用 APK 名称+版本号
+            host: JADX instance IP address (e.g., "192.168.1.10" or "localhost")
+            port: JADX instance port number (e.g., 8650)
+            name: Optional custom name. Leave empty to auto-generate from APK name+version
             
         Returns:
             {
                 "success": true,
                 "instance": {...},
-                "message": "成功添加实例 'xhs-v8'"
+                "message": "Successfully added instance 'xhs-v8'"
             }
         """
-        # 处理 localhost
+        # Handle localhost
         if host.lower() == "localhost":
             host = "127.0.0.1"
         
@@ -82,17 +83,17 @@ def register_instance_tools(mcp):
     @mcp.tool()
     async def remove_jadx_instance(name: str) -> dict:
         """
-        移除指定的 JADX 实例连接。
+        Remove specified JADX instance connection.
         
-        如果移除的是默认实例，会自动选择另一个可用实例作为新的默认。
+        If removing the default instance, another available instance will be set as new default.
         
         Args:
-            name: 要移除的实例名称
+            name: Name of the instance to remove
             
         Returns:
             {
                 "success": true,
-                "message": "已移除实例 'xhs-v8'"
+                "message": "Removed instance 'xhs-v8'"
             }
         """
         return InstanceRegistry.remove_instance(name)
@@ -100,17 +101,17 @@ def register_instance_tools(mcp):
     @mcp.tool()
     async def set_default_jadx_instance(name: str) -> dict:
         """
-        设置默认使用的 JADX 实例。
+        Set the default JADX instance.
         
-        后续不指定 instance_id 的工具调用将使用此实例。
+        Subsequent tool calls without instance_id will use this instance.
         
         Args:
-            name: 要设为默认的实例名称
+            name: Name of the instance to set as default
             
         Returns:
             {
                 "success": true,
-                "message": "默认实例已设置为 'xhs-v8'"
+                "message": "Default instance set to 'xhs-v8'"
             }
         """
         return InstanceRegistry.set_default(name)
@@ -118,12 +119,13 @@ def register_instance_tools(mcp):
     @mcp.tool()
     async def get_jadx_instance_info(name: str) -> dict:
         """
-        获取指定实例的详细信息。
+        Get detailed information about a specific instance.
         
-        包括连接状态、APK 元数据（包名、版本、SDK等）、最近健康检查时间等。
+        Includes connection status, APK metadata (package, version, SDK, etc.), 
+        and last health check time.
         
         Args:
-            name: 实例名称
+            name: Instance name
             
         Returns:
             {
@@ -144,7 +146,7 @@ def register_instance_tools(mcp):
         if not instance:
             return {
                 "success": False,
-                "message": f"实例 '{name}' 不存在",
+                "message": f"Instance '{name}' not found",
             }
         return {
             "success": True,
@@ -154,9 +156,9 @@ def register_instance_tools(mcp):
     @mcp.tool()
     async def health_check_jadx_instances() -> dict:
         """
-        检查所有 JADX 实例的健康状态。
+        Check health status of all JADX instances.
         
-        对每个已注册的实例执行健康检查，更新其连接状态。
+        Performs health check on each registered instance and updates connection status.
         
         Returns:
             {
