@@ -63,6 +63,29 @@ async def get_class_source(class_name: str, instance_id: Optional[str] = None) -
     return await get_from_jadx("class-source", {"class_name": class_name}, instance_id=instance_id)
 
 
+async def batch_get_class_source(class_names: list[str], instance_id: Optional[str] = None) -> dict:
+    """
+    Fetch multiple class sources in a single request.
+    
+    This reduces MCP interaction overhead when analyzing multiple related classes.
+    Maximum 20 classes per request.
+
+    Args:
+        class_names: List of fully qualified class names to fetch
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Contains 'classes' array with name, found status, and content/error for each class,
+              plus 'total' and 'found' counts
+
+    MCP Tool: batch_get_class_source
+    Description: Batch retrieval of decompiled Java sources for multiple classes
+    """
+    # Join class names with comma for the API
+    class_names_str = ",".join(class_names)
+    return await get_from_jadx("batch-class-source", {"class_names": class_names_str}, instance_id=instance_id)
+
+
 async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
     """
     Returns a list of all classes in the project with pagination support.

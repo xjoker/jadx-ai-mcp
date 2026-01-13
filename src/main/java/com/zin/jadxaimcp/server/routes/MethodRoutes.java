@@ -95,6 +95,123 @@ public class MethodRoutes {
      * @return void
      * @param Context
      * 
+     *         This method handles the /batch-method-by-name MCP tool call.
+     *         Allows fetching multiple methods in a single request to reduce
+     *         MCP interaction overhead.
+     * 
+     *         Request parameters:
+     *         - methods (required): Comma-separated list of class_name:method_name pairs
+     *           Example: com.example.A:methodA,com.example.B:methodB
+     * 
+     *         Returns a JSON object with:
+     *         - methods: Array of objects containing class_name, method_name, found, and code/error
+     *         - total: Total number of requested methods
+     *         - found: Number of methods successfully found
+     * 
+     *         Max limit: 20 methods per request to prevent performance issues.
+     */
+    public void handleBatchMethodByName(Context ctx) {
+        String methodsParam = ctx.queryParam("methods");
+        if (methodsParam == null || methodsParam.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, 
+                "Missing 'methods' parameter. Provide comma-separated class_name:method_name pairs.", logger);
+            return;
+        }
+
+        String[] methodPairs = methodsParam.split(",");
+        
+        // Limit to prevent performance issues
+        final int MAX_BATCH_SIZE = 20;
+        if (methodPairs.length > MAX_BATCH_SIZE) {
+            JadxAIMCPPluginError.handleError(ctx, 400, 
+                "Too many methods requested. Maximum " + MAX_BATCH_SIZE + " methods per request.", logger);
+            return;
+        }
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            if (wrapper == null) {
+                JadxAIMCPPluginError.handleError(ctx, 500, "JadxWrapper not initialized", logger);
+                return;
+            }
+
+            // Build class map for O(1) lookup
+            Map<String, JavaClass> classMap = new HashMap<>();
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                classMap.put(cls.getFullName(), cls);
+            }
+
+            List<Map<String, Object>> results = new ArrayList<>();
+            int foundCount = 0;
+
+            for (String pair : methodPairs) {
+                String trimmedPair = pair.trim();
+                Map<String, Object> methodResult = new HashMap<>();
+                
+                // Parse class_name:method_name format
+                int colonIndex = trimmedPair.lastIndexOf(':');
+                if (colonIndex == -1) {
+                    methodResult.put("input", trimmedPair);
+                    methodResult.put("found", false);
+                    methodResult.put("error", "Invalid format. Use class_name:method_name");
+                    results.add(methodResult);
+                    continue;
+                }
+
+                String className = trimmedPair.substring(0, colonIndex);
+                String methodName = trimmedPair.substring(colonIndex + 1);
+                
+                methodResult.put("class_name", className);
+                methodResult.put("method_name", methodName);
+
+                JavaClass cls = classMap.get(className);
+                if (cls == null) {
+                    methodResult.put("found", false);
+                    methodResult.put("error", "Class not found");
+                    results.add(methodResult);
+                    continue;
+                }
+
+                // Find method in class
+                boolean methodFound = false;
+                for (JavaMethod method : cls.getMethods()) {
+                    if (method.getName().equalsIgnoreCase(methodName)) {
+                        try {
+                            methodResult.put("found", true);
+                            methodResult.put("decl", String.valueOf(method.getCodeNodeRef()));
+                            methodResult.put("code", method.getCodeStr());
+                            foundCount++;
+                            methodFound = true;
+                        } catch (Exception e) {
+                            methodResult.put("found", true);
+                            methodResult.put("error", "Failed to get code: " + e.getMessage());
+                        }
+                        break;
+                    }
+                }
+
+                if (!methodFound && !methodResult.containsKey("found")) {
+                    methodResult.put("found", false);
+                    methodResult.put("error", "Method not found in class");
+                }
+                results.add(methodResult);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("methods", results);
+            response.put("total", methodPairs.length);
+            response.put("found", foundCount);
+            ctx.json(response);
+
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving batch methods: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
+     * @return void
+     * @param Context
+     * 
      * This method handles the /seach-method mcp tool call.
      * 
      * After validating the 'method_name' parameter.

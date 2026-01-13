@@ -170,7 +170,9 @@ https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 - `get_selected_text(instance_id?)` — 获取当前选中的文本
 - `get_all_classes(offset, count, instance_id?)` — 列出项目中的所有类
 - `get_class_source(class_name, instance_id?)` — 获取指定类的完整源码
+- `batch_get_class_source(class_names, instance_id?)` — **批量获取多个类的源码（最多 20 个）**
 - `get_method_by_name(class_name, method_name, instance_id?)` — 获取方法的源码
+- `batch_get_method_by_name(methods, instance_id?)` — **批量获取多个方法（格式：类名:方法名，最多 20 个）**
 - `search_method_by_name(method_name, instance_id?)` — 跨类搜索方法
 - `search_classes_by_keyword(search_term, package?, search_in?, offset?, count?, instance_id?)` — 按关键字搜索类
 - `get_methods_of_class(class_name, instance_id?)` — 列出类中的方法

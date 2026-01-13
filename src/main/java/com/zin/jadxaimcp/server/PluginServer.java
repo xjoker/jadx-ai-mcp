@@ -295,6 +295,7 @@ public class PluginServer {
         app.get("/all-classes", classRoutes::handleAllClasses);
         app.get("/selected-text", classRoutes::handleSelectedText);
         app.get("/class-source", classRoutes::handleClassSource);
+        app.get("/batch-class-source", classRoutes::handleBatchClassSource);
         app.get("/smali-of-class", classRoutes::handleSmaliOfClass);
         app.get("/methods-of-class", classRoutes::handleMethodsOfClass);
         app.get("/fields-of-class", classRoutes::handleFieldsOfClass);
@@ -306,6 +307,7 @@ public class PluginServer {
 
         // --- Methods ---
         app.get("/method-by-name", methodRoutes::handleMethodByName);
+        app.get("/batch-method-by-name", methodRoutes::handleBatchMethodByName);
         app.get("/search-method", methodRoutes::handleSearchMethod);
         
         // --- Xrefs ---

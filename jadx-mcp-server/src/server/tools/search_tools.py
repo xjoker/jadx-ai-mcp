@@ -50,6 +50,29 @@ async def search_method_by_name(method_name: str, instance_id: Optional[str] = N
     return await get_from_jadx("search-method", {"method_name": method_name}, instance_id=instance_id)
 
 
+async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str] = None) -> dict:
+    """
+    Fetch multiple method sources in a single request.
+    
+    This reduces MCP interaction overhead when analyzing multiple methods.
+    Maximum 20 methods per request.
+
+    Args:
+        methods: List of "class_name:method_name" pairs (e.g., ["com.example.A:methodA", "com.example.B:methodB"])
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Contains 'methods' array with class_name, method_name, found status, and code/error for each,
+              plus 'total' and 'found' counts
+
+    MCP Tool: batch_get_method_by_name
+    Description: Batch retrieval of method sources using class:method format
+    """
+    # Join method pairs with comma for the API
+    methods_str = ",".join(methods)
+    return await get_from_jadx("batch-method-by-name", {"methods": methods_str}, instance_id=instance_id)
+
+
 async def search_classes_by_keyword(
     search_term: str,
     package: str = "",

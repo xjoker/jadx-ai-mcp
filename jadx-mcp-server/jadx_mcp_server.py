@@ -20,12 +20,12 @@ mcp = FastMCP("JADX-AI-MCP Plugin Reverse Engineering Server")
 
 # Import and register ALL tools using correct FastMCP pattern
 from src.server.tools.class_tools import (
-    fetch_current_class, get_selected_text, get_class_source,
+    fetch_current_class, get_selected_text, get_class_source, batch_get_class_source,
     get_all_classes, get_methods_of_class, get_fields_of_class, get_smali_of_class,
     get_main_application_classes_names, get_main_application_classes_code, get_main_activity_class
 )
 from src.server.tools.search_tools import (
-    get_method_by_name, search_method_by_name, search_classes_by_keyword
+    get_method_by_name, search_method_by_name, batch_get_method_by_name, search_classes_by_keyword
 )
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
@@ -110,6 +110,20 @@ async def get_class_source(class_name: str, instance_id: Optional[str] = None) -
 
 @mcp.tool()
 @with_busy_check
+async def batch_get_class_source(class_names: list[str], instance_id: Optional[str] = None) -> dict:
+    """Fetch multiple class sources in a single request. Maximum 20 classes.
+    
+    Reduces MCP interaction overhead when analyzing multiple related classes.
+
+    Args:
+        class_names: List of fully qualified class names (e.g., ['com.example.A', 'com.example.B']).
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.batch_get_class_source(class_names, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
 async def search_method_by_name(method_name: str, instance_id: Optional[str] = None) -> dict:
     """Search for a method name across all classes in the APK.
 
@@ -118,6 +132,20 @@ async def search_method_by_name(method_name: str, instance_id: Optional[str] = N
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.search_method_by_name(method_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str] = None) -> dict:
+    """Fetch multiple method sources in a single request. Maximum 20 methods.
+    
+    Reduces MCP interaction overhead when analyzing multiple methods.
+
+    Args:
+        methods: List of "class_name:method_name" pairs (e.g., ['com.example.A:methodA', 'com.example.B:methodB']).
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.search_tools.batch_get_method_by_name(methods, instance_id=instance_id)
 
 
 @mcp.tool()

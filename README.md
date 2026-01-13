@@ -176,7 +176,9 @@ The following MCP tools are available. **All tools support an optional `instance
 - `get_selected_text(instance_id?)` — Get currently selected text
 - `get_all_classes(offset, count, instance_id?)` — List all classes in the project
 - `get_class_source(class_name, instance_id?)` — Get full source of a given class
+- `batch_get_class_source(class_names, instance_id?)` — **Batch retrieve multiple class sources (max 20)**
 - `get_method_by_name(class_name, method_name, instance_id?)` — Fetch a method's source
+- `batch_get_method_by_name(methods, instance_id?)` — **Batch retrieve multiple methods (format: class:method, max 20)**
 - `search_method_by_name(method_name, instance_id?)` — Search method across classes
 - `search_classes_by_keyword(search_term, package?, search_in?, offset?, count?, instance_id?)` — Search for classes by keyword
 - `get_methods_of_class(class_name, instance_id?)` — List methods in a class

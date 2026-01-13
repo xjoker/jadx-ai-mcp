@@ -215,6 +215,88 @@ public class ClassRoutes {
      * @param Context
      * @return void
      * 
+     *         This routing method handles the /batch-class-source MCP tool call.
+     *         Allows fetching multiple class sources in a single request to reduce
+     *         MCP interaction overhead.
+     * 
+     *         Request parameters:
+     *         - class_names (required): Comma-separated list of fully qualified class names
+     *           Example: com.example.A,com.example.B,com.example.C
+     * 
+     *         Returns a JSON object with:
+     *         - classes: Array of objects containing name, found, and content/error
+     *         - total: Total number of requested classes
+     *         - found: Number of classes successfully found
+     * 
+     *         Max limit: 20 classes per request to prevent performance issues.
+     */
+    public void handleBatchClassSource(Context ctx) {
+        String classNamesParam = ctx.queryParam("class_names");
+        if (classNamesParam == null || classNamesParam.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing 'class_names' parameter. Provide comma-separated class names.", logger);
+            return;
+        }
+
+        String[] classNames = classNamesParam.split(",");
+        
+        // Limit to prevent performance issues
+        final int MAX_BATCH_SIZE = 20;
+        if (classNames.length > MAX_BATCH_SIZE) {
+            JadxAIMCPPluginError.handleError(ctx, 400, 
+                "Too many classes requested. Maximum " + MAX_BATCH_SIZE + " classes per request.", logger);
+            return;
+        }
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+            
+            // Build a map for O(1) lookup
+            Map<String, JavaClass> classMap = new HashMap<>();
+            for (JavaClass cls : allClasses) {
+                classMap.put(cls.getFullName(), cls);
+            }
+
+            List<Map<String, Object>> results = new ArrayList<>();
+            int foundCount = 0;
+
+            for (String className : classNames) {
+                String trimmedName = className.trim();
+                Map<String, Object> classResult = new HashMap<>();
+                classResult.put("name", trimmedName);
+
+                JavaClass cls = classMap.get(trimmedName);
+                if (cls != null) {
+                    try {
+                        classResult.put("found", true);
+                        classResult.put("content", cls.getCode());
+                        foundCount++;
+                    } catch (Exception e) {
+                        classResult.put("found", true);
+                        classResult.put("error", "Decompilation failed: " + e.getMessage());
+                    }
+                } else {
+                    classResult.put("found", false);
+                    classResult.put("error", "Class not found");
+                }
+                results.add(classResult);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("classes", results);
+            response.put("total", classNames.length);
+            response.put("found", foundCount);
+            ctx.json(response);
+
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving batch class sources: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
+     * @param Context
+     * @return void
+     * 
      *         This routing method handles the /methods-of-class endpoint.
      *         First it checks whether the 'class_name' parameter is present or not
      *         in http request
