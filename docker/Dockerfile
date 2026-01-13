@@ -4,6 +4,14 @@
 # Build: docker build -t jadx-ai-mcp -f docker/Dockerfile .
 # Run:   docker run -d -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
 
+# ============================================================================
+# Layer Optimization Strategy:
+# 1. Base image + apt packages (rarely changes)
+# 2. JADX download (changes only when JADX_VERSION changes)
+# 3. Plugin installation (changes when plugin version changes)
+# 4. Scripts (changes occasionally - placed last for flexibility)
+# ============================================================================
+
 # Use JRE instead of JDK to reduce image size (~200MB smaller)
 FROM eclipse-temurin:21-jre-jammy
 
@@ -19,7 +27,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     JADX_VERSION=1.5.3 \
     TZ=UTC
 
-# Install dependencies in single layer
+# ============================================================================
+# Layer 1: System dependencies (rarely changes)
+# ============================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # X11 and VNC
     xvfb \
@@ -40,21 +50,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Create working directories
+# ============================================================================
+# Layer 2: Create directories (rarely changes)
+# ============================================================================
 WORKDIR /opt/jadx
-RUN mkdir -p /apks /root/.jadx/plugins/dropins /var/log/supervisor
+RUN mkdir -p /apks /var/log/supervisor
 
-# Download and extract JADX
+# ============================================================================
+# Layer 3: Download JADX (changes only when JADX_VERSION changes)
+# ============================================================================
 RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip \
     && unzip -q /tmp/jadx.zip -d /opt/jadx \
     && rm /tmp/jadx.zip \
     && chmod +x /opt/jadx/bin/*
 
-# Copy the AI-MCP plugin (will be built and copied during build)
-# Note: You need to build the plugin first: mvn clean package
-COPY target/jadx-ai-mcp-*.jar /root/.jadx/plugins/dropins/
+# ============================================================================
+# Layer 4: Install plugin using official jadx command
+# ============================================================================
+RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp"
 
-# Copy startup scripts
+# ============================================================================
+# Layer 5: Startup scripts (changes occasionally)
+# ============================================================================
 COPY docker/scripts/start.sh /start.sh
 COPY docker/scripts/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN chmod +x /start.sh
@@ -66,7 +83,7 @@ EXPOSE 6080 8650
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${JADX_API_PORT}/jadx/api/v1/apk/info || exit 1
+    CMD curl -f http://localhost:${JADX_API_PORT}/health || exit 1
 
 # Start services
 CMD ["/start.sh"]
