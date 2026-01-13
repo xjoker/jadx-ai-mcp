@@ -635,6 +635,59 @@ What APK is loaded in the "app-v1" instance?
 
 ---
 
+## 9. 🐳 Docker Deployment (Headless Server)
+
+JADX AI MCP now supports **Docker deployment with noVNC** for running on headless servers without a graphical interface!
+
+### Quick Start
+
+```bash
+# Build the Docker image
+docker build -t jadx-ai-mcp -f docker/Dockerfile .
+
+# Run with default settings
+docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
+```
+
+**Access**:
+- **noVNC Web Desktop**: http://localhost:6080/vnc.html
+- **Plugin API**: http://localhost:8650
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JADX_MCP_BIND_ADDRESS` | 127.0.0.1 | Server bind address (use `0.0.0.0` for Docker) |
+| `JADX_MCP_PORT` | 8650 | Plugin HTTP API port |
+| `JADX_MCP_AUTH_TOKEN` | (auto-generated) | Authentication token |
+| `JADX_MCP_AUTH_ENABLED` | false | Enable authentication (`true`/`false`) |
+
+### Example with Authentication
+
+```bash
+docker run -d --name jadx-ai-mcp \
+  -p 6080:6080 -p 8650:8650 \
+  -e JADX_MCP_BIND_ADDRESS=0.0.0.0 \
+  -e JADX_MCP_AUTH_ENABLED=true \
+  -e JADX_MCP_AUTH_TOKEN=your-secret-token-here \
+  -v $(pwd)/apks:/apks \
+  jadx-ai-mcp
+```
+
+### Auto-load APK
+
+Place a file named `target.apk` in your mounted `/apks` directory, and jadx-gui will automatically load it on startup.
+
+### Container Features
+
+- **xterm**: Open a terminal in the desktop for shell access
+- **btop**: System monitor for viewing container performance
+- **fluxbox**: Lightweight window manager
+
+For detailed Docker documentation, see [docker/README.md](docker/README.md).
+
+---
+
 
 ## Troubleshooting
 

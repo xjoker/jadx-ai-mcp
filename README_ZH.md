@@ -627,6 +627,59 @@ remove_jadx_instance(name="app-v3")
 
 ---
 
+## 9. 🐳 Docker 部署（无头服务器）
+
+JADX AI MCP 现在支持**使用 noVNC 的 Docker 部署**，可在没有图形界面的无头服务器上运行！
+
+### 快速开始
+
+```bash
+# 构建 Docker 镜像
+docker build -t jadx-ai-mcp -f docker/Dockerfile .
+
+# 使用默认设置运行
+docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
+```
+
+**访问方式**：
+- **noVNC 网页桌面**：http://localhost:6080/vnc.html
+- **插件 API**：http://localhost:8650
+
+### 环境变量
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `JADX_MCP_BIND_ADDRESS` | 127.0.0.1 | 服务器绑定地址（Docker 使用 `0.0.0.0`）|
+| `JADX_MCP_PORT` | 8650 | 插件 HTTP API 端口 |
+| `JADX_MCP_AUTH_TOKEN` | （自动生成）| 认证令牌 |
+| `JADX_MCP_AUTH_ENABLED` | false | 启用认证（`true`/`false`）|
+
+### 带认证的示例
+
+```bash
+docker run -d --name jadx-ai-mcp \
+  -p 6080:6080 -p 8650:8650 \
+  -e JADX_MCP_BIND_ADDRESS=0.0.0.0 \
+  -e JADX_MCP_AUTH_ENABLED=true \
+  -e JADX_MCP_AUTH_TOKEN=your-secret-token-here \
+  -v $(pwd)/apks:/apks \
+  jadx-ai-mcp
+```
+
+### 自动加载 APK
+
+将名为 `target.apk` 的文件放入挂载的 `/apks` 目录，jadx-gui 将在启动时自动加载它。
+
+### 容器功能
+
+- **xterm**：在桌面中打开终端进行 shell 访问
+- **btop**：系统监控器，用于查看容器性能
+- **fluxbox**：轻量级窗口管理器
+
+详细 Docker 文档请参见 [docker/README.md](docker/README.md)。
+
+---
+
 
 ## 故障排除
 
