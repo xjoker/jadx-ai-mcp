@@ -319,12 +319,57 @@ nano ~/.config/Claude/claude_desktop_config.json
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-并在其中添加以下内容：
+### ⭐ 推荐方式：使用 uvx（自动获取最新版本）
+
+此方式**每次运行时自动获取最新版本** - 无需手动更新！
+
 ```json
 {
     "mcpServers": {
         "jadx-mcp-server": {
-            "command": "/<path>/<to>/uv",
+            "command": "uvx",
+            "args": [
+                "--from", "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server",
+                "jadx_mcp_server"
+            ]
+        }
+    }
+}
+```
+
+> **注意**：首次运行可能需要几秒钟下载。后续运行使用缓存，除非有更新。
+
+### 备选方式：安装为工具（启动更快）
+
+如果你更喜欢更快的启动速度和手动更新：
+
+```bash
+# 安装一次
+uv tool install "git+https://github.com/xjoker/jadx-ai-mcp.git#subdirectory=jadx-mcp-server"
+
+# 需要时更新
+uv tool upgrade jadx-mcp-server
+```
+
+然后配置 Claude Desktop：
+```json
+{
+    "mcpServers": {
+        "jadx-mcp-server": {
+            "command": "jadx_mcp_server"
+        }
+    }
+}
+```
+
+### 备选方式：本地克隆（开发用）
+
+用于开发或自定义：
+```json
+{
+    "mcpServers": {
+        "jadx-mcp-server": {
+            "command": "/path/to/uv",
             "args": [
                 "--directory",
                 "</PATH/TO/>jadx-mcp-server/",
@@ -342,16 +387,6 @@ nano ~/.config/Claude/claude_desktop_config.json
 - `path/to/jadx-mcp-server` 为你克隆此仓库的绝对路径
 
 然后，导航代码并通过内置集成使用实时代码审查提示进行交互。
-
-**或者**
-
-你可以使用以下命令直接将 jadx_mcp_server 安装为可执行文件：
-
-```bash
-uv tool install "git+https://github.com/xjoker/jadx-ai-mcp.git#subdirectory=jadx-mcp-server"
-```
-
-然后你只需在 mcp 配置的 `command` 部分提供 `jadx_mcp_server`。
 
 ## 3. 使用 Cherry Studio
 

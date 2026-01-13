@@ -324,13 +324,58 @@ nano ~/.config/Claude/claude_desktop_config.json
 For:
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   
-And following content in it:
+
+### ⭐ Recommended: Using uvx (Always Latest Version)
+
+This method **automatically fetches the latest version** every time you run it - no manual updates needed!
+
 ```json
 {
     "mcpServers": {
         "jadx-mcp-server": {
-            "command": "/<path>/<to>/uv", 
+            "command": "uvx",
+            "args": [
+                "--from", "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server",
+                "jadx_mcp_server"
+            ]
+        }
+    }
+}
+```
+
+> **Note**: First run may take a few seconds to download. Subsequent runs use cache unless there's an update.
+
+### Alternative: Install as Tool (Faster Startup)
+
+If you prefer faster startup and manual updates:
+
+```bash
+# Install once
+uv tool install "git+https://github.com/xjoker/jadx-ai-mcp.git#subdirectory=jadx-mcp-server"
+
+# Update when needed
+uv tool upgrade jadx-mcp-server
+```
+
+Then configure Claude Desktop:
+```json
+{
+    "mcpServers": {
+        "jadx-mcp-server": {
+            "command": "jadx_mcp_server"
+        }
+    }
+}
+```
+
+### Alternative: Local Clone (Development)
+
+For development or customization:
+```json
+{
+    "mcpServers": {
+        "jadx-mcp-server": {
+            "command": "/path/to/uv", 
             "args": [
                 "--directory",
                 "</PATH/TO/>jadx-mcp-server/",
@@ -349,16 +394,6 @@ Replace:
 repository
 
 Then, navigate code and interact via real-time code review prompts using the built-in integration.
-
-**OR**
-
-or you can install the jadx_mcp_server directly as executable directly using below command:
-
-```
-uv tool install "git+https://github.com/xjoker/jadx-ai-mcp.git#subdirectory=jadx-mcp-server"
-```
-
-and then you can just provide `jadx_mcp_server` in `command` section of mcp configuration.
 
 ## 3. Use Cherry Studio
 
