@@ -631,9 +631,23 @@ remove_jadx_instance(name="app-v3")
 
 JADX AI MCP 现在支持**使用 noVNC 的 Docker 部署**，可在没有图形界面的无头服务器上运行！
 
-### 快速开始
+### 快速开始（Docker Hub）
 
 ```bash
+# 从 Docker Hub 拉取
+docker pull xjoker/jadx-ai-mcp:latest
+
+# 运行容器
+docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -v ./apks:/apks xjoker/jadx-ai-mcp
+```
+
+### 从源码构建
+
+```bash
+# 克隆仓库
+git clone https://github.com/xjoker/jadx-ai-mcp.git
+cd jadx-ai-mcp
+
 # 构建 Docker 镜像
 docker build -t jadx-ai-mcp -f docker/Dockerfile .
 

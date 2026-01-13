@@ -639,9 +639,23 @@ What APK is loaded in the "app-v1" instance?
 
 JADX AI MCP now supports **Docker deployment with noVNC** for running on headless servers without a graphical interface!
 
-### Quick Start
+### Quick Start (Docker Hub)
 
 ```bash
+# Pull from Docker Hub
+docker pull xjoker/jadx-ai-mcp:latest
+
+# Run the container
+docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -v ./apks:/apks xjoker/jadx-ai-mcp
+```
+
+### Build from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/xjoker/jadx-ai-mcp.git
+cd jadx-ai-mcp
+
 # Build the Docker image
 docker build -t jadx-ai-mcp -f docker/Dockerfile .
 
