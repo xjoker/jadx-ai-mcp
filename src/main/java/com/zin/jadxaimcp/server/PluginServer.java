@@ -42,15 +42,21 @@ public class PluginServer {
      * @param mainWindow  - The main Jadx window context
      * @param port        - The port to listen on
      * @param bindAddress - The address to bind to
-     * @param plugin      - The plugin instance for APK info access
+     * @param plugin      - The plugin instance for APK info access and environment config
      */
     public PluginServer(MainWindow mainWindow, int port, String bindAddress, JadxAIMCP plugin) {
         this.mainWindow = mainWindow;
         this.port = port;
         this.bindAddress = bindAddress;
         this.paginationUtils = new PaginationUtils();
-        this.authConfig = new AuthConfig();
         this.plugin = plugin;
+        
+        // Initialize AuthConfig with environment overrides if plugin is available
+        if (plugin != null) {
+            this.authConfig = new AuthConfig(plugin.getEnvAuthToken(), plugin.getEnvAuthEnabled());
+        } else {
+            this.authConfig = new AuthConfig();
+        }
     }
 
     /**

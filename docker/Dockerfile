@@ -35,8 +35,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
     fluxbox \
+    # Terminal + system monitor
+    xterm \
+    btop \
     # noVNC dependencies
     novnc \
+    websockify \
     websockify \
     # Lightweight CJK font (instead of fonts-noto-cjk ~150MB)
     fonts-dejavu \
@@ -73,8 +77,9 @@ RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp"
 # Layer 5: Startup scripts (changes occasionally)
 # ============================================================================
 COPY docker/scripts/start.sh /start.sh
+COPY docker/scripts/jadx-gui-wrapper.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 COPY docker/scripts/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-RUN chmod +x /start.sh
+RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 
 # Expose ports
 # 6080: noVNC web interface

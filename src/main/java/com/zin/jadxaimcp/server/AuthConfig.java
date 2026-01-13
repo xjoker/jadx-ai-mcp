@@ -31,14 +31,48 @@ public class AuthConfig {
 
     private String authToken;
     private boolean authEnabled;
+    
+    // Environment variable overrides (used in Docker deployments)
+    private String envAuthToken = null;
+    private Boolean envAuthEnabled = null;
 
     /**
      * Initializes authentication configuration.
      * Loads existing token or generates a new one if not present.
      */
     public AuthConfig() {
+        this(null, null);
+    }
+    
+    /**
+     * Initializes authentication configuration with optional environment overrides.
+     * 
+     * @param envToken Authentication token from environment variable, or null
+     * @param envEnabled Authentication enabled flag from environment, or null
+     */
+    public AuthConfig(String envToken, Boolean envEnabled) {
+        this.envAuthToken = envToken;
+        this.envAuthEnabled = envEnabled;
         ensureConfigDirectory();
         loadOrGenerateToken();
+        
+        // Apply environment overrides after loading
+        applyEnvironmentOverrides();
+    }
+    
+    /**
+     * Applies environment variable overrides.
+     * Environment variables take precedence over stored configuration.
+     */
+    private void applyEnvironmentOverrides() {
+        if (envAuthToken != null && !envAuthToken.isEmpty()) {
+            authToken = envAuthToken;
+            logger.info("Using authentication token from environment variable");
+        }
+        if (envAuthEnabled != null) {
+            authEnabled = envAuthEnabled;
+            logger.info("Authentication " + (authEnabled ? "enabled" : "disabled") + " via environment variable");
+        }
     }
 
     /**

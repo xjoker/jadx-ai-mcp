@@ -70,10 +70,26 @@ python jadx-mcp-server/jadx_mcp_server.py --jadx-host localhost --jadx-port 8650
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `JADX_MCP_BIND_ADDRESS` | 127.0.0.1 | Server bind address (set to `0.0.0.0` for Docker) |
+| `JADX_MCP_PORT` | 8650 | Plugin HTTP API port |
+| `JADX_MCP_AUTH_TOKEN` | (auto-generated) | Authentication token |
+| `JADX_MCP_AUTH_ENABLED` | false | Enable authentication (`true`/`false`) |
 | `VNC_PORT` | 5900 | Internal VNC port |
 | `NOVNC_PORT` | 6080 | noVNC web port |
-| `JADX_API_PORT` | 8650 | Plugin HTTP API port |
-| `TZ` | UTC | Timezone |
+
+### Example with Authentication
+
+```bash
+docker run -d \
+  --name jadx-ai-mcp \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -e JADX_MCP_BIND_ADDRESS=0.0.0.0 \
+  -e JADX_MCP_AUTH_ENABLED=true \
+  -e JADX_MCP_AUTH_TOKEN=your-secret-token-here \
+  -v $(pwd)/apks:/apks \
+  jadx-ai-mcp
+```
 
 ## Troubleshooting
 

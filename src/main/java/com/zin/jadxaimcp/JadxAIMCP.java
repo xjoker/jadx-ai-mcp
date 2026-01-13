@@ -37,6 +37,12 @@ public class JadxAIMCP implements JadxPlugin {
     private static final String PREF_KEY_INSTANCE_NAME = "jadx_ai_mcp_instance_name";
     private static final int DEFAULT_PORT = 8650;
     private static final String DEFAULT_BIND_ADDRESS = "127.0.0.1";
+    
+    // Environment variable names for Docker/container configuration
+    private static final String ENV_BIND_ADDRESS = "JADX_MCP_BIND_ADDRESS";
+    private static final String ENV_PORT = "JADX_MCP_PORT";
+    private static final String ENV_AUTH_TOKEN = "JADX_MCP_AUTH_TOKEN";
+    private static final String ENV_AUTH_ENABLED = "JADX_MCP_AUTH_ENABLED";
 
     // Config & State
     private int currentPort = DEFAULT_PORT;
@@ -76,11 +82,14 @@ public class JadxAIMCP implements JadxPlugin {
                 return;
             }
 
-            // 1. Initialize Config
+            // 1. Initialize Config from Preferences
             prefs = Preferences.userNodeForPackage(JadxAIMCP.class);
             currentPort = prefs.getInt(PREF_KEY_PORT, DEFAULT_PORT);
             currentBindAddress = prefs.get(PREF_KEY_BIND_ADDRESS, DEFAULT_BIND_ADDRESS);
             instanceName = prefs.get(PREF_KEY_INSTANCE_NAME, null);
+            
+            // 1.1 Override from environment variables (for Docker deployment)
+            applyEnvironmentOverrides();
 
             // 2. Initialize UI
             this.pluginMenu = new PluginMenu(mainWindow, this);
@@ -92,6 +101,50 @@ public class JadxAIMCP implements JadxPlugin {
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin: Initialization error: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * Applies configuration overrides from environment variables.
+     * Environment variables take precedence over Preferences for Docker/container deployments.
+     */
+    private void applyEnvironmentOverrides() {
+        // Override bind address
+        String envBindAddress = System.getenv(ENV_BIND_ADDRESS);
+        if (envBindAddress != null && !envBindAddress.isEmpty()) {
+            currentBindAddress = envBindAddress;
+            logger.info("JADX-AI-MCP Plugin: Using bind address from environment: " + envBindAddress);
+        }
+        
+        // Override port
+        String envPort = System.getenv(ENV_PORT);
+        if (envPort != null && !envPort.isEmpty()) {
+            try {
+                currentPort = Integer.parseInt(envPort);
+                logger.info("JADX-AI-MCP Plugin: Using port from environment: " + currentPort);
+            } catch (NumberFormatException e) {
+                logger.warn("JADX-AI-MCP Plugin: Invalid port in environment variable: " + envPort);
+            }
+        }
+    }
+    
+    /**
+     * Gets authentication token from environment variable if set.
+     * @return The auth token from environment, or null if not set
+     */
+    public String getEnvAuthToken() {
+        return System.getenv(ENV_AUTH_TOKEN);
+    }
+    
+    /**
+     * Gets authentication enabled flag from environment variable if set.
+     * @return Boolean.TRUE if enabled, Boolean.FALSE if disabled, null if not set
+     */
+    public Boolean getEnvAuthEnabled() {
+        String envAuthEnabled = System.getenv(ENV_AUTH_ENABLED);
+        if (envAuthEnabled != null && !envAuthEnabled.isEmpty()) {
+            return Boolean.parseBoolean(envAuthEnabled);
+        }
+        return null;
     }
 
     // ---- Server lifecycle management ---
