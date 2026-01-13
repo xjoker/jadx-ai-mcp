@@ -4,7 +4,8 @@
 # Build: docker build -t jadx-ai-mcp -f docker/Dockerfile .
 # Run:   docker run -d -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
 
-FROM eclipse-temurin:21-jdk-jammy
+# Use JRE instead of JDK to reduce image size (~200MB smaller)
+FROM eclipse-temurin:21-jre-jammy
 
 LABEL maintainer="xjoker"
 LABEL description="JADX-AI-MCP with noVNC for headless server deployment"
@@ -15,10 +16,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     VNC_PORT=5900 \
     NOVNC_PORT=6080 \
     JADX_API_PORT=8650 \
-    JADX_VERSION=1.5.1 \
+    JADX_VERSION=1.5.3 \
     TZ=UTC
 
-# Install dependencies
+# Install dependencies in single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # X11 and VNC
     xvfb \
@@ -27,15 +28,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # noVNC dependencies
     novnc \
     websockify \
-    # Fonts for proper text rendering
+    # Lightweight CJK font (instead of fonts-noto-cjk ~150MB)
     fonts-dejavu \
     fonts-liberation \
-    fonts-noto-cjk \
+    fonts-wqy-zenhei \
     # Utilities
     wget \
     unzip \
+    curl \
     supervisor \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Create working directories
 WORKDIR /opt/jadx
