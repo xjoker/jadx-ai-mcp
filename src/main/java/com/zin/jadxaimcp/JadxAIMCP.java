@@ -55,6 +55,11 @@ public class JadxAIMCP implements JadxPlugin {
     private MainWindow mainWindow;
     private PluginServer pluginServer;
     private PluginMenu pluginMenu;
+    
+    // Static singleton protection to prevent multiple server instances
+    private static volatile PluginServer sharedServer = null;
+    private static final Object SERVER_LOCK = new Object();
+    private static volatile boolean initialized = false;
 
     public JadxAIMCP() {}
 
@@ -210,14 +215,34 @@ public class JadxAIMCP implements JadxPlugin {
      * 4. If any error occurs during startup, it logs the error message.
      * 
      * This method is called by the delayed initialization mechanism after JADX is ready.
+     * Uses static singleton protection to prevent multiple server instances.
      */
     private void startServer() {
-        try {
-            if (pluginServer != null) pluginServer.stop();
-            pluginServer = new PluginServer(mainWindow, currentPort, currentBindAddress, this);
-            pluginServer.start();
-        } catch (Exception e) {
-            logger.error("JADX-AI-MCP Plugin: Failed to start server: " + e.getMessage());
+        synchronized (SERVER_LOCK) {
+            try {
+                // Check if a shared server is already running
+                if (sharedServer != null && sharedServer.isRunning()) {
+                    logger.info("JADX-AI-MCP Plugin: Server already running on port " + sharedServer.getPort() + ", reusing existing instance.");
+                    this.pluginServer = sharedServer;
+                    return;
+                }
+                
+                // Stop any existing local server
+                if (pluginServer != null) {
+                    pluginServer.stop();
+                }
+                
+                // Create and start new server
+                pluginServer = new PluginServer(mainWindow, currentPort, currentBindAddress, this);
+                pluginServer.start();
+                
+                // Store as shared server
+                sharedServer = pluginServer;
+                initialized = true;
+                
+            } catch (Exception e) {
+                logger.error("JADX-AI-MCP Plugin: Failed to start server: " + e.getMessage());
+            }
         }
     }
 
