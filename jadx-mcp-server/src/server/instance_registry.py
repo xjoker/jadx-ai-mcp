@@ -114,11 +114,26 @@ class InstanceRegistry:
                     logger.info(f"Set default instance: {name}")
                 
                 logger.info(f"Successfully added JADX instance: {name} ({host}:{port})")
-                return {
+                
+                # 6. Version compatibility check
+                result = {
                     "success": True,
                     "instance": instance.to_dict(),
                     "message": f"Successfully added instance '{name}'",
                 }
+                
+                plugin_version = apk_info.get("plugin_version", "unknown")
+                from src.banner import SERVER_VERSION
+                if plugin_version != SERVER_VERSION:
+                    version_warning = (
+                        f"Version mismatch detected: "
+                        f"Plugin={plugin_version}, Server={SERVER_VERSION}. "
+                        f"This may cause compatibility issues."
+                    )
+                    logger.warning(version_warning)
+                    result["version_warning"] = version_warning
+                
+                return result
                 
             except Exception as e:
                 error_msg = f"Failed to add instance: {str(e)}"
