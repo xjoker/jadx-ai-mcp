@@ -66,7 +66,7 @@ env/
 
 ### UV ###
 .uv/
-uv.lock
+# uv.lock is tracked for reproducible builds
 
 ### Testing ###
 .pytest_cache/

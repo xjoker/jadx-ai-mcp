@@ -287,187 +287,336 @@ The following MCP tools are available. **All tools support an optional `instance
 
 ---
 
-## 2. Manual Installation
+## 🚀 Quick Start
+
+### Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph LLM["LLM Clients"]
+        Claude["Claude Desktop"]
+        Cursor["Cursor / Other MCP Clients"]
+    end
+    
+    subgraph MCP["MCP Server (Python)"]
+        Server["jadx-mcp-server :8651"]
+        Auth["Multi-User Auth"]
+        Registry["Instance Registry"]
+    end
+    
+    subgraph JADX["JADX Instances"]
+        J1["JADX #1 :8650<br/>app-v1.apk"]
+        J2["JADX #2 :8651<br/>app-v2.apk"]
+        J3["JADX #3 :8652<br/>dev.apk"]
+    end
+    
+    Claude --> |HTTP/MCP| Server
+    Cursor --> |HTTP/MCP| Server
+    Server --> Auth
+    Auth --> Registry
+    Registry --> J1
+    Registry --> J2
+    Registry --> J3
+```
+
+### Step 1: Install JADX Plugin
 
 ```bash
-# Download both files from releases
-https://github.com/xjoker/jadx-ai-mcp/releases
-
-# Install plugin via command line
 jadx plugins --install "github:xjoker:jadx-ai-mcp"
+```
 
-# Or install via JADX GUI:
-# Plugins → Install Plugin → Select the downloaded JAR file
+### Step 2: Start MCP Server
 
-# Navigate to jadx-mcp-server directory
-cd jadx-mcp-server
+**Option A: Docker (Recommended)**
 
-# Install uv (if not installed)
+```bash
+# All-in-One: JADX GUI + MCP Server
+docker run -d -p 6080:6080 -p 8651:8651 xjoker/jadx-ai-mcp:latest
+
+# Standalone MCP Server only
+docker run -d -p 8651:8651 xjoker/jadx-mcp-server:latest
+```
+
+**Option B: Local Installation**
+
+```bash
+# Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Run the MCP server
-uv run jadx_mcp_server.py
+# Run MCP Server
+uv tool install "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server"
+jadx_mcp_server --http --host 0.0.0.0 --port 8651
 ```
 
+### Step 3: Connect LLM Client
 
-## 🤖 2. Use Claude Desktop
-
-Make sure Claude Desktop is running with MCP enabled.
-
-For instance, I have used following for Kali Linux: https://github.com/aaddrick/claude-desktop-debian
-
-Configure and add MCP server to LLM file:
 ```bash
-nano ~/.config/Claude/claude_desktop_config.json
+# Claude CLI - Connect to HTTP MCP Server
+claude mcp add --transport http jadx http://localhost:8651/mcp/v1
 ```
 
-For:
-   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-### ⭐ Recommended: Using uvx (Always Latest Version)
-
-This method **automatically fetches the latest version** every time you run it - no manual updates needed!
+Or configure `claude_desktop_config.json`:
 
 ```json
 {
-    "mcpServers": {
-        "jadx-mcp-server": {
-            "command": "uvx",
-            "args": [
-                "--from", "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server",
-                "jadx_mcp_server"
-            ]
-        }
+  "mcpServers": {
+    "jadx": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp/v1"
     }
+  }
 }
 ```
 
-> **Note**: First run may take a few seconds to download. Subsequent runs use cache unless there's an update.
+---
 
-### Alternative: Install as Tool (Faster Startup)
+## 📦 Docker Deployment
 
-If you prefer faster startup and manual updates:
+Two Docker images are available:
 
-```bash
-# Install once
-uv tool install "git+https://github.com/xjoker/jadx-ai-mcp.git#subdirectory=jadx-mcp-server"
+| Image | Description | Size | Use Case |
+|-------|-------------|------|----------|
+| `xjoker/jadx-ai-mcp` | JADX GUI + noVNC + MCP Server | ~800MB | Quick start, single APK |
+| `xjoker/jadx-mcp-server` | MCP Server only | ~100MB | Production, multi-instance |
 
-# Update when needed
-uv tool upgrade jadx-mcp-server
-```
-
-Then configure Claude Desktop:
-```json
-{
-    "mcpServers": {
-        "jadx-mcp-server": {
-            "command": "jadx_mcp_server"
-        }
-    }
-}
-```
-
-### Alternative: Local Clone (Development)
-
-For development or customization:
-```json
-{
-    "mcpServers": {
-        "jadx-mcp-server": {
-            "command": "/path/to/uv", 
-            "args": [
-                "--directory",
-                "</PATH/TO/>jadx-mcp-server/",
-                "run",
-                "jadx_mcp_server.py"
-            ]
-        }
-    }
-}
-```
-
-Replace:
-
-- `path/to/uv` with the actual path to your `uv` executable
-- `path/to/jadx-mcp-server` with the absolute path to where you cloned this
-repository
-
-Then, navigate code and interact via real-time code review prompts using the built-in integration.
-
-## 3. Use Cherry Studio
-
-If you want to configure the MCP tool in Cherry Studio, you can refer to the following configuration.
-- Type: stdio
-- command: uv
-- argument:
-```bash
---directory
-path/to/jadx-mcp-server
-run
-jadx_mcp_server.py
-```
-- `path/to/jadx-mcp-server` with the absolute path to where you cloned this
-repository
-
-## 4. Using LMStudio
-
-You can also use JADX AI MCP Server with LM Studio by configuring it's mcp.json file. Here's the video guide.
-
-https://github.com/user-attachments/assets/b4a6b280-5aa9-4e76-ac72-a0abec73b809
-
-## 5. Running in HTTP Stream Mode
-
-The MCP server can run in HTTP mode for remote connections and Docker deployments:
+### All-in-One Container
 
 ```bash
-# Basic HTTP mode
-uv run jadx_mcp_server.py --http --host 0.0.0.0 --port 8651
-
-# With configuration file (recommended for production)
-uv run jadx_mcp_server.py --http --config data/config/jadx-config.toml
+docker run -d --name jadx \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  xjoker/jadx-ai-mcp:latest
 ```
 
-### Configuration File (TOML)
+**Access:**
+- 🌐 **noVNC Desktop**: http://localhost:6080
+- 🔌 **Plugin API**: http://localhost:8650
+- 🤖 **MCP Server**: http://localhost:8651
+
+### Standalone MCP Server
+
+For production environments with multiple JADX instances:
+
+```bash
+docker run -d --name mcp-server \
+  -p 8651:8651 \
+  -v $(pwd)/config:/app/data/config \
+  xjoker/jadx-mcp-server:latest \
+  /usr/local/bin/uv run jadx_mcp_server --http --config /app/data/config/jadx-config.toml
+```
+
+---
+
+## ⚙️ Configuration File
 
 Create `jadx-config.toml` for advanced configuration:
 
-```toml
-[server]
-host = "0.0.0.0"
-port = 8651
+### Complete Configuration Reference
 
-# Multi-user authentication
+```toml
+# =============================================================================
+# Server Configuration
+# =============================================================================
+[server]
+host = "0.0.0.0"          # Bind address (0.0.0.0 for Docker)
+port = 8651               # MCP Server port
+
+# =============================================================================
+# Default Settings
+# =============================================================================
+[defaults]
+request_timeout = 120     # HTTP request timeout (seconds)
+busy_timeout = 300        # Max busy wait time (seconds)
+jadx_token = ""           # Default JADX plugin auth token
+
+# =============================================================================
+# Multi-User Authentication
+# =============================================================================
+# Each user gets a unique token for MCP client authentication
+# Dynamic instances created by a user are only visible to that user
+
 [[users]]
 name = "alice"
 token = "token-alice-xxxxx"
 
 [[users]]
+name = "bob"
+token = "token-bob-yyyyy"
+
+[[users]]
 name = "admin"
 token = "token-admin-zzzzz"
-is_admin = true  # Can see all users' dynamic instances
+is_admin = true           # Admin can see all users' instances
 
-[defaults]
-request_timeout = 120
-busy_timeout = 300
-jadx_token = ""  # Default JADX plugin token
+# =============================================================================
+# Pre-configured JADX Instances
+# =============================================================================
+# These instances are shared and visible to all users
 
-# Pre-configured JADX instances
 [[jadx_instances]]
-name = "local"
-host = "127.0.0.1"
+name = "app-v1"
+host = "192.168.1.10"
 port = 8650
 enabled = true
+token = ""                # Instance-specific token (optional)
+
+[[jadx_instances]]
+name = "app-v2"
+host = "192.168.1.11"
+port = 8650
+enabled = true
+
+[[jadx_instances]]
+name = "local-dev"
+host = "127.0.0.1"
+port = 8650
+enabled = false           # Disabled, won't connect
 ```
 
-### Claude Desktop with HTTP Mode
+### Configuration Options Explained
+
+```mermaid
+flowchart LR
+    subgraph Config["jadx-config.toml"]
+        Server["[server]<br/>host, port"]
+        Defaults["[defaults]<br/>timeouts, jadx_token"]
+        Users["[[users]]<br/>name, token, is_admin"]
+        Instances["[[jadx_instances]]<br/>name, host, port, enabled"]
+    end
+    
+    Server --> |"MCP Server binds to"| Bind["0.0.0.0:8651"]
+    Users --> |"Controls access"| Auth["User Authentication"]
+    Instances --> |"Pre-connects to"| JADX["JADX Plugin Servers"]
+    Defaults --> |"Applied to all"| Conn["Connections"]
+```
+
+| Section | Key | Description |
+|---------|-----|-------------|
+| `[server]` | `host` | MCP Server bind address |
+| `[server]` | `port` | MCP Server port |
+| `[defaults]` | `request_timeout` | HTTP timeout for JADX requests |
+| `[defaults]` | `jadx_token` | Default auth token for JADX plugins |
+| `[[users]]` | `name` | Username for identification |
+| `[[users]]` | `token` | Bearer token for MCP client auth |
+| `[[users]]` | `is_admin` | Can see all users' dynamic instances |
+| `[[jadx_instances]]` | `name` | Instance identifier |
+| `[[jadx_instances]]` | `host` | JADX plugin IP address |
+| `[[jadx_instances]]` | `port` | JADX plugin port |
+| `[[jadx_instances]]` | `enabled` | Whether to connect on startup |
+
+---
+
+## 🔗 Multi-Instance Management
+
+### Why Multiple Instances?
+
+```mermaid
+flowchart TB
+    subgraph Use Cases
+        UC1["Compare app versions<br/>v1 vs v2"]
+        UC2["Team collaboration<br/>Different targets"]
+        UC3["A/B security testing"]
+    end
+    
+    subgraph MCP Server
+        Registry["Instance Registry"]
+    end
+    
+    subgraph Instances
+        I1["app-v1.apk<br/>192.168.1.10:8650"]
+        I2["app-v2.apk<br/>192.168.1.11:8650"]
+        I3["dev-build.apk<br/>localhost:8652"]
+    end
+    
+    UC1 --> Registry
+    UC2 --> Registry
+    UC3 --> Registry
+    Registry --> I1
+    Registry --> I2
+    Registry --> I3
+```
+
+### Connect via Configuration
+
+```toml
+[[jadx_instances]]
+name = "xhs-v8"
+host = "192.168.1.10"
+port = 8650
+
+[[jadx_instances]]
+name = "xhs-v9"
+host = "192.168.1.11"
+port = 8650
+```
+
+### Connect via AI Command
+
+```
+Please connect to JADX at 192.168.1.100:8650, name it "my-app"
+
+Or multiple:
+Connect to these JADX instances:
+1. 192.168.1.10:8650 as "app-v1"
+2. 192.168.1.11:8650 as "app-v2"
+```
+
+### Target Specific Instance
+
+All MCP tools support `instance_id` parameter:
+
+```
+Get the MainActivity from app-v1
+
+Compare the encryption methods between app-v1 and app-v2
+
+Check if the vulnerability in v1 was fixed in v2
+```
+
+---
+
+## 🔐 Authentication
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as LLM Client
+    participant MCP as MCP Server
+    participant JADX as JADX Plugin
+    
+    Client->>MCP: Request + Bearer Token
+    MCP->>MCP: Validate User Token
+    MCP->>JADX: Request + JADX Token
+    JADX->>MCP: Response
+    MCP->>Client: MCP Tool Result
+```
+
+### User Isolation
+
+| Instance Type | Visibility |
+|---------------|------------|
+| **Config Instances** | All users (shared) |
+| **Dynamic Instances** | Owner only |
+| **Admin User** | All instances |
+
+### Connect with Authentication
+
+```bash
+# Claude CLI with Bearer token
+claude mcp add --transport http jadx http://server:8651/mcp/v1 \
+  --header "Authorization: Bearer token-alice-xxxxx"
+```
 
 ```json
+// claude_desktop_config.json
 {
   "mcpServers": {
-    "jadx-mcp-server": {
+    "jadx": {
       "type": "http",
-      "url": "http://localhost:8651/mcp/v1",
+      "url": "http://server:8651/mcp/v1",
       "headers": {
         "Authorization": "Bearer token-alice-xxxxx"
       }
@@ -476,291 +625,56 @@ enabled = true
 }
 ```
 
-## 6. Plugin Configuration (Unified Settings Panel)
+---
 
-All plugin settings are managed through a **unified Settings dialog**:
-
-**Access**: `Plugins → JADX AI MCP Server → 设置...`
-
-The Settings panel includes:
-- **Server Configuration**: Port, bind address, auto-start options
-- **Instance Settings**: Custom instance name for multi-instance scenarios
-- **Authentication**: Token generation and management
-- **Server Controls**: Start, stop, restart, and status check
-
-## 7. 🔐 Authentication & Security
-
-JADX AI MCP supports **multi-user authentication** with user isolation for secure team environments.
-
-### Authentication Options
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **Single Token** | `--auth-token` CLI option | Single user/simple setup |
-| **Multi-User** | Config file `[[users]]` | Team environments |
-| **No Auth** | Default | Local development |
-
-### Multi-User Setup
-
-1. Create config file with user tokens:
-
-```toml
-[[users]]
-name = "alice"
-token = "token-alice-xxxxx"
-
-[[users]]
-name = "admin"
-token = "token-admin-zzzzz"
-is_admin = true  # Admin sees all users' dynamic instances
-```
-
-2. Run with config:
+## 🛠️ Command Line Reference
 
 ```bash
-uv run jadx_mcp_server.py --http --config jadx-config.toml
+jadx_mcp_server [OPTIONS]
 ```
-
-3. Connect with user token:
-
-```bash
-# Claude CLI
-claude mcp add --transport http jadx http://server:8651 \
-  --header "Authorization: Bearer token-alice-xxxxx"
-```
-
-### User Isolation
-
-- **Shared Instances**: From config file, visible to all users
-- **Dynamic Instances**: Added via AI, only visible to owner
-- **Admin Users**: Can see all instances from all users
-
-### JADX Plugin Authentication
-
-The `--auth-token` option authenticates **MCP Server → JADX Plugin** connections:
-
-```bash
-uv run jadx_mcp_server.py --auth-token "JADX_PLUGIN_TOKEN"
-```
-
-Or set default in config:
-
-```toml
-[defaults]
-jadx_token = "JADX_PLUGIN_TOKEN"
-```
-
-### Command Line Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--config` | None | Path to TOML configuration file |
-| `--http` | False | Enable HTTP stream mode |
-| `--host` | `127.0.0.1` | MCP server bind address |
-| `--port` | `8651` | MCP server port (HTTP mode) |
-| `--auth-token` | None | JADX plugin authentication token |
-| `--jadx-host` | `127.0.0.1` | JADX plugin IP (legacy single instance) |
-| `--jadx-port` | `8650` | JADX plugin port (legacy single instance) |
-| `--jadx-instances` | None | Multiple JADX instances: `host:port[:name],...` |
-| `--mcp-auth-token` | None | MCP server authentication token (single user) |
+| `--config FILE` | None | TOML configuration file path |
+| `--http` | False | Enable HTTP mode (required for remote) |
+| `--host HOST` | 127.0.0.1 | MCP Server bind address |
+| `--port PORT` | 8651 | MCP Server port |
+| `--jadx-host HOST` | 127.0.0.1 | Single JADX instance host |
+| `--jadx-port PORT` | 8650 | Single JADX instance port |
+| `--jadx-instances LIST` | None | Multiple instances: `host:port:name,...` |
+| `--auth-token TOKEN` | None | JADX plugin auth token |
+| `--mcp-auth-token TOKEN` | None | MCP server auth token (single user) |
 
-## 8. 🚀 Multi-Instance Management
-
-JADX AI MCP now supports **connecting to multiple JADX instances simultaneously**! This is perfect for:
-
-- ✅ **Comparing different APK versions** side by side
-- ✅ **Analyzing multiple apps** in parallel
-- ✅ **Team collaboration** with different analysis targets
-- ✅ **A/B security testing** across app versions
-
-### Quick Start - Multiple Instances
+### Examples
 
 ```bash
-# Connect to multiple JADX instances at startup
-uv run jadx_mcp_server.py \
-  --auth-token "YOUR_TOKEN" \
-  --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2,localhost:8652:dev"
-```
+# Simple local setup
+jadx_mcp_server
 
-### Instance Naming
+# HTTP mode for remote access
+jadx_mcp_server --http --host 0.0.0.0
 
-- **Auto-naming**: If no name is provided, instances are named from APK info (e.g., `myapp-v123`)
-- **Custom naming**: Specify names using `host:port:name` format
+# With configuration file
+jadx_mcp_server --http --config jadx-config.toml
 
-### Using Instance-Targeted Tools
-
-All MCP tools now support the optional `instance_id` parameter:
-
-```python
-# Example: Get class source from a specific instance
-get_class_source(class_name="com.example.MainActivity", instance_id="app-v2")
-
-# Example: Compare manifests between versions
-manifest_v1 = get_android_manifest(instance_id="app-v1")
-manifest_v2 = get_android_manifest(instance_id="app-v2")
-```
-
-### Instance Management Tools
-
-```python
-# List all connected instances
-list_jadx_instances()
-# Returns: {"instances": [{"name": "app-v1", "host": "192.168.1.10", "port": 8650, ...}]}
-
-# Add a new instance dynamically
-add_jadx_instance(host="192.168.1.20", port=8650, name="app-v3")
-
-# Set default instance (used when instance_id is not specified)
-set_default_jadx_instance(name="app-v2")
-
-# Get detailed instance info
-get_jadx_instance_info(name="app-v1")
-# Returns: {"name": "app-v1", "apk_info": {...}, "status": "online", ...}
-
-# Health check all instances
-health_check_jadx_instances()
-# Returns: {"total": 3, "online": 2, "offline": 1, "results": [...]}
-
-# Remove an instance
-remove_jadx_instance(name="app-v3")
-```
-
-### Claude Desktop Configuration for Multi-Instance
-
-```json
-{
-  "mcpServers": {
-    "jadx-mcp-server": {
-      "command": "/path/to/uv",
-      "args": [
-        "--directory",
-        "/path/to/jadx-ai-mcp/jadx-mcp-server/",
-        "run",
-        "jadx_mcp_server.py",
-        "--auth-token",
-        "YOUR_TOKEN",
-        "--jadx-instances",
-        "192.168.1.10:8650:xhs-v8,192.168.1.11:8650:xhs-v9"
-      ]
-    }
-  }
-}
-```
-
-### Sample Multi-Instance Prompts
-
-```
-"Compare the MainActivity between xhs-v8 and xhs-v9 instances"
-
-"List all encryption-related classes in both app versions"
-
-"Check if the vulnerability in v8 was fixed in v9"
-
-"Analyze the network API changes between versions"
-```
-
-### Connecting to JADX in AI Conversation
-
-If you started the MCP server without `--jadx-instances`, you can tell the AI to connect dynamically:
-
-**Single Instance:**
-```
-Please connect to JADX server at 192.168.1.100:8650
-
-Or more specifically:
-Add JADX instance at host 192.168.1.100, port 8650, name it "my-app"
-```
-
-**Multiple Instances:**
-```
-Please connect to the following JADX instances:
-1. 192.168.1.10:8650 - name it "app-v1"
-2. 192.168.1.11:8650 - name it "app-v2"
-3. localhost:8652 - name it "dev"
-
-Then set "app-v1" as the default instance.
-```
-
-**Check Connection Status:**
-```
-List all connected JADX instances
-
-Check health status of all JADX instances
-
-What APK is loaded in the "app-v1" instance?
+# Multiple instances via CLI
+jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:v2"
 ```
 
 ---
 
-## 9. 🐳 Docker Deployment
+## 🔌 JADX Plugin Settings
 
-Two Docker images are available:
+In JADX GUI: `Plugins → JADX AI MCP Server → 设置...`
 
-| Image | Description | Size |
-|-------|-------------|------|
-| `xjoker/jadx-ai-mcp` | All-in-One (JADX GUI + noVNC + MCP Server) | ~800MB |
-| `xjoker/jadx-mcp-server` | Standalone MCP Server only | ~100MB |
-
-### Option A: All-in-One (Recommended for Quick Start)
-
-```bash
-# Pull and run
-docker pull xjoker/jadx-ai-mcp:latest
-docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -p 8651:8651 -v ./apks:/apks xjoker/jadx-ai-mcp
-```
-
-**Access**:
-- **noVNC Web Desktop**: http://localhost:6080/vnc.html
-- **Plugin API**: http://localhost:8650
-- **MCP Server**: http://localhost:8651
-
-### Option B: Standalone MCP Server (Production)
-
-For production environments where you run JADX instances separately:
-
-```bash
-# Run MCP Server only
-docker run -d --name jadx-mcp-server -p 8651:8651 \
-  -v ./config:/app/data/config \
-  xjoker/jadx-mcp-server
-
-# Connect to remote JADX instances via config file or AI commands
-```
-
-### Build from Source
-
-```bash
-git clone https://github.com/xjoker/jadx-ai-mcp.git
-cd jadx-ai-mcp
-
-# All-in-One image
-docker build -t jadx-ai-mcp -f docker/Dockerfile .
-
-# MCP Server only
-docker build -t jadx-mcp-server -f docker/Dockerfile.mcp .
-```
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JADX_MCP_BIND_ADDRESS` | 127.0.0.1 | Server bind address (use `0.0.0.0` for Docker) |
-| `JADX_MCP_PORT` | 8650 | Plugin HTTP API port |
-| `JADX_MCP_AUTH_TOKEN` | (auto-generated) | Authentication token |
-| `JADX_MCP_AUTH_ENABLED` | false | Enable authentication (`true`/`false`) |
-
-### Auto-load APK
-
-### Container Features
-
-- **xterm**: Open a terminal in the desktop for shell access
-- **btop**: System monitor for viewing container performance
-- **fluxbox**: Lightweight window manager
-
-For detailed Docker documentation, see [docker/README.md](docker/README.md).
+| Setting | Description |
+|---------|-------------|
+| **Port** | Plugin HTTP API port (default: 8650) |
+| **Bind Address** | Use `0.0.0.0` for network access |
+| **Auto Start** | Start server when JADX opens |
+| **Auth Token** | Token for MCP Server authentication |
 
 ---
-
 
 ## Troubleshooting
 
@@ -771,64 +685,31 @@ If you encounter issues:
 4. If using authentication, ensure tokens match
 5. For network issues, verify firewall settings
 
-
-## NOTE For Contributors
-
- - The files related to JADX-AI-MCP can be found under this repo.
-
- - The files related to **jadx-mcp-server** can be found [here](https://github.com/xjoker/jadx-ai-mcp/tree/jadx-ai/jadx-mcp-server).
-
-## To report bugs, issues, feature suggestion, Performance issue, general question, Documentation issue.
- - Kindly open an issue with respective template.
-
- - Tested on Claude Desktop Client, support for other AI will be tested soon!
+---
 
 ## 🙏 Credits
 
-This project is a plugin for JADX, an amazing open-source Android decompiler created and maintained by [@skylot](https://github.com/skylot). All core decompilation logic belongs to them. I have only extended it to support my MCP server with AI capabilities.
-
-This project is a fork of [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) created by [zinja-coder](https://github.com/zinja-coder). Huge thanks for their original work!
+This project is a plugin for JADX, an amazing open-source Android decompiler created and maintained by [@skylot](https://github.com/skylot). This project is a fork of [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) created by [zinja-coder](https://github.com/zinja-coder). Huge thanks for their original work!
 
 [📎 Original README (JADX)](https://github.com/skylot/jadx)
 
-The original README.md from jadx is included here in this repository for reference and credit.
-
-This MCP server is made possible by the extensibility of JADX-GUI and the amazing Android reverse engineering community.
-
-Also huge thanks to [@aaddrick](https://github.com/aaddrick) for developing Claude desktop for Debian based linux.
-
-And in last thanks to [@anthropics](https://github.com/anthropics) for developing the Model Context Protocol and [@FastMCP](https://github.com/modelcontextprotocol/python-sdk) team
-
-Apart from this, huge thanks to all open source projects which serve as a dependencies for this project and which made this possible.
-
 ### Dependencies
-
-This project uses following awesome libraries.
 
 - Plugin - Java
   - Javalin     - https://javalin.io/ - Apache 2.0 License
   - SLF4J       - https://slf4j.org/  - MIT License
-  - org.w3c.dom - https://mvnrepository.com/artifact/org.w3c.dom - W3C Software and Document License
 
 - MCP Server - Python
   - FastMCP - https://github.com/jlowin/fastmcp - Apache 2.0 License
-  - httpx   - https://www.python-httpx.org      - BSD-3-Clause (“BSD licensed”) 
+  - httpx   - https://www.python-httpx.org      - BSD-3-Clause
 
 ## 📄 License
 
-JADX-AI-MCP and all related projects inherits the Apache 2.0 License from the original JADX repository.
+JADX-AI-MCP inherits the Apache 2.0 License from the original JADX repository.
 
 ## ⚖️ Legal Warning
 
-**Disclaimer**
-
-The tools `jadx-ai-mcp` and `jadx_mcp_server` are intended strictly for educational, research, and ethical security assessment purposes. They are provided "as-is" without any warranties, expressed or implied. Users are solely responsible for ensuring that their use of these tools complies with all applicable laws, regulations, and ethical guidelines.
-
-By using `jadx-ai-mcp` or `jadx_mcp_server`, you agree to use them only in environments you are authorized to test, such as applications you own or have explicit permission to analyze. Any misuse of these tools for unauthorized reverse engineering, infringement of intellectual property rights, or malicious activity is strictly prohibited.
-
-The developers of `jadx-ai-mcp` and `jadx_mcp_server` shall not be held liable for any damage, data loss, legal consequences, or other consequences resulting from the use or misuse of these tools. Users assume full responsibility for their actions and any impact caused by their usage.
-
-Use responsibly. Respect intellectual property. Follow ethical hacking practices.
+The tools `jadx-ai-mcp` and `jadx_mcp_server` are intended strictly for educational, research, and ethical security assessment purposes. Users are solely responsible for ensuring compliance with all applicable laws.
 
 ---
 
@@ -836,9 +717,7 @@ Use responsibly. Respect intellectual property. Follow ethical hacking practices
 
 - Found it useful? Give it a ⭐️
 - Got ideas? Open an [issue](https://github.com/xjoker/jadx-ai-mcp/issues) or submit a PR
-- Built something on top? DM me or mention me — I’ll add it to the README!
-- Do you like my work and keep it going? Sponsor this project.
-  
+
 ---
 
 Built with ❤️ for the reverse engineering and AI communities.
