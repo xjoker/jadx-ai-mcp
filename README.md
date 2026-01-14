@@ -340,13 +340,35 @@ docker run -d -p 8651:8651 xjoker/jadx-mcp-server:latest
 **Option B: Local Installation**
 
 ```bash
-# Install uv package manager
+# 1. Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Run MCP Server
+# 2. Install MCP Server
 uv tool install "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server"
+
+# 3. Run MCP Server (choose one)
+
+# Simple mode - connect to local JADX
 jadx_mcp_server --http --host 0.0.0.0 --port 8651
+
+# With specific JADX instance
+jadx_mcp_server --http --host 0.0.0.0 --jadx-host 192.168.1.10 --jadx-port 8650
+
+# With config file
+jadx_mcp_server --http --config jadx-config.toml
+
+# Multi-instance mode
+jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
+
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `JADX_HOST` | JADX plugin host (default: 127.0.0.1) |
+| `JADX_PORT` | JADX plugin port (default: 8650) |
+| `JADX_MCP_AUTH_TOKEN` | Authentication token for JADX plugin |
+| `JADX_MCP_SERVER_PORT` | MCP server port (default: 8651) |
 
 ### Step 3: Connect LLM Client
 
@@ -381,12 +403,28 @@ Two Docker images are available:
 
 ### All-in-One Container
 
+**Basic Usage:**
+
 ```bash
 docker run -d --name jadx \
   -p 6080:6080 \
   -p 8650:8650 \
   -p 8651:8651 \
   -v $(pwd)/apks:/apks \
+  xjoker/jadx-ai-mcp:latest
+```
+
+**With Cache and Config (Recommended):**
+
+```bash
+docker run -d --name jadx \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  -v $(pwd)/config:/app/data/config \
+  -v jadx-cache:/root/.cache \
+  -v jadx-gui-cache:/root/.jadx-gui \
   xjoker/jadx-ai-mcp:latest
 ```
 
@@ -395,39 +433,64 @@ docker run -d --name jadx \
 - 🔌 **Plugin API**: http://localhost:8650
 - 🤖 **MCP Server**: http://localhost:8651
 
-### Performance Optimization (Recommended)
+### Volume Reference
 
-Mount cache directories to **persist JADX decompilation cache** across container restarts:
+| Volume | Path | Purpose |
+|--------|------|---------|
+| APK Files | `/apks` | Mount APK files for analysis |
+| Config | `/app/data/config` | Configuration files (jadx-config.toml) |
+| Cache | `/root/.cache` | JADX decompilation cache (10-50x faster) |
+| GUI Settings | `/root/.jadx-gui` | GUI preferences persistence |
 
-```bash
-docker run -d --name jadx \
-  -p 6080:6080 \
-  -p 8650:8650 \
-  -p 8651:8651 \
-  -v $(pwd)/apks:/apks \
-  -v jadx-cache:/root/.cache \
-  -v jadx-gui-cache:/root/.jadx-gui \
-  xjoker/jadx-ai-mcp:latest
-```
-
-| Volume | Purpose | Benefit |
-|--------|---------|---------|
-| `/root/.cache` | JADX decompilation cache | 10-50x faster re-analysis |
-| `/root/.jadx-gui` | GUI settings and history | Persistence across restarts |
-| `/apks` | APK file mount point | Easy file access |
-
-> **Tip**: First code search on a large APK triggers decompilation (slow). Subsequent searches on the same APK are fast due to cache.
+> **Tip**: First code search on a large APK triggers decompilation (slow). Subsequent searches are fast due to cache.
 
 ### Standalone MCP Server
 
-For production environments with multiple JADX instances:
+For production environments connecting to external JADX instances:
+
+**Option 1: With Config File**
+
+```bash
+# Create config directory and file
+mkdir -p config
+cat > config/jadx-config.toml << 'EOF'
+[server]
+host = "0.0.0.0"
+port = 8651
+
+[[jadx_instances]]
+name = "jadx-1"
+host = "192.168.1.10"
+port = 8650
+enabled = true
+EOF
+
+# Run with config
+docker run -d --name mcp-server \
+  -p 8651:8651 \
+  -v $(pwd)/config:/app/data/config \
+  xjoker/jadx-mcp-server:latest
+```
+
+**Option 2: With Environment Variables**
 
 ```bash
 docker run -d --name mcp-server \
   -p 8651:8651 \
-  -v $(pwd)/config:/app/data/config \
+  -e JADX_HOST=192.168.1.10 \
+  -e JADX_PORT=8650 \
+  -e JADX_MCP_AUTH_TOKEN=your-token \
+  xjoker/jadx-mcp-server:latest
+```
+
+**Option 3: CLI Arguments**
+
+```bash
+docker run -d --name mcp-server \
+  -p 8651:8651 \
   xjoker/jadx-mcp-server:latest \
-  /usr/local/bin/uv run jadx_mcp_server --http --config /app/data/config/jadx-config.toml
+  jadx_mcp_server --http --host 0.0.0.0 \
+    --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
 
 ---

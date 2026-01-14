@@ -35,8 +35,9 @@ flowchart LR
 
 ### All-in-One Image
 
+**Basic Usage:**
+
 ```bash
-# Pull and run
 docker pull xjoker/jadx-ai-mcp:latest
 docker run -d --name jadx-ai-mcp \
   -p 6080:6080 \
@@ -51,9 +52,7 @@ docker run -d --name jadx-ai-mcp \
 # - MCP Server: http://localhost:8651
 ```
 
-### Performance Optimization (Recommended)
-
-Mount cache volumes to **persist JADX decompilation cache** for faster re-analysis:
+**With Cache and Config (Recommended):**
 
 ```bash
 docker run -d --name jadx-ai-mcp \
@@ -61,29 +60,70 @@ docker run -d --name jadx-ai-mcp \
   -p 8650:8650 \
   -p 8651:8651 \
   -v $(pwd)/apks:/apks \
+  -v $(pwd)/config:/app/data/config \
   -v jadx-cache:/root/.cache \
   -v jadx-gui-cache:/root/.jadx-gui \
   xjoker/jadx-ai-mcp
 ```
 
-| Volume | Purpose | Benefit |
-|--------|---------|---------|
-| `/root/.cache` | JADX decompilation cache | 10-50x faster re-analysis |
-| `/root/.jadx-gui` | GUI settings and history | Persistence across restarts |
-| `/apks` | APK file mount point | Easy file access |
+### Volume Reference
+
+| Volume | Path | Purpose |
+|--------|------|---------|
+| APK Files | `/apks` | Mount APK files for analysis |
+| Config | `/app/data/config` | Configuration files (jadx-config.toml) |
+| Cache | `/root/.cache` | JADX decompilation cache (10-50x faster) |
+| GUI Settings | `/root/.jadx-gui` | GUI preferences persistence |
 
 > **Tip**: First code search on large APK triggers decompilation (slow). Subsequent searches are fast due to cache.
 
 ### Standalone MCP Server
 
+For production environments connecting to external JADX instances:
+
+**Option 1: With Config File**
+
 ```bash
-# For production: run MCP Server separately
+# Create config
+mkdir -p config
+cat > config/jadx-config.toml << 'EOF'
+[server]
+host = "0.0.0.0"
+port = 8651
+
+[[jadx_instances]]
+name = "jadx-1"
+host = "192.168.1.10"
+port = 8650
+enabled = true
+EOF
+
+# Run
 docker run -d --name jadx-mcp-server \
   -p 8651:8651 \
   -v $(pwd)/config:/app/data/config \
   xjoker/jadx-mcp-server
+```
 
-# Connect to remote JADX instances via config or AI commands
+**Option 2: With Environment Variables**
+
+```bash
+docker run -d --name jadx-mcp-server \
+  -p 8651:8651 \
+  -e JADX_HOST=192.168.1.10 \
+  -e JADX_PORT=8650 \
+  -e JADX_MCP_AUTH_TOKEN=your-token \
+  xjoker/jadx-mcp-server
+```
+
+**Option 3: CLI Arguments**
+
+```bash
+docker run -d --name jadx-mcp-server \
+  -p 8651:8651 \
+  xjoker/jadx-mcp-server \
+  jadx_mcp_server --http --host 0.0.0.0 \
+    --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
 
 ## Ports

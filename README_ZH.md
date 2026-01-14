@@ -83,13 +83,35 @@ docker run -d -p 8651:8651 xjoker/jadx-mcp-server:latest
 **方式 B: 本地安装**
 
 ```bash
-# 安装 uv 包管理器
+# 1. 安装 uv 包管理器
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 运行 MCP Server
+# 2. 安装 MCP Server
 uv tool install "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server"
+
+# 3. 运行 MCP Server（选择其一）
+
+# 简单模式 - 连接本地 JADX
 jadx_mcp_server --http --host 0.0.0.0 --port 8651
+
+# 指定 JADX 实例
+jadx_mcp_server --http --host 0.0.0.0 --jadx-host 192.168.1.10 --jadx-port 8650
+
+# 使用配置文件
+jadx_mcp_server --http --config jadx-config.toml
+
+# 多实例模式
+jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
+
+**环境变量：**
+
+| 变量 | 描述 |
+|------|------|
+| `JADX_HOST` | JADX 插件地址（默认：127.0.0.1）|
+| `JADX_PORT` | JADX 插件端口（默认：8650）|
+| `JADX_MCP_AUTH_TOKEN` | JADX 插件认证 Token |
+| `JADX_MCP_SERVER_PORT` | MCP Server 端口（默认：8651）|
 
 ### 步骤 3: 连接 LLM 客户端
 
@@ -124,12 +146,28 @@ claude mcp add --transport http jadx http://localhost:8651/mcp
 
 ### All-in-One 容器
 
+**基本用法：**
+
 ```bash
 docker run -d --name jadx \
   -p 6080:6080 \
   -p 8650:8650 \
   -p 8651:8651 \
   -v $(pwd)/apks:/apks \
+  xjoker/jadx-ai-mcp:latest
+```
+
+**推荐配置（含缓存和配置文件）：**
+
+```bash
+docker run -d --name jadx \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  -v $(pwd)/config:/app/data/config \
+  -v jadx-cache:/root/.cache \
+  -v jadx-gui-cache:/root/.jadx-gui \
   xjoker/jadx-ai-mcp:latest
 ```
 
@@ -138,39 +176,64 @@ docker run -d --name jadx \
 - 🔌 **插件 API**: http://localhost:8650
 - 🤖 **MCP Server**: http://localhost:8651
 
-### 性能优化（推荐）
+### 卷挂载参考
 
-挂载缓存目录以**持久化 JADX 反编译缓存**，加速容器重启后的分析：
-
-```bash
-docker run -d --name jadx \
-  -p 6080:6080 \
-  -p 8650:8650 \
-  -p 8651:8651 \
-  -v $(pwd)/apks:/apks \
-  -v jadx-cache:/root/.cache \
-  -v jadx-gui-cache:/root/.jadx-gui \
-  xjoker/jadx-ai-mcp:latest
-```
-
-| 卷 | 用途 | 收益 |
+| 卷 | 路径 | 用途 |
 |----|------|------|
-| `/root/.cache` | JADX 反编译缓存 | 重复分析速度提升 10-50 倍 |
-| `/root/.jadx-gui` | GUI 设置和历史 | 跨重启持久化 |
-| `/apks` | APK 文件挂载点 | 便于文件访问 |
+| APK 文件 | `/apks` | 挂载 APK 文件进行分析 |
+| 配置 | `/app/data/config` | 配置文件 (jadx-config.toml) |
+| 缓存 | `/root/.cache` | JADX 反编译缓存（加速 10-50 倍）|
+| GUI 设置 | `/root/.jadx-gui` | GUI 首选项持久化 |
 
-> **提示**：大型 APK 首次代码搜索会触发反编译（较慢）。同一 APK 的后续搜索因缓存而快速。
+> **提示**：大型 APK 首次代码搜索会触发反编译（较慢）。后续搜索因缓存而快速。
 
 ### 独立 MCP Server
 
-用于生产环境，连接多个 JADX 实例：
+用于生产环境，连接外部 JADX 实例：
+
+**方式 1：使用配置文件**
+
+```bash
+# 创建配置目录和文件
+mkdir -p config
+cat > config/jadx-config.toml << 'EOF'
+[server]
+host = "0.0.0.0"
+port = 8651
+
+[[jadx_instances]]
+name = "jadx-1"
+host = "192.168.1.10"
+port = 8650
+enabled = true
+EOF
+
+# 运行容器
+docker run -d --name mcp-server \
+  -p 8651:8651 \
+  -v $(pwd)/config:/app/data/config \
+  xjoker/jadx-mcp-server:latest
+```
+
+**方式 2：使用环境变量**
 
 ```bash
 docker run -d --name mcp-server \
   -p 8651:8651 \
-  -v $(pwd)/config:/app/data/config \
+  -e JADX_HOST=192.168.1.10 \
+  -e JADX_PORT=8650 \
+  -e JADX_MCP_AUTH_TOKEN=your-token \
+  xjoker/jadx-mcp-server:latest
+```
+
+**方式 3：使用命令行参数**
+
+```bash
+docker run -d --name mcp-server \
+  -p 8651:8651 \
   xjoker/jadx-mcp-server:latest \
-  /usr/local/bin/uv run jadx_mcp_server --http --config /app/data/config/jadx-config.toml
+  jadx_mcp_server --http --host 0.0.0.0 \
+    --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
 
 ---
