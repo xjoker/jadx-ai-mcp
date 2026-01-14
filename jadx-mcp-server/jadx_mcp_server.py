@@ -41,6 +41,7 @@ from src.server.tools.debug_tools import (
 from src.server.tools.xrefs_tools import (
     get_xrefs_to_class, get_xrefs_to_method, get_xrefs_to_field, batch_get_xrefs
 )
+from src.server.prompts import register_prompts
 from src.server.tools.instance_tools import register_instance_tools
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
@@ -740,6 +741,9 @@ def main():
     # ========== Run MCP Server ==========
     # Register instance management tools
     register_instance_tools(mcp)
+    
+    # Register Prompts
+    register_prompts(mcp)
     
     # Register authentication middleware (HTTP mode only)
     require_auth = bool(loaded_config and loaded_config.users) and not allow_anonymous
