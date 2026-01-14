@@ -418,19 +418,67 @@ https://github.com/user-attachments/assets/b4a6b280-5aa9-4e76-ac72-a0abec73b809
 
 ## 5. Running in HTTP Stream Mode
 
-You can also use Jadx in HTTP Stream Mode using `--http` option with `jadx_mcp_server.py` as shown in following:
+The MCP server can run in HTTP mode for remote connections and Docker deployments:
 
 ```bash
-uv run jadx_mcp_server.py --http
+# Basic HTTP mode
+uv run jadx_mcp_server.py --http --host 0.0.0.0 --port 8651
 
-OR
+# With configuration file (recommended for production)
+uv run jadx_mcp_server.py --http --config data/config/jadx-config.toml
+```
 
-uv run jadx_mcp_server.py --http --port 9999
+### Configuration File (TOML)
+
+Create `jadx-config.toml` for advanced configuration:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8651
+
+# Multi-user authentication
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+
+[[users]]
+name = "admin"
+token = "token-admin-zzzzz"
+is_admin = true  # Can see all users' dynamic instances
+
+[defaults]
+request_timeout = 120
+busy_timeout = 300
+jadx_token = ""  # Default JADX plugin token
+
+# Pre-configured JADX instances
+[[jadx_instances]]
+name = "local"
+host = "127.0.0.1"
+port = 8650
+enabled = true
+```
+
+### Claude Desktop with HTTP Mode
+
+```json
+{
+  "mcpServers": {
+    "jadx-mcp-server": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp/v1",
+      "headers": {
+        "Authorization": "Bearer token-alice-xxxxx"
+      }
+    }
+  }
+}
 ```
 
 ## 6. Plugin Configuration (Unified Settings Panel)
 
-All plugin settings are now managed through a **unified Settings dialog**:
+All plugin settings are managed through a **unified Settings dialog**:
 
 **Access**: `Plugins → JADX AI MCP Server → 设置...`
 
@@ -440,109 +488,81 @@ The Settings panel includes:
 - **Authentication**: Token generation and management
 - **Server Controls**: Start, stop, restart, and status check
 
-To connect with JADX AI MCP Plugin running on custom port, the `--jadx-port` option will be used as shown in following:
-```
-uv run jadx_mcp_server.py --jadx-port 8652
-```
-
-The MCP Configuration for above will be as follows for claude:
-
-```
-{
-  "mcpServers": {
-    "jadx-mcp-server": {
-      "command": "/path/to/uv",
-      "args": [
-        "--directory",
-        "/path/to/jadx-mcp-server/",
-        "run",
-        "jadx_mcp_server.py",
-        "--jadx-port",
-        "8652"
-      ]
-    }
-  }
-}
-```
-
 ## 7. 🔐 Authentication & Security
 
-JADX AI MCP now supports **Token-based authentication** to secure your reverse engineering workflow!
+JADX AI MCP supports **multi-user authentication** with user isolation for secure team environments.
 
-### Why Use Authentication?
+### Authentication Options
 
-- ✅ **Prevent unauthorized access** when exposing plugin on internal networks
-- ✅ **Secure remote analysis** scenarios
-- ✅ **Enterprise security compliance**
-- ✅ **Multiple user environments**
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Single Token** | `--auth-token` CLI option | Single user/simple setup |
+| **Multi-User** | Config file `[[users]]` | Team environments |
+| **No Auth** | Default | Local development |
 
-### Quick Setup
+### Multi-User Setup
 
-1. **Open Settings in JADX GUI**: `Plugins → JADX AI MCP Server → 设置...`
-2. **Configure authentication in the "Authentication" tab**
-3. **Copy the token**
-4. **Add to MCP server**:
+1. Create config file with user tokens:
+
+```toml
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+
+[[users]]
+name = "admin"
+token = "token-admin-zzzzz"
+is_admin = true  # Admin sees all users' dynamic instances
+```
+
+2. Run with config:
 
 ```bash
-uv run jadx_mcp_server.py --auth-token "YOUR_TOKEN_HERE"
+uv run jadx_mcp_server.py --http --config jadx-config.toml
 ```
 
-### Claude Desktop Configuration with Auth
-
-```json
-{
-  "mcpServers": {
-    "jadx-mcp-server": {
-      "command": "/path/to/uv",
-      "args": [
-        "--directory",
-        "/path/to/jadx-ai-mcp/jadx-mcp-server/",
-        "run",
-        "jadx_mcp_server.py",
-        "--auth-token",
-        "YOUR_TOKEN_HERE"
-      ]
-    }
-  }
-}
-```
-```
-
-
-### Remote Access Configuration
-
-Connect to JADX running on a different machine:
+3. Connect with user token:
 
 ```bash
-# MCP server connecting to remote JADX instance
-uv run jadx_mcp_server.py \
-  --jadx-host 192.168.1.100 \
-  --jadx-port 8650 \
-  --auth-token "YOUR_TOKEN_HERE"
+# Claude CLI
+claude mcp add --transport http jadx http://server:8651 \
+  --header "Authorization: Bearer token-alice-xxxxx"
 ```
 
-Expose MCP server on network (with authentication):
+### User Isolation
+
+- **Shared Instances**: From config file, visible to all users
+- **Dynamic Instances**: Added via AI, only visible to owner
+- **Admin Users**: Can see all instances from all users
+
+### JADX Plugin Authentication
+
+The `--auth-token` option authenticates **MCP Server → JADX Plugin** connections:
 
 ```bash
-# Allow external connections to MCP server
-uv run jadx_mcp_server.py \
-  --http \
-  --host 0.0.0.0 \
-  --port 8651 \
-  --auth-token "YOUR_TOKEN_HERE"
+uv run jadx_mcp_server.py --auth-token "JADX_PLUGIN_TOKEN"
+```
+
+Or set default in config:
+
+```toml
+[defaults]
+jadx_token = "JADX_PLUGIN_TOKEN"
 ```
 
 ### Command Line Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--jadx-host` | `127.0.0.1` | JADX plugin IP address (legacy single instance) |
-| `--jadx-port` | `8650` | JADX plugin port (legacy single instance) |
+| `--config` | None | Path to TOML configuration file |
+| `--http` | False | Enable HTTP stream mode |
 | `--host` | `127.0.0.1` | MCP server bind address |
 | `--port` | `8651` | MCP server port (HTTP mode) |
-| `--auth-token` | None | Authentication token (shared across all instances) |
-| `--http` | False | Enable HTTP stream mode |
+| `--auth-token` | None | JADX plugin authentication token |
+| `--jadx-host` | `127.0.0.1` | JADX plugin IP (legacy single instance) |
+| `--jadx-port` | `8650` | JADX plugin port (legacy single instance) |
 | `--jadx-instances` | None | Multiple JADX instances: `host:port[:name],...` |
+| `--mcp-auth-token` | None | MCP server authentication token (single user) |
 
 ## 8. 🚀 Multi-Instance Management
 
