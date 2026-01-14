@@ -338,7 +338,10 @@ class InstanceRegistry:
         results = []
         healthy_count = 0
         
-        for name, instance in cls._instances.items():
+        # Iterate over a copy to avoid RuntimeError if dict changes during iteration
+        instances_snapshot = list(cls._instances.items())
+        
+        for name, instance in instances_snapshot:
             try:
                 is_healthy = await cls._check_health(instance.host, instance.port)
                 instance.status = "connected" if is_healthy else "disconnected"

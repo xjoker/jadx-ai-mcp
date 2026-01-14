@@ -85,7 +85,13 @@ RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
     && echo "Plugin version: ${PLUGIN_VERSION}"
 
 # ============================================================================
-# Layer 5: Startup scripts (changes occasionally)
+# Layer 5: MCP Server (local copy instead of runtime pull)
+# ============================================================================
+COPY jadx-mcp-server /opt/jadx/jadx-mcp-server
+RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen
+
+# ============================================================================
+# Layer 6: Startup scripts (changes occasionally)
 # ============================================================================
 COPY docker/scripts/start.sh /start.sh
 COPY docker/scripts/jadx-gui-wrapper.sh /opt/jadx/bin/jadx-gui-wrapper.sh
