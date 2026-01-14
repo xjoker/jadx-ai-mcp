@@ -92,9 +92,24 @@ async def batch_get_class_source(class_names: list[str], instance_id: Optional[s
     MCP Tool: batch_get_class_source
     Description: Batch retrieval of decompiled Java sources for multiple classes
     """
-    # Join class names with comma for the API
-    class_names_str = ",".join(class_names)
-    return await get_from_jadx("batch-class-source", {"class_names": class_names_str}, instance_id=instance_id)
+    logger.info(f"batch_get_class_source: classes={class_names}, instance={instance_id}")
+    try:
+        # Join class names with comma for the API
+        class_names_str = ",".join(class_names)
+        result = await get_from_jadx("batch-class-source", {"class_names": class_names_str}, instance_id=instance_id)
+        
+        if "error" in result:
+            logger.error(f"batch_get_class_source failed: {result.get('error')}")
+        else:
+            found_count = result.get("found", 0)
+            total_count = result.get("total", len(class_names))
+            logger.info(f"batch_get_class_source: found {found_count}/{total_count} classes")
+        
+        return result
+    except Exception as e:
+        error_msg = f"{type(e).__name__}: {str(e) or '(no message)'}"
+        logger.error(f"batch_get_class_source exception: {error_msg}")
+        return {"error": f"Unexpected error: {error_msg}"}
 
 
 async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:

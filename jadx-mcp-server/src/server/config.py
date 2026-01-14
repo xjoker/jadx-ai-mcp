@@ -232,7 +232,8 @@ async def get_from_jadx(
         return {"error": error_msg}
 
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg)
+        error_detail = str(e) if str(e) else f"(no message, type={type(e).__name__})"
+        error_msg = f"Unexpected error: {type(e).__name__}: {error_detail}"
+        logger.error(f"JADX request failed: {error_msg}")
         return {"error": error_msg}
 
