@@ -997,16 +997,20 @@ public class ClassRoutes {
                     if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
                         return false;
                     }
-                    // Check each method in the class
-                    for (JavaMethod method : cls.getMethods()) {
-                        // Check method name (includes constructors <init> and static initializers
-                        // <clinit>)
-                        if (method.getName().toLowerCase().contains(term)) {
+                    // Use ClassNode to avoid triggering decompilation
+                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                    if (classNode == null) return false;
+                    
+                    // Check each method in the class using MethodNode (no decompilation)
+                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                        String mthName = mth.getMethodInfo().getName().toLowerCase();
+                        // Check method name (includes constructors <init> and static initializers <clinit>)
+                        if (mthName.contains(term)) {
                             return true;
                         }
 
                         // Check if it's a constructor - also match against class simple name
-                        if (method.isConstructor()) {
+                        if (mth.getMethodInfo().isConstructor()) {
                             String classSimpleName = cls.getName().toLowerCase();
                             if (classSimpleName.contains(term)) {
                                 return true;
@@ -1029,9 +1033,13 @@ public class ClassRoutes {
                     if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
                         return false;
                     }
-                    // Check if any field name contains the term
-                    for (JavaField field : cls.getFields()) {
-                        if (field.getName().toLowerCase().contains(term)) {
+                    // Use ClassNode to avoid triggering decompilation
+                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                    if (classNode == null) return false;
+                    
+                    // Check if any field name contains the term (using FieldNode)
+                    for (jadx.core.dex.nodes.FieldNode field : classNode.getFields()) {
+                        if (field.getFieldInfo().getName().toLowerCase().contains(term)) {
                             return true;
                         }
                     }
