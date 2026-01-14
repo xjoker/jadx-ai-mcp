@@ -270,12 +270,14 @@ class InstanceRegistry:
             return False
     
     @classmethod
-    def remove_instance(cls, name: str) -> dict:
+    def remove_instance(cls, name: str, username: str = None, is_admin: bool = False) -> dict:
         """
-        Remove specified JADX instance
+        Remove specified JADX instance (with permission check)
         
         Args:
             name: Instance name
+            username: Current user's name (required for permission check)
+            is_admin: Whether user is admin
             
         Returns:
             {"success": bool, "message": str}
@@ -286,6 +288,21 @@ class InstanceRegistry:
                 "message": f"Instance '{name}' not found",
             }
         
+        instance = cls._instances[name]
+        
+        # Permission check: admin can remove any, user can only remove their own dynamic instances
+        if not is_admin:
+            if instance.owner is None:
+                return {
+                    "success": False,
+                    "message": f"Cannot remove shared instance '{name}'. Only admins can remove shared instances.",
+                }
+            if instance.owner != username:
+                return {
+                    "success": False,
+                    "message": f"Cannot remove instance '{name}'. You can only remove your own instances.",
+                }
+        
         del cls._instances[name]
         
         # If removed instance was default, select another
@@ -294,7 +311,8 @@ class InstanceRegistry:
             if cls._default_instance:
                 logger.info(f"Default instance changed to: {cls._default_instance}")
         
-        logger.info(f"Removed instance: {name}")
+        owner_info = f" (owner: {instance.owner})" if instance.owner else " (shared)"
+        logger.info(f"Removed instance: {name}{owner_info} by user: {username or 'system'}")
         return {
             "success": True,
             "message": f"Removed instance '{name}'",
@@ -368,12 +386,14 @@ class InstanceRegistry:
         return None
     
     @classmethod
-    def set_default(cls, name: str) -> dict:
+    def set_default(cls, name: str, username: str = None, is_admin: bool = False) -> dict:
         """
-        Set default instance
+        Set default instance (with permission check)
         
         Args:
             name: Instance name
+            username: Current user's name (required for permission check)
+            is_admin: Whether user is admin
             
         Returns:
             {"success": bool, "message": str}
@@ -384,8 +404,18 @@ class InstanceRegistry:
                 "message": f"Instance '{name}' not found",
             }
         
+        instance = cls._instances[name]
+        
+        # Permission check: user can only set accessible instances as default
+        if not is_admin:
+            if instance.owner is not None and instance.owner != username:
+                return {
+                    "success": False,
+                    "message": f"Cannot set '{name}' as default. You don't have access to this instance.",
+                }
+        
         cls._default_instance = name
-        logger.info(f"Default instance set to: {name}")
+        logger.info(f"Default instance set to: {name} by user: {username or 'system'}")
         return {
             "success": True,
             "message": f"Default instance set to '{name}'",
@@ -473,22 +503,32 @@ class InstanceRegistry:
         instances_snapshot = list(cls._instances.items())
         
         for name, instance in instances_snapshot:
+            new_status = "unknown"
+            error_msg = ""
             try:
                 is_healthy = await cls._check_health(instance.host, instance.port)
-                instance.status = "connected" if is_healthy else "disconnected"
-                instance.last_health_check = datetime.now()
                 if is_healthy:
+                    new_status = "connected"
                     healthy_count += 1
-                    instance.error_message = ""
+                    error_msg = ""
                 else:
-                    instance.error_message = "Health check failed"
+                    new_status = "disconnected"
+                    error_msg = "Health check failed"
             except Exception as e:
-                instance.status = "error"
-                instance.error_message = f"{type(e).__name__}: {str(e) or '(no details)'}"
+                new_status = "error"
+                error_msg = f"{type(e).__name__}: {str(e) or '(no details)'}"
+            
+            # Thread-safe update via lock
+            with cls._thread_lock:
+                if name in cls._instances:
+                    inst = cls._instances[name]
+                    inst.status = new_status
+                    inst.last_health_check = datetime.now()
+                    inst.error_message = error_msg
             
             results.append({
                 "name": name,
-                "status": instance.status,
+                "status": new_status,
             })
         
         return {

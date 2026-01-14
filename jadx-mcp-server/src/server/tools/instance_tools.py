@@ -184,7 +184,7 @@ def register_instance_tools(mcp):
                 "message": f"You can only remove your own dynamic instances",
             }
         
-        return InstanceRegistry.remove_instance(name)
+        return InstanceRegistry.remove_instance(name, username=username, is_admin=is_admin)
     
     @mcp.tool()
     async def set_default_jadx_instance(name: str) -> dict:
@@ -202,7 +202,12 @@ def register_instance_tools(mcp):
                 "message": "Default instance set to 'xhs-v8'"
             }
         """
-        return InstanceRegistry.set_default(name)
+        # Get current user from auth context
+        user = UserAuthManager.get_current_user()
+        username = user.name if user else "anonymous"
+        is_admin = user.is_admin if user else False
+        
+        return InstanceRegistry.set_default(name, username=username, is_admin=is_admin)
     
     @mcp.tool()
     async def get_jadx_instance_info(name: str) -> dict:

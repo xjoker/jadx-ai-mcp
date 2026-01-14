@@ -759,9 +759,9 @@ def main():
         # Get new enabled instance names from config
         new_names = {inst.name for inst in new_config.jadx_instances if inst.enabled}
         
-        # Remove instances no longer in config
+        # Remove instances no longer in config (system-level operation)
         for name in current_names - new_names:
-            result = InstanceRegistry.remove_instance(name)
+            result = InstanceRegistry.remove_instance(name, username="system", is_admin=True)
             print(f"  [Hot-Reload] Removed: {name}")
         
         # Add new instances from config
