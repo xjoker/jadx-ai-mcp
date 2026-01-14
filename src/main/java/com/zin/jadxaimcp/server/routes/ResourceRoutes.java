@@ -82,24 +82,42 @@ public class ResourceRoutes {
      */
     public void handleStrings(Context ctx) {
         try {
-            // Phase 1: Collect string file references without loading content
+            // Phase 1: Collect string file references
+            // Note: loadContent() for resources.arsc can be slow on large APKs
             List<StringFileRef> stringFileRefs = new ArrayList<>();
             List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+            boolean resourcesTimedOut = false;
             
             for (ResourceFile resFile : resourceFiles) {
                 try {
                     if ("resources.arsc".equals(resFile.getDeobfName())) {
-                        // For compiled resources, we need to load to get subfiles list
-                        // but we don't need to get the actual content yet
-                        ResContainer content = resFile.loadContent();
-                        if (content != null) {
-                            for (ResContainer subFile : content.getSubFiles()) {
-                                String fileName = subFile.getFileName();
-                                // Match all strings.xml variants (values, values-zh, etc.)
-                                if (fileName != null && fileName.contains("strings.xml")) {
-                                    stringFileRefs.add(new StringFileRef(fileName, subFile));
+                        // Use timeout protection for large resources.arsc loading
+                        try {
+                            java.util.concurrent.CompletableFuture<ResContainer> future = 
+                                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                                    try {
+                                        return resFile.loadContent();
+                                    } catch (Exception e) {
+                                        return null;
+                                    }
+                                });
+                            
+                            // 30 second timeout for resources.arsc parsing
+                            ResContainer content = future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                            
+                            if (content != null) {
+                                for (ResContainer subFile : content.getSubFiles()) {
+                                    String fileName = subFile.getFileName();
+                                    if (fileName != null && fileName.contains("strings.xml")) {
+                                        stringFileRefs.add(new StringFileRef(fileName, subFile));
+                                    }
                                 }
                             }
+                        } catch (java.util.concurrent.TimeoutException e) {
+                            logger.warn("Timeout loading resources.arsc - APK may be too large");
+                            resourcesTimedOut = true;
+                        } catch (Exception e) {
+                            logger.warn("Error loading resources.arsc: " + e.getMessage());
                         }
                     } else if (resFile.getDeobfName() != null && 
                                resFile.getDeobfName().contains("strings.xml")) {
@@ -108,6 +126,16 @@ public class ResourceRoutes {
                 } catch (Exception e) {
                     logger.warn("Error scanning resource file: " + e.getMessage());
                 }
+            }
+            
+            // Handle timeout case
+            if (stringFileRefs.isEmpty() && resourcesTimedOut) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/strings-xml");
+                result.put("error", "resources.arsc parsing timed out - APK is too large");
+                result.put("suggestion", "Use get_resource_file with specific path like 'res/values/strings.xml'");
+                ctx.status(504).json(result);
+                return;
             }
             
             if (stringFileRefs.isEmpty()) {
