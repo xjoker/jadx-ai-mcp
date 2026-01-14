@@ -352,7 +352,7 @@ jadx_mcp_server --http --host 0.0.0.0 --port 8651
 
 ```bash
 # Claude CLI - Connect to HTTP MCP Server
-claude mcp add --transport http jadx http://localhost:8651/mcp/v1
+claude mcp add --transport http jadx http://localhost:8651/mcp
 ```
 
 Or configure `claude_desktop_config.json`:
@@ -362,7 +362,7 @@ Or configure `claude_desktop_config.json`:
   "mcpServers": {
     "jadx": {
       "type": "http",
-      "url": "http://localhost:8651/mcp/v1"
+      "url": "http://localhost:8651/mcp"
     }
   }
 }
@@ -606,7 +606,7 @@ sequenceDiagram
 
 ```bash
 # Claude CLI with Bearer token
-claude mcp add --transport http jadx http://server:8651/mcp/v1 \
+claude mcp add --transport http jadx http://server:8651/mcp \
   --header "Authorization: Bearer token-alice-xxxxx"
 ```
 
@@ -616,7 +616,7 @@ claude mcp add --transport http jadx http://server:8651/mcp/v1 \
   "mcpServers": {
     "jadx": {
       "type": "http",
-      "url": "http://server:8651/mcp/v1",
+      "url": "http://server:8651/mcp",
       "headers": {
         "Authorization": "Bearer token-alice-xxxxx"
       }
