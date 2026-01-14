@@ -34,7 +34,7 @@ WORKDIR /app
 COPY jadx-mcp-server /app
 
 # Install dependencies
-RUN uv sync --frozen
+RUN /usr/local/bin/uv sync --frozen
 
 # Create config directory
 RUN mkdir -p /app/data/config
@@ -50,4 +50,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8651/health || exit 1
 
 # Default command - can be overridden with --config
-CMD ["uv", "run", "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--port", "8651"]
+CMD ["/usr/local/bin/uv", "run", "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--port", "8651"]

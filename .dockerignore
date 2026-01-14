@@ -23,12 +23,10 @@ docs/
 .AIINFO/
 AGENTS.md
 
-# Python MCP server (separate deployment)
-jadx-mcp-server/
-
 # macOS
 .DS_Store
 
 # Temp files
 *.log
 *.tmp
+
