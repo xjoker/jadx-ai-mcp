@@ -15,7 +15,7 @@ public class JadxAIMCPBanner {
      * Build commit SHA - short hash for quick verification
      * Updated by CI/CD pipeline during build
      */
-    public static final String BUILD_COMMIT = "2877e7b";
+    public static final String BUILD_COMMIT = "dev";  // Replaced by CI
     
     /**
      * Original author
