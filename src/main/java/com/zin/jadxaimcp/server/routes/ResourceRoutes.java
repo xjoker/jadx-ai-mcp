@@ -144,8 +144,8 @@ public class ResourceRoutes {
      * Serve strings.xml files from unified cache with pagination.
      */
     private void serveStringsFromUnifiedCache(Context ctx) {
-        // Get strings.xml files from unified cache
-        List<ResContainer> stringsFiles = ResourceCacheManager.getSubFilesMatching("strings.xml");
+        // Get pre-computed strings.xml files from unified cache (O(1))
+        List<ResContainer> stringsFiles = ResourceCacheManager.getStringsFiles();
         
         if (stringsFiles.isEmpty()) {
             JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resource found in cache.", logger);

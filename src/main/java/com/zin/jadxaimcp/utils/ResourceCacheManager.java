@@ -32,6 +32,7 @@ public class ResourceCacheManager {
     
     // Cache state
     private static final AtomicReference<List<ResContainer>> cachedSubFiles = new AtomicReference<>(null);
+    private static final AtomicReference<List<ResContainer>> cachedStringsFiles = new AtomicReference<>(null);
     private static final AtomicBoolean isLoading = new AtomicBoolean(false);
     private static final AtomicReference<String> loadError = new AtomicReference<>(null);
     private static final Object cacheLock = new Object();
@@ -164,7 +165,19 @@ public class ResourceCacheManager {
                 } else {
                     // Make immutable for thread safety
                     cachedSubFiles.set(Collections.unmodifiableList(allSubFiles));
-                    logger.info("Resource cache loaded: {} subfiles", allSubFiles.size());
+                    
+                    // Pre-compute strings.xml cache for fast access
+                    List<ResContainer> stringsFiles = new ArrayList<>();
+                    for (ResContainer sub : allSubFiles) {
+                        String fileName = sub.getFileName();
+                        if (fileName != null && fileName.contains("strings.xml")) {
+                            stringsFiles.add(sub);
+                        }
+                    }
+                    cachedStringsFiles.set(Collections.unmodifiableList(stringsFiles));
+                    
+                    logger.info("Resource cache loaded: {} subfiles, {} strings.xml files", 
+                        allSubFiles.size(), stringsFiles.size());
                 }
                 isLoading.set(false);
             }
@@ -185,6 +198,16 @@ public class ResourceCacheManager {
      */
     public static List<ResContainer> getSubFiles() {
         return cachedSubFiles.get();
+    }
+    
+    /**
+     * Get pre-computed strings.xml files list (O(1) access).
+     * 
+     * @return Immutable list of strings.xml ResContainers, or empty list
+     */
+    public static List<ResContainer> getStringsFiles() {
+        List<ResContainer> strings = cachedStringsFiles.get();
+        return strings != null ? strings : Collections.emptyList();
     }
     
     /**
@@ -276,6 +299,7 @@ public class ResourceCacheManager {
     public static void clearCache() {
         synchronized (cacheLock) {
             cachedSubFiles.set(null);
+            cachedStringsFiles.set(null);
             isLoading.set(false);
             loadError.set(null);
         }

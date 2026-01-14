@@ -126,6 +126,29 @@ class PaginationUtils:
 
             # Parse JSON response
             try:
+                # Check if this is a 202 loading response from Java
+                status = response.get("status")
+                if status in ("loading", "loading_started"):
+                    # Pass through the loading status response directly
+                    return {
+                        "type": response.get("type", "loading"),
+                        "status": status,
+                        "message": response.get("message", "Resource is loading in background"),
+                        "retry_after": response.get("retry_after", 10),
+                        "items": [],
+                        "pagination": {"total": 0, "offset": 0, "limit": 0, "count": 0, "has_more": False}
+                    }
+                
+                # Check for error responses
+                if "error" in response:
+                    return {
+                        "type": response.get("type", "error"),
+                        "error": response.get("error"),
+                        "suggestion": response.get("suggestion"),
+                        "items": [],
+                        "pagination": {"total": 0, "offset": 0, "limit": 0, "count": 0, "has_more": False}
+                    }
+                
                 # Extract data using custom extractor or default behavior
                 if data_extractor:
                     items = data_extractor(response)
