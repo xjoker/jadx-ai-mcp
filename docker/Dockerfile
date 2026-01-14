@@ -1,97 +1,49 @@
 # JADX-AI-MCP Docker Image with noVNC Support
-# Enables browser-based access to jadx-gui on headless Linux servers
+# Uses pre-built base image for faster builds
 #
 # Build: docker build -t jadx-ai-mcp -f docker/Dockerfile .
 # Run:   docker run -d -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
 
 # ============================================================================
-# Layer Optimization Strategy:
-# 1. Base image + apt packages (rarely changes)
-# 2. JADX download (changes only when JADX_VERSION changes)
-# 3. Plugin installation (changes when plugin version changes)
-# 4. Scripts (changes occasionally - placed last for flexibility)
+# Use pre-built base image with system dependencies
+# Build base image separately when system deps change:
+#   docker build -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
 # ============================================================================
-
-# Use JRE instead of JDK to reduce image size (~200MB smaller)
-FROM eclipse-temurin:21-jre-jammy
+ARG BASE_VERSION=1.0
+FROM xjoker/jadx-ai-mcp-base:${BASE_VERSION}
 
 LABEL maintainer="xjoker"
 LABEL description="JADX-AI-MCP with noVNC for headless server deployment"
 
-# Environment variables
-ENV DEBIAN_FRONTEND=noninteractive \
-    DISPLAY=:99 \
-    VNC_PORT=5900 \
-    NOVNC_PORT=6080 \
-    JADX_API_PORT=8650 \
-    JADX_VERSION=1.5.3 \
-    TZ=UTC
+# Additional environment variables
+ENV JADX_API_PORT=8650
 
 # ============================================================================
-# Layer 1: System dependencies (rarely changes)
+# Layer 1: Download JADX (changes only when JADX_VERSION changes)
+# This layer can be updated independently by changing JADX_VERSION
 # ============================================================================
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # X11 and VNC
-    xvfb \
-    x11vnc \
-    fluxbox \
-    # Terminal + system monitor
-    xterm \
-    btop \
-    # noVNC dependencies
-    novnc \
-    websockify \
-    # Lightweight CJK font (instead of fonts-noto-cjk ~150MB)
-    fonts-dejavu \
-    fonts-liberation \
-    fonts-wqy-zenhei \
-    # Utilities
-    wget \
-    unzip \
-    curl \
-    supervisor \
-    # Python for MCP Server
-    python3 \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Install uv package manager for running MCP Server
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && ln -s /root/.local/bin/uv /usr/local/bin/uv \
-    && ln -s /root/.local/bin/uvx /usr/local/bin/uvx
-
-# ============================================================================
-# Layer 2: Create directories (rarely changes)
-# ============================================================================
-WORKDIR /opt/jadx
-RUN mkdir -p /apks /var/log/supervisor
-
-# ============================================================================
-# Layer 3: Download JADX (changes only when JADX_VERSION changes)
-# ============================================================================
+ARG JADX_VERSION=1.5.3
 RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip \
     && unzip -q /tmp/jadx.zip -d /opt/jadx \
     && rm /tmp/jadx.zip \
     && chmod +x /opt/jadx/bin/*
 
 # ============================================================================
-# Layer 4: Install plugin using official jadx command
-# NOTE: ARG placed here to only invalidate cache from this layer onwards
+# Layer 2: Install plugin using official jadx command
 # Change PLUGIN_VERSION to force re-download of plugin when building
 # ============================================================================
-ARG PLUGIN_VERSION=6.0.5
+ARG PLUGIN_VERSION=6.0.7
 RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
     && echo "Plugin version: ${PLUGIN_VERSION}"
 
 # ============================================================================
-# Layer 5: MCP Server (local copy instead of runtime pull)
+# Layer 3: MCP Server (local copy instead of runtime pull)
 # ============================================================================
 COPY jadx-mcp-server /opt/jadx/jadx-mcp-server
 RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen
 
 # ============================================================================
-# Layer 6: Startup scripts (changes occasionally)
+# Layer 4: Startup scripts (changes occasionally)
 # ============================================================================
 COPY docker/scripts/start.sh /start.sh
 COPY docker/scripts/jadx-gui-wrapper.sh /opt/jadx/bin/jadx-gui-wrapper.sh
