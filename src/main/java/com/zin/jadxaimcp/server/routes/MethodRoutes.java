@@ -246,9 +246,14 @@ public class MethodRoutes {
 
             outerLoop:
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                for (JavaMethod method : cls.getMethods()) {
+                // Use ClassNode API to get method names WITHOUT triggering decompilation
+                jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                for (jadx.core.dex.nodes.MethodNode mthNode : classNode.getMethods()) {
+                    // Get method name from MethodInfo (no decompilation needed)
+                    String mthName = mthNode.getMethodInfo().getName();
+                    
                     // Match method name (case-insensitive, partial match)
-                    if (method.getName().toLowerCase().contains(searchTerm)) {
+                    if (mthName.toLowerCase().contains(searchTerm)) {
                         totalMatches++;
                         
                         // Check absolute limit
@@ -267,8 +272,8 @@ public class MethodRoutes {
                         if (collected < count) {
                             Map<String, String> match = new HashMap<>();
                             match.put("class_name", cls.getFullName());
-                            match.put("method_name", method.getName());
-                            match.put("is_constructor", String.valueOf(method.isConstructor()));
+                            match.put("method_name", mthName);
+                            match.put("is_constructor", String.valueOf(mthNode.getMethodInfo().isConstructor()));
                             results.add(match);
                             collected++;
                         }
