@@ -24,7 +24,15 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Cache JADX dependency
+        id: cache-jadx
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/io/github/skylot
+          key: jadx-1.5.3
+          
       - name: Download and Install JADX Dependency
+        if: steps.cache-jadx.outputs.cache-hit != 'true'
         run: |
           JADX_VERSION=1.5.3
           echo "Downloading JADX ${JADX_VERSION}..."

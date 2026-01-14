@@ -6,10 +6,19 @@ Loads TOML configuration files and supports hot-reload via file watching.
 
 import asyncio
 import logging
-import tomllib
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
+
+# Python 3.11+ has tomllib built-in, older versions need tomli package
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        raise ImportError("Please install 'tomli' package for Python < 3.11: pip install tomli")
 
 logger = logging.getLogger(__name__)
 
