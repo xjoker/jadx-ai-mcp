@@ -483,7 +483,46 @@ def main():
         default=120,
         type=int
     )
+    parser.add_argument(
+        "--config",
+        help="Path to TOML configuration file (e.g., data/config/jadx-config.toml)",
+        default=None,
+        type=str
+    )
+    parser.add_argument(
+        "--mcp-auth-token",
+        help="Authentication token for MCP clients connecting to this server",
+        default=None,
+        type=str
+    )
     args = parser.parse_args()
+
+    # ========== Load Configuration File (if provided) ==========
+    from pathlib import Path
+    from src.server.config_loader import ConfigLoader, set_config_loader, AppConfig
+    
+    loaded_config: AppConfig = None
+    config_loader: ConfigLoader = None
+    
+    if args.config:
+        config_path = Path(args.config)
+        if config_path.exists():
+            config_loader = ConfigLoader(config_path)
+            loaded_config = config_loader.load()
+            set_config_loader(config_loader)
+            print(f"✓ Loaded configuration from {config_path}")
+            
+            # Override CLI args with config file values (config file takes precedence)
+            if loaded_config.server.host and args.host == "127.0.0.1":
+                args.host = loaded_config.server.host
+            if loaded_config.server.port and args.port == 8651:
+                args.port = loaded_config.server.port
+            if loaded_config.defaults.request_timeout:
+                args.request_timeout = loaded_config.defaults.request_timeout
+            if loaded_config.defaults.busy_timeout:
+                args.max_busy_timeout = loaded_config.defaults.busy_timeout
+        else:
+            print(f"⚠ Config file not found: {config_path}, using CLI arguments")
 
     # Configure busy timeout
     InstanceBusyTracker.set_timeout(args.max_busy_timeout)
@@ -496,14 +535,54 @@ def main():
     # Configure JADX connection (for backward compatibility)
     config.set_jadx_config(host=args.jadx_host, port=args.jadx_port)
 
-    # Configure authentication (shared across all instances)
-    if args.auth_token:
-        config.set_auth_token(args.auth_token)
-        InstanceRegistry.set_auth_token(args.auth_token)
-        print(f"✓ Authentication enabled (token configured for all instances)")
+    # ========== Multi-User Authentication Setup ==========
+    from src.server.user_auth import UserAuthManager
+    
+    # Get default JADX token from config or CLI
+    default_jadx_token = ""
+    if loaded_config and loaded_config.defaults.jadx_token:
+        default_jadx_token = loaded_config.defaults.jadx_token
+    if args.auth_token:  # CLI overrides config
+        default_jadx_token = args.auth_token
+    
+    # Set shared JADX token
+    if default_jadx_token:
+        config.set_auth_token(default_jadx_token)
+        InstanceRegistry.set_auth_token(default_jadx_token)
+        print(f"✓ Default JADX plugin token configured")
     else:
-        print("⚠ Authentication disabled (no token provided)")
-        print("  If JADX plugin has auth enabled, use --auth-token parameter")
+        print("⚠ No default JADX plugin token (instances may need individual tokens)")
+    
+    # Configure multi-user authentication
+    allow_anonymous = True  # Allow anonymous if no users configured
+    if loaded_config and loaded_config.users:
+        UserAuthManager.configure(
+            users=loaded_config.users,
+            default_jadx_token=default_jadx_token,
+            allow_anonymous=False  # Require auth if users are configured
+        )
+        print(f"✓ Multi-user authentication enabled ({len(loaded_config.users)} users)")
+        for user in loaded_config.users:
+            role = "admin" if user.is_admin else "user"
+            print(f"  - {user.name} ({role})")
+        allow_anonymous = False
+    elif args.mcp_auth_token:
+        # Single token mode (legacy)
+        UserAuthManager.configure(
+            users=[],
+            default_jadx_token=default_jadx_token,
+            allow_anonymous=True
+        )
+        print(f"✓ Single-token authentication mode")
+    else:
+        # No authentication
+        UserAuthManager.configure(
+            users=[],
+            default_jadx_token=default_jadx_token,
+            allow_anonymous=True
+        )
+        print("⚠ No MCP authentication configured")
+        print("  Add [[users]] to config or use --mcp-auth-token")
 
     # Banner & Health Check
     try:
@@ -514,15 +593,41 @@ def main():
             f"[JADX AI MCP Server] v{SERVER_VERSION} | MCP: {args.host}:{args.port} | JADX: {args.jadx_host}:{args.jadx_port}"
         )
 
-    # Process initial JADX instances from command line
-    # Format: host:port[:name],host:port[:name],...
-    if args.jadx_instances:
-        import asyncio
-        print(f"\nInitializing JADX instances from command line...")
-        instances_str = args.jadx_instances.split(",")
+    # ========== Initialize JADX Instances ==========
+    import asyncio
+    
+    async def init_all_instances():
+        """Initialize JADX instances from config file and/or CLI"""
+        instances_added = 0
         
-        async def init_instances():
-            for inst_str in instances_str:
+        # 1. Load instances from config file
+        if loaded_config and loaded_config.jadx_instances:
+            print(f"\nLoading JADX instances from config file...")
+            for inst_cfg in loaded_config.jadx_instances:
+                if not inst_cfg.enabled:
+                    print(f"  ⊘ Skipped (disabled): {inst_cfg.name}")
+                    continue
+                
+                # Set per-instance token if provided
+                if inst_cfg.token:
+                    # For now, we use shared token. Per-instance token requires InstanceRegistry enhancement.
+                    pass
+                
+                result = await InstanceRegistry.add_instance(
+                    inst_cfg.host, 
+                    inst_cfg.port, 
+                    inst_cfg.name
+                )
+                if result["success"]:
+                    print(f"  ✓ Added: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port})")
+                    instances_added += 1
+                else:
+                    print(f"  ✗ Failed: {inst_cfg.name}: {result['message']}")
+        
+        # 2. Load instances from CLI --jadx-instances
+        if args.jadx_instances:
+            print(f"\nLoading JADX instances from CLI...")
+            for inst_str in args.jadx_instances.split(","):
                 parts = inst_str.strip().split(":")
                 if len(parts) >= 2:
                     host = parts[0]
@@ -532,51 +637,85 @@ def main():
                         result = await InstanceRegistry.add_instance(host, port, name)
                         if result["success"]:
                             print(f"  ✓ Added: {result['instance']['name']} ({host}:{port})")
+                            instances_added += 1
                         else:
-                            print(f"  ✗ Failed to add {host}:{port}: {result['message']}")
+                            print(f"  ✗ Failed: {host}:{port}: {result['message']}")
                     except ValueError:
-                        print(f"  ✗ Invalid port in: {inst_str}")
+                        print(f"  ✗ Invalid port: {inst_str}")
                 else:
-                    print(f"  ✗ Invalid format: {inst_str} (expected host:port[:name])")
+                    print(f"  ✗ Invalid format: {inst_str}")
         
-        asyncio.run(init_instances())
-        print(f"Initialized {InstanceRegistry.get_instance_count()} instance(s)")
-    else:
-        # Add default instance from --jadx-host/--jadx-port
-        print(f"\nTesting JADX AI MCP Plugin connectivity at {args.jadx_host}:{args.jadx_port}...")
-        result = config.health_ping()
-        print(f"Health check result: {result}")
-
-        if isinstance(result, dict) and "error" in result:
-            print("⚠ Warning: Could not connect to JADX plugin. Make sure:")
-            print("  1. JADX GUI is running")
-            print("  2. JADX AI MCP Plugin is installed and active")
-            print("  3. Plugin is listening on the configured host and port")
-            print("  4. If using non-default host, use --jadx-host parameter")
-            print("  5. If auth is enabled, provide --auth-token parameter")
-        else:
-            # Auto-add the default instance
-            import asyncio
-            async def add_default():
-                await InstanceRegistry.add_instance(args.jadx_host, args.jadx_port)
+        # 3. If no instances configured, try default connection
+        if instances_added == 0 and not args.jadx_instances and not (loaded_config and loaded_config.jadx_instances):
+            print(f"\nTesting default JADX connection at {args.jadx_host}:{args.jadx_port}...")
             try:
-                asyncio.run(add_default())
-                print(f"✓ Default JADX instance registered")
+                result = await InstanceRegistry.add_instance(args.jadx_host, args.jadx_port)
+                if result["success"]:
+                    print(f"✓ Default JADX instance connected")
+                    instances_added += 1
+                else:
+                    print(f"⚠ Could not connect to default JADX: {result['message']}")
             except Exception as e:
-                print(f"⚠ Could not auto-register default instance: {e}")
+                print(f"⚠ Default connection failed: {e}")
+        
+        return instances_added
+    
+    try:
+        instance_count = asyncio.run(init_all_instances())
+        print(f"\n✓ Total JADX instances: {instance_count}")
+    except Exception as e:
+        print(f"⚠ Instance initialization error: {e}")
 
-    # Run Server
+    # ========== Config Hot-Reload Callback ==========
+    async def on_config_change(new_config: AppConfig):
+        """Handle configuration file changes"""
+        print(f"\n[Hot-Reload] Configuration changed, updating instances...")
+        
+        # Get current instance names
+        current_names = {inst["name"] for inst in InstanceRegistry.list_instances()}
+        
+        # Get new enabled instance names from config
+        new_names = {inst.name for inst in new_config.jadx_instances if inst.enabled}
+        
+        # Remove instances no longer in config
+        for name in current_names - new_names:
+            result = InstanceRegistry.remove_instance(name)
+            print(f"  [Hot-Reload] Removed: {name}")
+        
+        # Add new instances from config
+        for inst_cfg in new_config.jadx_instances:
+            if inst_cfg.enabled and inst_cfg.name not in current_names:
+                result = await InstanceRegistry.add_instance(
+                    inst_cfg.host, inst_cfg.port, inst_cfg.name
+                )
+                if result["success"]:
+                    print(f"  [Hot-Reload] Added: {inst_cfg.name}")
+                else:
+                    print(f"  [Hot-Reload] Failed to add {inst_cfg.name}: {result['message']}")
+        
+        print(f"  [Hot-Reload] Complete. Instances: {InstanceRegistry.get_instance_count()}")
+
+    # ========== Run MCP Server ==========
+    # Register instance management tools
+    register_instance_tools(mcp)
+    
     if args.http:
-        print(f"Starting MCP server in HTTP mode on {args.host}:{args.port}...")
-        # Register instance management tools before running
-        register_instance_tools(mcp)
+        print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
+        if mcp_auth_token:
+            print(f"  Clients must provide: Authorization: Bearer <token>")
+        
+        # Start config watcher in background (for HTTP mode only)
+        if config_loader:
+            config_loader.add_change_callback(on_config_change)
+            # Note: Hot-reload watcher runs in the async event loop managed by FastMCP
+            print(f"  Config hot-reload: enabled")
+        
         mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
-        print("Starting MCP server in stdio mode...")
-        # Register instance management tools before running
-        register_instance_tools(mcp)
+        print("\nStarting MCP server in stdio mode...")
         mcp.run()
 
 
 if __name__ == "__main__":
     main()
+

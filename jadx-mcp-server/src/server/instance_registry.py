@@ -2,7 +2,7 @@
 JADX Instance Registry
 
 Manages connections, status, and health checks for multiple JADX instances.
-All instances share a single authentication token.
+Supports multi-user isolation with owner-based access control.
 """
 
 import asyncio
@@ -26,6 +26,9 @@ class JadxInstance:
     apk_info: dict = field(default_factory=dict)  # Info from /apk-info endpoint
     last_health_check: Optional[datetime] = None
     error_message: str = ""   # Most recent error message
+    token: str = ""           # Instance-specific JADX plugin token
+    owner: Optional[str] = None  # Owner username (None = shared/static)
+    is_dynamic: bool = False  # True if added via AI conversation
     
     @property
     def url(self) -> str:
@@ -41,6 +44,8 @@ class JadxInstance:
             "apk_info": self.apk_info,
             "last_health_check": self.last_health_check.isoformat() if self.last_health_check else None,
             "error_message": self.error_message,
+            "owner": self.owner,
+            "is_dynamic": self.is_dynamic,
         }
 
 
@@ -68,7 +73,10 @@ class InstanceRegistry:
         cls, 
         host: str, 
         port: int, 
-        name: str = None
+        name: str = None,
+        token: str = None,
+        owner: str = None,
+        is_dynamic: bool = False
     ) -> dict:
         """
         Add a new JADX instance
@@ -77,14 +85,20 @@ class InstanceRegistry:
             host: JADX instance IP address
             port: JADX instance port number
             name: Optional custom name. Leave empty to auto-use APK name+version
+            token: Instance-specific JADX plugin token (uses default if not provided)
+            owner: Owner username (None = shared/static instance)
+            is_dynamic: True if added via AI conversation
             
         Returns:
             {"success": bool, "instance": dict, "message": str}
         """
         async with cls._lock:
             try:
+                # Determine the token to use for connection
+                actual_token = token or cls._shared_auth_token
+                
                 # 1. Connect and fetch /apk-info
-                apk_info = await cls._fetch_apk_info(host, port)
+                apk_info = await cls._fetch_apk_info(host, port, actual_token)
                 
                 # 2. Determine instance name
                 if not name:
@@ -105,6 +119,9 @@ class InstanceRegistry:
                     status="connected",
                     apk_info=apk_info,
                     last_health_check=datetime.now(),
+                    token=actual_token or "",
+                    owner=owner,
+                    is_dynamic=is_dynamic,
                 )
                 cls._instances[name] = instance
                 
@@ -113,7 +130,8 @@ class InstanceRegistry:
                     cls._default_instance = name
                     logger.info(f"Set default instance: {name}")
                 
-                logger.info(f"Successfully added JADX instance: {name} ({host}:{port})")
+                owner_info = f" (owner: {owner})" if owner else " (shared)"
+                logger.info(f"Successfully added JADX instance: {name} ({host}:{port}){owner_info}")
                 
                 # 6. Version compatibility check
                 result = {
@@ -144,12 +162,13 @@ class InstanceRegistry:
                 }
     
     @classmethod
-    async def _fetch_apk_info(cls, host: str, port: int) -> dict:
+    async def _fetch_apk_info(cls, host: str, port: int, token: str = None) -> dict:
         """Fetch APK info from JADX instance"""
         url = f"http://{host}:{port}/apk-info"
         headers = {}
-        if cls._shared_auth_token:
-            headers["Authorization"] = f"Bearer {cls._shared_auth_token}"
+        actual_token = token or cls._shared_auth_token
+        if actual_token:
+            headers["Authorization"] = f"Bearer {actual_token}"
         
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, headers=headers)
@@ -209,6 +228,65 @@ class InstanceRegistry:
         for inst in instances:
             inst["is_default"] = inst["name"] == cls._default_instance
         return instances
+    
+    @classmethod
+    def list_instances_for_user(cls, username: str, is_admin: bool = False) -> List[dict]:
+        """
+        List instances visible to a specific user.
+        
+        User can see:
+        - All shared/static instances (owner=None)
+        - Their own dynamic instances (owner=username)
+        - Admin can see ALL instances
+        
+        Args:
+            username: Current user's name
+            is_admin: Whether user is admin
+            
+        Returns:
+            List of instance dicts the user can access
+        """
+        result = []
+        for inst in cls._instances.values():
+            # Admin sees everything
+            if is_admin:
+                result.append(inst.to_dict())
+            # User sees shared instances + their own
+            elif inst.owner is None or inst.owner == username:
+                result.append(inst.to_dict())
+        
+        # Mark default instance
+        for inst in result:
+            inst["is_default"] = inst["name"] == cls._default_instance
+        
+        return result
+    
+    @classmethod
+    def get_instance_for_user(cls, name: str, username: str, is_admin: bool = False) -> Optional[JadxInstance]:
+        """
+        Get an instance if the user has access to it.
+        
+        Args:
+            name: Instance name
+            username: Current user's name
+            is_admin: Whether user is admin
+            
+        Returns:
+            JadxInstance if accessible, None otherwise
+        """
+        instance = cls._instances.get(name)
+        if not instance:
+            return None
+        
+        # Admin can access all
+        if is_admin:
+            return instance
+        
+        # User can access shared or their own
+        if instance.owner is None or instance.owner == username:
+            return instance
+        
+        return None
     
     @classmethod
     def set_default(cls, name: str) -> dict:

@@ -50,8 +50,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     curl \
     supervisor \
+    # Python for MCP Server
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Install uv package manager for running MCP Server
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -s /root/.local/bin/uv /usr/local/bin/uv \
+    && ln -s /root/.local/bin/uvx /usr/local/bin/uvx
 
 # ============================================================================
 # Layer 2: Create directories (rarely changes)
@@ -86,8 +94,9 @@ RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 
 # Expose ports
 # 6080: noVNC web interface
-# 8650: JADX AI-MCP HTTP API
-EXPOSE 6080 8650
+# 8650: JADX Plugin HTTP API (internal)
+# 8651: MCP Server HTTP endpoint (external, connect LLMs here)
+EXPOSE 6080 8650 8651
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

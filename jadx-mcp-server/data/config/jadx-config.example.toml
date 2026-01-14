@@ -1,0 +1,61 @@
+# JADX MCP Server Configuration
+# Copy this file to jadx-config.toml and customize as needed
+
+[server]
+# MCP server bind address (use 0.0.0.0 to allow external connections)
+host = "0.0.0.0"
+# MCP server port (HTTP streamable transport)
+port = 8651
+
+# ============================================================================
+# Multi-User Authentication
+# Each user has a unique token for accessing MCP Server
+# Token is passed via Authorization: Bearer <token> header
+# ============================================================================
+
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+# is_admin = false  # Default: regular user
+
+[[users]]
+name = "bob"
+token = "token-bob-yyyyy"
+
+[[users]]
+name = "admin"
+token = "token-admin-zzzzz"
+is_admin = true  # Admin can see ALL dynamic instances from all users
+
+# ============================================================================
+# Default Settings
+# ============================================================================
+
+[defaults]
+# HTTP request timeout for JADX plugin requests (seconds)
+request_timeout = 120
+# Maximum time an instance can be busy before auto-release (seconds)
+busy_timeout = 300
+# Default JADX plugin token (used when user doesn't provide one)
+jadx_token = ""
+
+# ============================================================================
+# Shared JADX Instances (visible to ALL users)
+# Pre-configured instances loaded on server startup
+# ============================================================================
+
+[[jadx_instances]]
+name = "local"
+host = "127.0.0.1"
+port = 8650
+token = ""  # Uses defaults.jadx_token if empty
+enabled = true
+
+# Example: Remote JADX instance
+# [[jadx_instances]]
+# name = "remote-app"
+# host = "192.168.1.100"
+# port = 8650
+# token = "custom-token-for-this-instance"
+# enabled = true
+

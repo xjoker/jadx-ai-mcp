@@ -2,8 +2,8 @@
 JADX Instance Management MCP Tools
 
 Provides 6 tools for managing multiple JADX instances:
-- list_jadx_instances: List all instances
-- add_jadx_instance: Add new instance
+- list_jadx_instances: List all instances (filtered by user access)
+- add_jadx_instance: Add new instance (with user ownership)
 - remove_jadx_instance: Remove instance
 - set_default_jadx_instance: Set default instance
 - get_jadx_instance_info: Get instance details
@@ -11,6 +11,7 @@ Provides 6 tools for managing multiple JADX instances:
 """
 
 from ..instance_registry import InstanceRegistry
+from ..user_auth import UserAuthManager
 
 
 def register_instance_tools(mcp):
@@ -21,8 +22,10 @@ def register_instance_tools(mcp):
         """
         List all connected JADX instances.
         
-        Returns name, address, status, and APK info for each instance.
-        Use this to understand available analysis targets.
+        Returns instances visible to the current user:
+        - Shared/static instances (from config file)
+        - Dynamic instances owned by the current user
+        - Admin users can see ALL instances
         
         Returns:
             {
@@ -34,26 +37,38 @@ def register_instance_tools(mcp):
                         "url": "http://192.168.1.10:8650",
                         "status": "connected",
                         "is_default": true,
+                        "owner": null,
+                        "is_dynamic": false,
                         "apk_info": {...}
                     }
                 ],
                 "count": 1,
-                "default_instance": "xhs-v8"
+                "default_instance": "xhs-v8",
+                "current_user": "alice"
             }
         """
-        instances = InstanceRegistry.list_instances()
+        # Get current user from auth context
+        user = UserAuthManager.get_current_user()
+        username = user.name if user else "anonymous"
+        is_admin = user.is_admin if user else False
+        
+        # Filter instances by user access
+        instances = InstanceRegistry.list_instances_for_user(username, is_admin)
         default = InstanceRegistry.get_default()
+        
         return {
             "instances": instances,
             "count": len(instances),
             "default_instance": default.name if default else None,
+            "current_user": username,
         }
     
     @mcp.tool()
     async def add_jadx_instance(
         host: str,
         port: int,
-        name: str = ""
+        name: str = "",
+        token: str = ""
     ) -> dict:
         """
         Dynamically add a new JADX instance connection.
@@ -61,10 +76,14 @@ def register_instance_tools(mcp):
         After adding, it will automatically try to connect and fetch APK info.
         If this is the first instance added, it will be set as default.
         
+        The instance will be owned by the current user (dynamic instance).
+        Other users will not see this instance (except admins).
+        
         Args:
             host: JADX instance IP address (e.g., "192.168.1.10" or "localhost")
             port: JADX instance port number (e.g., 8650)
             name: Optional custom name. Leave empty to auto-generate from APK name+version
+            token: Optional JADX plugin authentication token. Uses default if not provided.
             
         Returns:
             {
@@ -77,7 +96,21 @@ def register_instance_tools(mcp):
         if host.lower() == "localhost":
             host = "127.0.0.1"
         
-        result = await InstanceRegistry.add_instance(host, port, name if name else None)
+        # Get current user from auth context
+        user = UserAuthManager.get_current_user()
+        username = user.name if user else "anonymous"
+        
+        # Use default JADX token if not provided
+        actual_token = token if token else UserAuthManager.get_default_jadx_token()
+        
+        result = await InstanceRegistry.add_instance(
+            host=host,
+            port=port,
+            name=name if name else None,
+            token=actual_token,
+            owner=username,  # Owned by current user
+            is_dynamic=True  # Dynamic instance (not from config file)
+        )
         return result
     
     @mcp.tool()
@@ -86,6 +119,7 @@ def register_instance_tools(mcp):
         Remove specified JADX instance connection.
         
         If removing the default instance, another available instance will be set as new default.
+        Users can only remove their own dynamic instances. Admins can remove any instance.
         
         Args:
             name: Name of the instance to remove
@@ -96,6 +130,26 @@ def register_instance_tools(mcp):
                 "message": "Removed instance 'xhs-v8'"
             }
         """
+        # Get current user from auth context
+        user = UserAuthManager.get_current_user()
+        username = user.name if user else "anonymous"
+        is_admin = user.is_admin if user else False
+        
+        # Check if user has access to this instance
+        instance = InstanceRegistry.get_instance_for_user(name, username, is_admin)
+        if not instance:
+            return {
+                "success": False,
+                "message": f"Instance '{name}' not found or you don't have access to it",
+            }
+        
+        # Non-admin users can only remove their own dynamic instances
+        if not is_admin and instance.owner != username:
+            return {
+                "success": False,
+                "message": f"You can only remove your own dynamic instances",
+            }
+        
         return InstanceRegistry.remove_instance(name)
     
     @mcp.tool()
@@ -142,11 +196,17 @@ def register_instance_tools(mcp):
                 "last_health_check": "2026-01-12T10:00:00"
             }
         """
-        instance = InstanceRegistry.get_instance(name)
+        # Get current user from auth context
+        user = UserAuthManager.get_current_user()
+        username = user.name if user else "anonymous"
+        is_admin = user.is_admin if user else False
+        
+        # Check user access
+        instance = InstanceRegistry.get_instance_for_user(name, username, is_admin)
         if not instance:
             return {
                 "success": False,
-                "message": f"Instance '{name}' not found",
+                "message": f"Instance '{name}' not found or you don't have access to it",
             }
         return {
             "success": True,
@@ -171,3 +231,4 @@ def register_instance_tools(mcp):
             }
         """
         return await InstanceRegistry.health_check_all()
+
