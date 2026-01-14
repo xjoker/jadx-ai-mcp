@@ -32,27 +32,39 @@ Follow this standard reverse engineering workflow:
 
     @mcp.prompt("search-code")
     def search_code_prompt(keyword: str) -> str:
-        """Guide the AI to perform effective code searches without causing timeouts.
+        """Guide the AI to perform effective code searches with retry handling.
         
         Args:
             keyword: The term to search for.
         """
         return f"""You want to search for "{keyword}" in the codebase.
-**Context**: Large codebases (or obfuscated ones) can cause timeouts or crashes if searched inefficiently.
+
+**Search Modes** (from fastest to slowest):
+| Mode | Use Case | Speed |
+|:---|:---|:---:|
+| `search_in="class"` | Find class names | ⚡ Fast |
+| `search_in="method"` | Find method names | ⚡ Fast |
+| `search_in="field"` | Find field names | ⚡ Fast |
+| `search_in="code"` | Full-text search in decompiled code | 🐢 Slow |
 
 **Recommended Strategy**:
-1.  **Search for Classes First**:
-    - Use `search_classes_by_keyword(search_term="{keyword}", search_in="class")`.
-    - This is fast and often distinct enough to find relevant modules.
+1.  **Start with metadata search**:
+    - `search_classes_by_keyword(search_term="{keyword}", search_in="class")` for class names.
+    - `search_classes_by_keyword(search_term="{keyword}", search_in="method")` for methods.
 
-2.  **Precise Code Search**:
-    - If searching for method names or field names specifically, use `search_in="method"` or `search_in="field"`.
-    - AVOID `search_in="code"` (full text search) unless necessary, as it is the slowest operation and most likely to fail.
+2.  **Use `search_in="code"` with filters**:
+    - Add `package` filter to narrow scope: `package="com.example"`.
+    - Use pagination: `count=20, offset=0` then check `has_more` and `next_offset`.
 
-3.  **Handling Obfuscation**:
-    - If results are poor, try shorter or partial keywords.
-    - Look for string constants using `get_strings()` (carefully, with small limits) or searching likely string values.
+3.  **Handle 503 Busy Response**:
+    - If you receive `{{"busy": true, "retry_after": 10}}`, wait 10 seconds and retry.
+    - Only one search can run at a time (serialized for stability).
+
+4.  **Obfuscated Code Tips**:
+    - Try shorter keywords or string constants.
+    - Use `get_strings(count=50)` carefully to find relevant strings.
 """
+
 
     @mcp.prompt("trace-method")
     def trace_method_prompt(method_signature: str) -> str:
