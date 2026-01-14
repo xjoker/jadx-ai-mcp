@@ -809,9 +809,16 @@ public class ClassRoutes {
             // Use LinkedHashSet to maintain order and ensure deduplication
             Set<JavaClass> matchingClassesSet = new LinkedHashSet<>();
 
-            // Acquire global lock to prevent concurrent search operations
-            // This protects JADX internal state during decompilation
-            JadxSearchLock.lock();
+            // Try to acquire global lock (fast-fail pattern)
+            // If another search is in progress, return 503 with retry hint
+            if (!JadxSearchLock.tryAcquire()) {
+                Map<String, Object> busyResponse = new HashMap<>();
+                busyResponse.put("error", "Search operation in progress");
+                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                busyResponse.put("busy", true);
+                ctx.status(503).json(busyResponse);
+                return;
+            }
             try {
                 // Search in each specified location
                 for (SearchLocation location : searchLocations) {
@@ -820,7 +827,7 @@ public class ClassRoutes {
                     matchingClassesSet.addAll(locationResults);
                 }
             } finally {
-                JadxSearchLock.unlock();
+                JadxSearchLock.release();
             }
 
             // Apply exclusion filter

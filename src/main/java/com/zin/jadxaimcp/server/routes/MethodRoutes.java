@@ -64,8 +64,15 @@ public class MethodRoutes {
             // Case 1: Search in all classes if no class name provided
             // Use ClassNode for fast method name lookup without triggering decompilation
             if (className == null || className.isEmpty()) {
-                // Acquire global lock for search operation
-                JadxSearchLock.lock();
+                // Try to acquire global lock (fast-fail pattern)
+                if (!JadxSearchLock.tryAcquire()) {
+                    Map<String, Object> busyResponse = new java.util.HashMap<>();
+                    busyResponse.put("error", "Search operation in progress");
+                    busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                    busyResponse.put("busy", true);
+                    ctx.status(503).json(busyResponse);
+                    return;
+                }
                 try {
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                         jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
@@ -84,7 +91,7 @@ public class MethodRoutes {
                         }
                     }
                 } finally {
-                    JadxSearchLock.unlock();
+                    JadxSearchLock.release();
                 }
             } 
             // Case 2: Search in specific class (no global search, minimal lock needed)
@@ -260,8 +267,15 @@ public class MethodRoutes {
             int collected = 0;
             boolean hitLimit = false;
 
-            // Acquire global lock to prevent concurrent operations
-            JadxSearchLock.lock();
+            // Try to acquire global lock (fast-fail pattern)
+            if (!JadxSearchLock.tryAcquire()) {
+                Map<String, Object> busyResponse = new HashMap<>();
+                busyResponse.put("error", "Search operation in progress");
+                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                busyResponse.put("busy", true);
+                ctx.status(503).json(busyResponse);
+                return;
+            }
             try {
                 outerLoop:
                 for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
@@ -308,7 +322,7 @@ public class MethodRoutes {
                     }
                 }
             } finally {
-                JadxSearchLock.unlock();
+                JadxSearchLock.release();
             }
             
             // Build response with pagination info
