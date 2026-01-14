@@ -17,6 +17,10 @@ from .logging_config import get_logger
 
 logger = get_logger("registry")
 
+# Timeout configuration (in seconds)
+CONNECT_TIMEOUT = 10.0   # Timeout for initial connection/add instance
+HEALTH_TIMEOUT = 5.0     # Timeout for health checks (should be fast)
+
 
 @dataclass
 class JadxInstance:
@@ -244,7 +248,7 @@ class InstanceRegistry:
             headers["Authorization"] = f"Bearer {actual_token}"
         
         logger.info(f"Connecting to JADX instance: {url}")
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             data = response.json()
@@ -260,7 +264,7 @@ class InstanceRegistry:
             headers["Authorization"] = f"Bearer {cls._shared_auth_token}"
         
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
                 response = await client.get(url, headers=headers)
                 is_healthy = response.status_code == 200
                 logger.debug(f"Health check {host}:{port}: {'OK' if is_healthy else 'FAILED'}")
@@ -303,13 +307,15 @@ class InstanceRegistry:
                     "message": f"Cannot remove instance '{name}'. You can only remove your own instances.",
                 }
         
-        del cls._instances[name]
-        
-        # If removed instance was default, select another
-        if cls._default_instance == name:
-            cls._default_instance = next(iter(cls._instances), None)
-            if cls._default_instance:
-                logger.info(f"Default instance changed to: {cls._default_instance}")
+        # Thread-safe modification
+        with cls._thread_lock:
+            del cls._instances[name]
+            
+            # If removed instance was default, select another
+            if cls._default_instance == name:
+                cls._default_instance = next(iter(cls._instances), None)
+                if cls._default_instance:
+                    logger.info(f"Default instance changed to: {cls._default_instance}")
         
         owner_info = f" (owner: {instance.owner})" if instance.owner else " (shared)"
         logger.info(f"Removed instance: {name}{owner_info} by user: {username or 'system'}")
@@ -414,7 +420,9 @@ class InstanceRegistry:
                     "message": f"Cannot set '{name}' as default. You don't have access to this instance.",
                 }
         
-        cls._default_instance = name
+        # Thread-safe modification
+        with cls._thread_lock:
+            cls._default_instance = name
         logger.info(f"Default instance set to: {name} by user: {username or 'system'}")
         return {
             "success": True,
