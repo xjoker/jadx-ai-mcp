@@ -81,148 +81,97 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call using unified ResourceCacheManager.
+     * Handle the /strings MCP tool call.
      * 
-     * Performance optimization for large APKs:
-     * 1. First request triggers background loading via ResourceCacheManager
-     * 2. Subsequent requests use shared cache for instant response
+     * Simple synchronous approach (like original):
+     * - Load only res/values/strings.xml (single file)
+     * - Return list of available variants for reference
      */
     public void handleStrings(Context ctx) {
         try {
-            ResourceCacheManager.CacheStatus status = ResourceCacheManager.getStatus();
+            List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+            List<String> availableVariants = new ArrayList<>();
+            String defaultContent = null;
             
-            switch (status) {
-                case READY:
-                    serveStringsFromUnifiedCache(ctx);
-                    return;
-                    
-                case LOADING:
-                    Map<String, Object> loading = new HashMap<>();
-                    loading.put("type", "resource/strings-xml");
-                    loading.put("status", "loading");
-                    loading.put("message", "Resource data is being loaded in background, please retry in 10 seconds");
-                    loading.put("retry_after", 10);
-                    ctx.status(202).json(loading);
-                    return;
-                    
-                case ERROR:
-                    Map<String, Object> error = new HashMap<>();
-                    error.put("type", "resource/strings-xml");
-                    error.put("error", ResourceCacheManager.getErrorMessage());
-                    error.put("suggestion", "Use get_resource_file with specific path like 'res/values/strings.xml'");
-                    ctx.status(500).json(error);
-                    return;
-                    
-                case NOT_INITIALIZED:
-                    // Trigger background loading
-                    boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("type", "resource/strings-xml");
-                    if (started) {
-                        result.put("status", "loading_started");
-                        result.put("message", "Background loading started, please retry in 30 seconds");
-                        result.put("retry_after", 30);
-                    } else {
-                        result.put("status", "loading");
-                        result.put("message", "Loading already in progress, please retry in 10 seconds");
-                        result.put("retry_after", 10);
+            for (ResourceFile resFile : resourceFiles) {
+                try {
+                    if ("resources.arsc".equals(resFile.getDeobfName())) {
+                        ResContainer container = resFile.loadContent();
+                        if (container != null) {
+                            for (ResContainer file : container.getSubFiles()) {
+                                String fileName = file.getFileName();
+                                if (fileName != null && fileName.contains("strings.xml")) {
+                                    availableVariants.add(fileName);
+                                    // Load only the default strings.xml
+                                    if ("res/values/strings.xml".equals(fileName)) {
+                                        defaultContent = file.getText().getCodeStr();
+                                    }
+                                }
+                            }
+                        }
+                        break; // Only process first resources.arsc
                     }
-                    ctx.status(202).json(result);
-                    return;
-                    
-                default:
-                    JadxAIMCPPluginError.handleError(ctx, 500, "Unknown cache status", logger);
+                } catch (Exception e) {
+                    logger.warn("Error processing resource file: " + e.getMessage());
+                }
             }
             
-        } catch (Exception e) {
-            JadxAIMCPPluginError.handleError(ctx, 
-                "Internal error occurred while trying to handle the /strings: " + e.getMessage(), e, logger);
-        }
-    }
-    
-    /**
-     * Serve strings.xml with hybrid approach:
-     * - Default: load only res/values/strings.xml (fast)
-     * - Return list of all available variants for reference
-     * - Support 'variant' param to load specific variant
-     */
-    private void serveStringsFromUnifiedCache(Context ctx) {
-        // Get pre-computed strings.xml files from unified cache (O(1))
-        List<ResContainer> allStringsFiles = ResourceCacheManager.getStringsFiles();
-        
-        if (allStringsFiles.isEmpty()) {
-            JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resource found in cache.", logger);
-            return;
-        }
-        
-        // Collect all variant file names for reference
-        List<String> availableVariants = new ArrayList<>();
-        ResContainer defaultStrings = null;
-        
-        for (ResContainer file : allStringsFiles) {
-            String fileName = file.getFileName();
-            if (fileName != null) {
-                availableVariants.add(fileName);
-                // Find the default strings.xml (res/values/strings.xml)
-                if ("res/values/strings.xml".equals(fileName)) {
-                    defaultStrings = file;
+            // Check for specific variant request
+            String requestedVariant = ctx.queryParam("variant");
+            if (requestedVariant != null && !requestedVariant.isEmpty()) {
+                // User wants specific variant - reload and find it
+                for (ResourceFile resFile : resourceFiles) {
+                    try {
+                        if ("resources.arsc".equals(resFile.getDeobfName())) {
+                            for (ResContainer file : resFile.loadContent().getSubFiles()) {
+                                if (requestedVariant.equals(file.getFileName())) {
+                                    Map<String, Object> result = new HashMap<>();
+                                    result.put("type", "resource/strings-xml");
+                                    result.put("loaded_variant", requestedVariant);
+                                    result.put("content", file.getText().getCodeStr());
+                                    result.put("available_variants", availableVariants);
+                                    result.put("total_variants", availableVariants.size());
+                                    ctx.json(result);
+                                    return;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Error loading variant: " + e.getMessage());
+                    }
                 }
-            }
-        }
-        
-        // Check for specific variant request
-        String requestedVariant = ctx.queryParam("variant");
-        ResContainer targetFile = null;
-        
-        if (requestedVariant != null && !requestedVariant.isEmpty()) {
-            // User requested specific variant
-            for (ResContainer file : allStringsFiles) {
-                if (requestedVariant.equals(file.getFileName())) {
-                    targetFile = file;
-                    break;
-                }
-            }
-            if (targetFile == null) {
+                // Variant not found
                 Map<String, Object> error = new HashMap<>();
                 error.put("type", "resource/strings-xml");
-                error.put("error", "Requested variant not found: " + requestedVariant);
+                error.put("error", "Variant not found: " + requestedVariant);
                 error.put("available_variants", availableVariants);
                 ctx.status(404).json(error);
                 return;
             }
-        } else {
-            // Default: use res/values/strings.xml
-            targetFile = defaultStrings;
-        }
-        
-        // Build response
-        Map<String, Object> result = new HashMap<>();
-        result.put("type", "resource/strings-xml");
-        result.put("cached", true);
-        result.put("available_variants", availableVariants);
-        result.put("total_variants", availableVariants.size());
-        
-        if (targetFile != null) {
-            String fileName = targetFile.getFileName();
-            result.put("loaded_variant", fileName);
             
-            try {
-                String content = ResourceCacheManager.getContent(targetFile);
-                if (content != null) {
-                    result.put("content", content);
-                } else {
-                    result.put("error", "Content unavailable for: " + fileName);
-                }
-            } catch (Exception e) {
-                result.put("error", "Failed to load " + fileName + ": " + e.getMessage());
+            // Return default strings.xml with variants list
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "resource/strings-xml");
+            result.put("available_variants", availableVariants);
+            result.put("total_variants", availableVariants.size());
+            
+            if (defaultContent != null) {
+                result.put("loaded_variant", "res/values/strings.xml");
+                result.put("content", defaultContent);
+            } else if (!availableVariants.isEmpty()) {
+                result.put("message", "No res/values/strings.xml found. Use 'variant' param to load a specific file.");
+                result.put("suggestion", "Call with variant=" + availableVariants.get(0));
+            } else {
+                JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resources found.", logger);
+                return;
             }
-        } else {
-            // No default strings.xml found, just return variant list
-            result.put("message", "No res/values/strings.xml found. Use 'variant' param to load a specific file.");
-            result.put("suggestion", "Call with variant=res/values-en/strings.xml to load English strings");
+            
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, 
+                "Internal error in handleStrings: " + e.getMessage(), e, logger);
         }
-        
-        ctx.json(result);
     }
     
     /**
