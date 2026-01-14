@@ -38,10 +38,20 @@ import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.ResourceCacheManager;
 
+
 public class ResourceRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ResourceRoutes.class);
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
+    
+    // Dedicated single-thread executor for resource loading
+    // Daemon thread to not prevent JVM shutdown
+    private static final java.util.concurrent.ExecutorService resourceExecutor = 
+        java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "ResourceLoader");
+            t.setDaemon(true);
+            return t;
+        });
 
     public ResourceRoutes(MainWindow mainWindow) {
         this.mainWindow = mainWindow;
@@ -91,7 +101,7 @@ public class ResourceRoutes {
         // Parse variant param before async call
         String requestedVariant = ctx.queryParam("variant");
         
-        // Use Javalin async with CompletableFuture
+        // Use Javalin async with dedicated thread pool (not ForkJoinPool)
         ctx.future(() -> CompletableFuture.supplyAsync(() -> {
             try {
                 List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
@@ -155,7 +165,7 @@ public class ResourceRoutes {
                 error.put("error", "Internal error: " + e.getMessage());
                 return error;
             }
-        }).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        }, resourceExecutor).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
           .exceptionally(ex -> {
               Map<String, Object> timeout = new HashMap<>();
               timeout.put("type", "resource/strings-xml");
@@ -256,7 +266,7 @@ public class ResourceRoutes {
                 error.put("error", "Internal error: " + e.getMessage());
                 return error;
             }
-        }).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        }, resourceExecutor).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
           .exceptionally(ex -> {
               Map<String, Object> timeout = new HashMap<>();
               timeout.put("type", "resource/text");
