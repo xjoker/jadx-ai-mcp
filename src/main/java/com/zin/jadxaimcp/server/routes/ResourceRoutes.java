@@ -163,31 +163,44 @@ public class ResourceRoutes {
         int startIdx = Math.max(0, Math.min(offset, totalFiles));
         int endIdx = Math.min(startIdx + (limit == 0 ? totalFiles : limit), totalFiles);
         
-        // Load content only for items in range
-        List<Map<String, String>> paginatedEntries = new ArrayList<>();
+        // Check if content should be skipped (return file list only)
+        boolean skipContent = "true".equals(ctx.queryParam("list_only"));
+        
+        // Load content only for items in range (with per-file timeout)
+        List<Map<String, Object>> paginatedEntries = new ArrayList<>();
         for (int i = startIdx; i < endIdx; i++) {
             ResContainer file = stringsFiles.get(i);
             String fileName = file.getFileName();
             if (fileName == null) fileName = "unknown";
             
-            try {
-                String content = ResourceCacheManager.getContent(file);
-                if (content != null) {
-                    paginatedEntries.add(Map.of(
-                        "file", fileName,
-                        "content", content
-                    ));
-                } else {
-                    paginatedEntries.add(Map.of(
-                        "file", fileName,
-                        "error", "Content unavailable"
-                    ));
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("file", fileName);
+            
+            if (skipContent) {
+                // Just return file names for fast response
+                paginatedEntries.add(entry);
+            } else {
+                // Load content with 5s timeout per file
+                try {
+                    final ResContainer finalFile = file;
+                    java.util.concurrent.CompletableFuture<String> future = 
+                        java.util.concurrent.CompletableFuture.supplyAsync(() -> 
+                            ResourceCacheManager.getContent(finalFile));
+                    
+                    String content = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                    
+                    if (content != null) {
+                        entry.put("content", content);
+                    } else {
+                        entry.put("error", "Content unavailable");
+                    }
+                } catch (java.util.concurrent.TimeoutException e) {
+                    entry.put("error", "Content loading timed out (file too large)");
+                    entry.put("suggestion", "Use get_resource_file to load this file directly");
+                } catch (Exception e) {
+                    entry.put("error", "Failed to load: " + e.getMessage());
                 }
-            } catch (Exception e) {
-                paginatedEntries.add(Map.of(
-                    "file", fileName,
-                    "error", "Failed to load: " + e.getMessage()
-                ));
+                paginatedEntries.add(entry);
             }
         }
         
