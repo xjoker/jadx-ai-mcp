@@ -1,0 +1,53 @@
+# JADX MCP Server - Standalone Docker Image
+# Lightweight container for MCP Server only (no JADX GUI/VNC)
+#
+# Build: docker build -t jadx-mcp-server -f docker/Dockerfile.mcp .
+# Run:   docker run -d -p 8651:8651 jadx-mcp-server
+
+# ============================================================================
+# Use slim Python image for minimal size
+# ============================================================================
+FROM python:3.12-slim
+
+LABEL maintainer="xjoker"
+LABEL description="JADX MCP Server - Standalone container for multi-instance management"
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=UTC
+
+# ============================================================================
+# Install uv package manager
+# ============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+# ============================================================================
+# Copy and install MCP Server
+# ============================================================================
+WORKDIR /app
+COPY jadx-mcp-server /app
+
+# Install dependencies
+RUN uv sync --frozen
+
+# Create config directory
+RUN mkdir -p /app/data/config
+
+# ============================================================================
+# Default configuration
+# ============================================================================
+# Port for MCP Server HTTP endpoint
+EXPOSE 8651
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8651/health || exit 1
+
+# Default command - can be overridden with --config
+CMD ["uv", "run", "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--port", "8651"]

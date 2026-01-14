@@ -672,37 +672,53 @@ What APK is loaded in the "app-v1" instance?
 
 ---
 
-## 9. 🐳 Docker Deployment (Headless Server)
+## 9. 🐳 Docker Deployment
 
-JADX AI MCP now supports **Docker deployment with noVNC** for running on headless servers without a graphical interface!
+Two Docker images are available:
 
-### Quick Start (Docker Hub)
+| Image | Description | Size |
+|-------|-------------|------|
+| `xjoker/jadx-ai-mcp` | All-in-One (JADX GUI + noVNC + MCP Server) | ~800MB |
+| `xjoker/jadx-mcp-server` | Standalone MCP Server only | ~100MB |
+
+### Option A: All-in-One (Recommended for Quick Start)
 
 ```bash
-# Pull from Docker Hub
+# Pull and run
 docker pull xjoker/jadx-ai-mcp:latest
-
-# Run the container
-docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -v ./apks:/apks xjoker/jadx-ai-mcp
-```
-
-### Build from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/xjoker/jadx-ai-mcp.git
-cd jadx-ai-mcp
-
-# Build the Docker image
-docker build -t jadx-ai-mcp -f docker/Dockerfile .
-
-# Run with default settings
-docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
+docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -p 8651:8651 -v ./apks:/apks xjoker/jadx-ai-mcp
 ```
 
 **Access**:
 - **noVNC Web Desktop**: http://localhost:6080/vnc.html
 - **Plugin API**: http://localhost:8650
+- **MCP Server**: http://localhost:8651
+
+### Option B: Standalone MCP Server (Production)
+
+For production environments where you run JADX instances separately:
+
+```bash
+# Run MCP Server only
+docker run -d --name jadx-mcp-server -p 8651:8651 \
+  -v ./config:/app/data/config \
+  xjoker/jadx-mcp-server
+
+# Connect to remote JADX instances via config file or AI commands
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/xjoker/jadx-ai-mcp.git
+cd jadx-ai-mcp
+
+# All-in-One image
+docker build -t jadx-ai-mcp -f docker/Dockerfile .
+
+# MCP Server only
+docker build -t jadx-mcp-server -f docker/Dockerfile.mcp .
+```
 
 ### Environment Variables
 
@@ -713,21 +729,7 @@ docker run -d --name jadx-ai-mcp -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-
 | `JADX_MCP_AUTH_TOKEN` | (auto-generated) | Authentication token |
 | `JADX_MCP_AUTH_ENABLED` | false | Enable authentication (`true`/`false`) |
 
-### Example with Authentication
-
-```bash
-docker run -d --name jadx-ai-mcp \
-  -p 6080:6080 -p 8650:8650 \
-  -e JADX_MCP_BIND_ADDRESS=0.0.0.0 \
-  -e JADX_MCP_AUTH_ENABLED=true \
-  -e JADX_MCP_AUTH_TOKEN=your-secret-token-here \
-  -v $(pwd)/apks:/apks \
-  jadx-ai-mcp
-```
-
 ### Auto-load APK
-
-Place a file named `target.apk` in your mounted `/apks` directory, and jadx-gui will automatically load it on startup.
 
 ### Container Features
 
