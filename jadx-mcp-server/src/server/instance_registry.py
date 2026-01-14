@@ -163,7 +163,8 @@ class InstanceRegistry:
                 return result
                 
             except Exception as e:
-                error_msg = f"Failed to add instance: {str(e)}"
+                error_detail = str(e) or "(no details)"
+                error_msg = f"Failed to add instance: {type(e).__name__}: {error_detail}"
                 logger.error(error_msg)
                 return {
                     "success": False,
@@ -483,7 +484,7 @@ class InstanceRegistry:
                     instance.error_message = "Health check failed"
             except Exception as e:
                 instance.status = "error"
-                instance.error_message = str(e)
+                instance.error_message = f"{type(e).__name__}: {str(e) or '(no details)'}"
             
             results.append({
                 "name": name,

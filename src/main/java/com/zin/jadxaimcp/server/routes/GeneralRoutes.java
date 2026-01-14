@@ -28,13 +28,8 @@ public class GeneralRoutes {
      * @param ctx - The jadx plugin server context
      * @return void
      * 
-     * This method is handles health-check request which is kind of ping 
-     * from jadx_mcp_server.py from mcp server to check if this 
-     * plugin server is running or not.
-     * 
-     * It first checks the status of server using isRunning variable,
-     * if it is running returns "Running" and "url" in json response
-     * else return Stopped and N/A
+     * This method handles health-check requests.
+     * Enhanced to include JVM memory stats and class loading info.
      */
     public void handleHealth(Context ctx) {
         try {
@@ -42,11 +37,36 @@ public class GeneralRoutes {
             String status = isRunning ? "Running" : "Stopped";
             String url = isRunning ? "http://127.0.0.1:" + server.getPort() + "/" : "N/A";
 
-            Map<String, String> result = new HashMap<>();
+            Map<String, Object> result = new HashMap<>();
             result.put("status", status);
             result.put("url", url);
-
-            logger.debug("JADX AI MCP Plugin: GOT HEALTH PING");
+            result.put("timestamp", java.time.Instant.now().toString());
+            
+            // JVM Memory stats
+            Runtime runtime = Runtime.getRuntime();
+            long usedMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
+            long maxMb = runtime.maxMemory() / (1024 * 1024);
+            int memPercent = (int) ((usedMb * 100) / maxMb);
+            
+            Map<String, Object> memory = new HashMap<>();
+            memory.put("used_mb", usedMb);
+            memory.put("max_mb", maxMb);
+            memory.put("percent", memPercent);
+            result.put("memory", memory);
+            
+            // JADX class loading stats (lightweight - just counts, no decompilation triggered)
+            try {
+                int totalClasses = mainWindow.getWrapper().getIncludedClassesWithInners().size();
+                Map<String, Object> jadx = new HashMap<>();
+                jadx.put("classes_total", totalClasses);
+                result.put("jadx", jadx);
+            } catch (Exception e) {
+                // If JADX not fully loaded, skip
+                result.put("jadx", Map.of("status", "loading"));
+            }
+            
+            ctx.json(result);
+            logger.debug("JADX AI MCP Plugin: Health check - memory {}MB/{}MB ({}%)", usedMb, maxMb, memPercent);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal Error while trying to handle health ping request: " + e.getMessage(), e, logger);
         }

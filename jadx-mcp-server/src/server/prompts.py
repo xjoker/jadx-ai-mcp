@@ -86,3 +86,72 @@ Follow this standard reverse engineering workflow:
 
 **Tip**: If the method is overridden or part of an interface, check the class hierarchy using `get_class_source` to understand the context.
 """
+
+    @mcp.prompt("warm-up-package")
+    def warm_up_package_prompt(package_name: str) -> str:
+        """Guide the AI to pre-warm decompilation cache for a package.
+        
+        Args:
+            package_name: The package prefix to warm up (e.g., 'com.example.app').
+        """
+        return f"""You want to pre-warm the decompilation cache for package `{package_name}`.
+
+**Why Warm Up?**
+Large APKs have lazy decompilation - classes are only decompiled when first accessed.
+By pre-loading key classes, subsequent searches and analysis will be faster.
+
+**Strategy**:
+1.  **List Classes in Package**:
+    - Use `get_all_classes(count=100)` and filter for `{package_name}` prefix.
+    - Or use `search_classes_by_keyword(search_term="{package_name}", search_in="class", count=50)`.
+
+2.  **Load Key Classes**:
+    - For each class found, call `get_class_source(class_name)` to trigger decompilation.
+    - Focus on core classes (Activities, Managers, Utils) rather than inner classes.
+
+3.  **Batch Loading**:
+    - Use `batch_get_class_source(class_names=[...])` for up to 20 classes at once.
+    - This is more efficient than individual calls.
+
+**Note**: This creates cache entries that persist until JADX restarts. If using Docker with cache volume, they persist across restarts.
+"""
+
+    @mcp.prompt("batch-operations")
+    def batch_operations_prompt() -> str:
+        """Guide the AI on best practices for batch operations to reduce overhead."""
+        return """You want to perform multiple related operations efficiently.
+
+**Available Batch Tools**:
+| Tool | Max Items | Use Case |
+|:---|:---:|:---|
+| `batch_get_class_source` | 20 | Get source code for multiple classes |
+| `batch_get_method_by_name` | 20 | Get multiple method implementations |
+| `batch_get_xrefs` | 20 | Get cross-references for multiple targets |
+
+**Best Practices**:
+1.  **Group Related Requests**:
+    - Instead of 10 individual `get_class_source` calls, use one `batch_get_class_source`.
+    - This reduces network round-trips and MCP overhead.
+
+2.  **Handle Partial Failures**:
+    - Batch operations return results for each item with `found: true/false`.
+    - Check the `error` field for individual items that failed.
+
+3.  **Pagination for Large Results**:
+    - Tools like `search_method_by_name` support `offset` and `count` parameters.
+    - Use `has_more` and `next_offset` to paginate through large result sets.
+
+4.  **Avoid Overloading**:
+    - Requesting too many items at once can still cause timeouts.
+    - If batch operations fail, try smaller batches (e.g., 5-10 items).
+
+**Example: Analyzing a Class Hierarchy**:
+```python
+# Get info for multiple related classes at once
+result = batch_get_class_source(["com.example.BaseActivity", "com.example.MainActivity", "com.example.SettingsActivity"])
+for cls in result["classes"]:
+    if cls["found"]:
+        # Analyze cls["content"]
+        pass
+```
+"""

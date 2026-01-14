@@ -147,8 +147,8 @@ async def health_ping() -> Union[str, Dict[str, Any]]:
         resp.raise_for_status()
         return resp.text
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {"error": str(e)}
+        logger.error(f"Health check failed: {type(e).__name__}: {e}")
+        return {"error": f"{type(e).__name__}: {str(e) or '(no details)'}"}
 
 
 async def get_from_jadx(

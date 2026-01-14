@@ -134,12 +134,14 @@ class PaginationUtils:
                 return PaginationUtils._build_standardized_response(response, items)
 
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON response from JADX: {e}")
-                return {"error": f"Invalid JSON response from JADX server: {str(e)}"}
+                error_msg = str(e) or "(no details)"
+                logger.error(f"Failed to parse JSON response from JADX: {type(e).__name__}: {error_msg}")
+                return {"error": f"Invalid JSON response from JADX server: {type(e).__name__}: {error_msg}"}
 
         except Exception as e:
-            logger.error(f"Error in paginated request to {endpoint}: {e}")
-            return {"error": f"Failed to fetch data from {endpoint}: {str(e)}"}
+            error_msg = str(e) or "(no details)"
+            logger.error(f"Error in paginated request to {endpoint}: {type(e).__name__}: {error_msg}")
+            return {"error": f"Failed to fetch data from {endpoint}: {type(e).__name__}: {error_msg}"}
 
     @staticmethod
     def _build_standardized_response(parsed_response: dict, items: List[Any]) -> dict:
