@@ -5,14 +5,17 @@ echo "================================================"
 echo "  JADX-AI-MCP Docker Container Starting..."
 echo "================================================"
 echo ""
-echo "  noVNC Web Desktop: http://localhost:6080"
-echo "  JADX Plugin API:   http://localhost:8650"
-echo "  MCP Server:        http://localhost:8651"
+echo "  Ports:"
+echo "    6080  - noVNC Web Desktop (VNC viewer)"
+echo "    8650  - JADX Plugin API"
+echo "    8651  - MCP Server (connect AI clients here)"
 echo ""
-echo "  Connect Claude/Gemini/ChatGPT to MCP Server:"
-echo "  claude mcp add --transport http jadx http://<host>:8651"
+echo "  Quick Connect:"
+echo "    Browser:  http://localhost:6080"
+echo "    Claude:   claude mcp add --transport http jadx http://<host>:8651/mcp/v1"
+echo ""
+echo "================================================"
 echo ""
 
 # Start supervisor to manage all services
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
-
