@@ -32,6 +32,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.io.InputStream;
 import java.util.concurrent.CompletableFuture;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import java.awt.Component;
+import java.awt.Container;
 
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
@@ -92,89 +96,109 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call with timeout protection.
+     * Handle the /strings MCP tool call using GUI tab access.
      * 
-     * Uses ExecutorService + Future.get(timeout) for controlled execution.
-     * 60 second timeout prevents indefinite hang.
+     * This approach reads content from already-opened tabs in JADX GUI,
+     * completely avoiding the blocking loadContent() call.
+     * 
+     * If no strings.xml tabs are open, returns instructions for user
+     * to open them manually in JADX GUI.
      */
     public void handleStrings(Context ctx) {
-        String requestedVariant = ctx.queryParam("variant");
-        
         try {
-            // Submit to dedicated executor with timeout
-            java.util.concurrent.Future<Map<String, Object>> future = resourceExecutor.submit(() -> {
-                Map<String, Object> result = new HashMap<>();
-                result.put("type", "resource/strings-xml");
-                
-                try {
-                    List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-                    List<String> availableVariants = new ArrayList<>();
-                    String defaultContent = null;
-                    String targetContent = null;
-                    String targetVariant = null;
-                    
-                    for (ResourceFile resFile : resourceFiles) {
-                        try {
-                            if ("resources.arsc".equals(resFile.getDeobfName())) {
-                                ResContainer container = resFile.loadContent();
-                                if (container != null) {
-                                    for (ResContainer file : container.getSubFiles()) {
-                                        String fileName = file.getFileName();
-                                        if (fileName != null && fileName.contains("strings.xml")) {
-                                            availableVariants.add(fileName);
-                                            if (requestedVariant != null && requestedVariant.equals(fileName)) {
-                                                targetContent = file.getText().getCodeStr();
-                                                targetVariant = fileName;
-                                            } else if ("res/values/strings.xml".equals(fileName) && requestedVariant == null) {
-                                                defaultContent = file.getText().getCodeStr();
-                                            }
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        } catch (Exception e) {
-                            logger.warn("Error processing resource: " + e.getMessage());
-                        }
-                    }
-                    
-                    result.put("available_variants", availableVariants);
-                    result.put("total_variants", availableVariants.size());
-                    
-                    if (targetContent != null) {
-                        result.put("loaded_variant", targetVariant);
-                        result.put("content", targetContent);
-                    } else if (defaultContent != null) {
-                        result.put("loaded_variant", "res/values/strings.xml");
-                        result.put("content", defaultContent);
-                    } else if (requestedVariant != null) {
-                        result.put("error", "Variant not found: " + requestedVariant);
-                    } else if (!availableVariants.isEmpty()) {
-                        result.put("message", "No res/values/strings.xml found");
-                        result.put("suggestion", "Use variant=" + availableVariants.get(0));
-                    } else {
-                        result.put("error", "No strings.xml resources found");
-                    }
-                } catch (Exception e) {
-                    result.put("error", "Internal error: " + e.getMessage());
-                }
-                return result;
-            });
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "resource/strings-xml");
             
-            // Wait with 60 second timeout
-            Map<String, Object> result = future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            // Get all opened tabs that contain strings.xml content
+            List<Map<String, String>> openedStringsFiles = getOpenedResourceTabs("strings.xml");
+            
+            if (!openedStringsFiles.isEmpty()) {
+                // Return content from opened tabs
+                result.put("status", "success");
+                result.put("source", "gui_tabs");
+                result.put("opened_files", openedStringsFiles);
+                result.put("count", openedStringsFiles.size());
+                
+                // If single file, also include content directly
+                if (openedStringsFiles.size() == 1) {
+                    result.put("loaded_variant", openedStringsFiles.get(0).get("name"));
+                    result.put("content", openedStringsFiles.get(0).get("content"));
+                }
+            } else {
+                // No strings.xml tabs open - return instructions
+                result.put("status", "no_tabs_open");
+                result.put("message", "No strings.xml files are currently open in JADX GUI");
+                result.put("instructions", new String[]{
+                    "1. In JADX GUI, expand 'Resources' in the left tree",
+                    "2. Navigate to 'res/values/strings.xml' (or desired locale)",
+                    "3. Double-click to open the file in a tab",
+                    "4. Call get_strings again to retrieve the content",
+                    "Or use fetch_current_class after selecting the tab"
+                });
+                result.put("available_locales_hint", new String[]{
+                    "res/values/strings.xml",
+                    "res/values-en/strings.xml",
+                    "res/values-zh-rCN/strings.xml"
+                });
+            }
+            
             ctx.json(result);
             
-        } catch (java.util.concurrent.TimeoutException e) {
-            Map<String, Object> timeout = new HashMap<>();
-            timeout.put("type", "resource/strings-xml");
-            timeout.put("error", "Resource loading timed out after 60 seconds");
-            timeout.put("reason", "The APK's resources.arsc is too large");
-            timeout.put("workaround", "Navigate to Resources in JADX GUI, then use fetch_current_class");
-            ctx.status(504).json(timeout);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Error in handleStrings: " + e.getMessage(), e, logger);
         }
+    }
+    
+    /**
+     * Get content from all opened tabs that match the given filename pattern.
+     * This reads from JTextArea components in the GUI, avoiding loadContent().
+     */
+    private List<Map<String, String>> getOpenedResourceTabs(String filenamePattern) {
+        List<Map<String, String>> results = new ArrayList<>();
+        
+        if (mainWindow == null) return results;
+        
+        try {
+            JTabbedPane tabbedPane = mainWindow.getTabbedPane();
+            if (tabbedPane == null) return results;
+            
+            int tabCount = tabbedPane.getTabCount();
+            for (int i = 0; i < tabCount; i++) {
+                String tabTitle = tabbedPane.getTitleAt(i);
+                if (tabTitle != null && tabTitle.contains(filenamePattern)) {
+                    Component component = tabbedPane.getComponentAt(i);
+                    String content = extractTextFromComponent(component);
+                    if (content != null && !content.isEmpty()) {
+                        Map<String, String> entry = new HashMap<>();
+                        entry.put("name", tabTitle);
+                        entry.put("content", content);
+                        results.add(entry);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Error reading tabs: " + e.getMessage());
+        }
+        
+        return results;
+    }
+    
+    /**
+     * Recursively find JTextArea in component and extract text.
+     */
+    private String extractTextFromComponent(Component component) {
+        if (component instanceof JTextArea) {
+            return ((JTextArea) component).getText();
+        }
+        if (component instanceof Container) {
+            for (Component child : ((Container) component).getComponents()) {
+                String text = extractTextFromComponent(child);
+                if (text != null && !text.isEmpty()) {
+                    return text;
+                }
+            }
+        }
+        return null;
     }
     
     /**
