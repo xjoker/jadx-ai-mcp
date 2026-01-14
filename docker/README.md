@@ -1,109 +1,134 @@
 # JADX-AI-MCP Docker Deployment
 
-This Docker image enables running JADX-AI-MCP on headless Linux servers with browser-based access via noVNC.
+Two Docker images are available for different use cases.
 
-## Architecture
+## Images
 
-```
-┌─────────────────────────────────── Docker Container ────────────────────────────────┐
-│   Xvfb (:99) ──► x11vnc (:5900) ──► noVNC (:6080) ──► Browser (Remote Desktop)     │
-│       └──► jadx-gui + AI-MCP Plugin (:8650 HTTP API)                                │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+| Image | Description | Size |
+|-------|-------------|------|
+| `xjoker/jadx-ai-mcp` | All-in-One (JADX GUI + noVNC + MCP Server) | ~800MB |
+| `xjoker/jadx-mcp-server` | Standalone MCP Server only | ~100MB |
+
+## Architecture (All-in-One)
+
+```mermaid
+flowchart LR
+    subgraph Docker["Docker Container"]
+        Xvfb["Xvfb :99"]
+        VNC["x11vnc :5900"]
+        noVNC["noVNC :6080"]
+        JADX["jadx-gui + Plugin"]
+        MCP["MCP Server :8651"]
+        API["Plugin API :8650"]
+        
+        Xvfb --> VNC --> noVNC
+        Xvfb --> JADX
+        JADX --> API
+        MCP --> API
+    end
+    
+    Browser["🌐 Browser"] --> noVNC
+    LLM["🤖 LLM Client"] --> MCP
 ```
 
 ## Quick Start
 
-### 1. Build Plugin
+### All-in-One Image
 
 ```bash
-cd /path/to/jadx-ai-mcp
-mvn clean package -DskipTests
-```
-
-### 2. Build Docker Image
-
-```bash
-docker build -t jadx-ai-mcp -f docker/Dockerfile .
-```
-
-### 3. Run Container
-
-```bash
-docker run -d \
-  --name jadx-ai-mcp \
+# Pull and run
+docker pull xjoker/jadx-ai-mcp:latest
+docker run -d --name jadx-ai-mcp \
   -p 6080:6080 \
   -p 8650:8650 \
+  -p 8651:8651 \
   -v $(pwd)/apks:/apks \
-  jadx-ai-mcp
+  xjoker/jadx-ai-mcp
+
+# Access
+# - noVNC: http://localhost:6080
+# - Plugin API: http://localhost:8650
+# - MCP Server: http://localhost:8651
 ```
 
-### 4. Access
+### Standalone MCP Server
 
-- **Web Desktop**: http://localhost:6080
-- **API Endpoint**: http://localhost:8650/jadx/api/v1/
+```bash
+# For production: run MCP Server separately
+docker run -d --name jadx-mcp-server \
+  -p 8651:8651 \
+  -v $(pwd)/config:/app/data/config \
+  xjoker/jadx-mcp-server
+
+# Connect to remote JADX instances via config or AI commands
+```
 
 ## Ports
 
 | Port | Service | Description |
 |------|---------|-------------|
-| 6080 | noVNC | Web-based VNC interface |
-| 8650 | HTTP API | JADX AI-MCP plugin API |
+| 6080 | noVNC | Web-based VNC desktop (All-in-One only) |
+| 8650 | Plugin API | JADX plugin HTTP API |
+| 8651 | MCP Server | LLM client connection endpoint |
 
-## Volumes
+## Configuration
 
-| Path | Description |
-|------|-------------|
-| `/apks` | Mount your APK files here |
-| `/root/.jadx` | JADX configuration and plugins |
+### Multi-user Authentication
 
-## Usage with MCP Server
+Create `config/jadx-config.toml`:
 
-```bash
-# Start the container
-docker run -d -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
+```toml
+[server]
+host = "0.0.0.0"
+port = 8651
 
-# Connect MCP server to container
-python jadx-mcp-server/jadx_mcp_server.py --jadx-host localhost --jadx-port 8650
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+
+[[users]]
+name = "admin"
+token = "token-admin-zzzzz"
+is_admin = true
+
+[defaults]
+jadx_token = ""
+
+[[jadx_instances]]
+name = "local"
+host = "127.0.0.1"
+port = 8650
 ```
 
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JADX_MCP_BIND_ADDRESS` | 127.0.0.1 | Server bind address (set to `0.0.0.0` for Docker) |
-| `JADX_MCP_PORT` | 8650 | Plugin HTTP API port |
-| `JADX_MCP_AUTH_TOKEN` | (auto-generated) | Authentication token |
-| `JADX_MCP_AUTH_ENABLED` | false | Enable authentication (`true`/`false`) |
-| `VNC_PORT` | 5900 | Internal VNC port |
-| `NOVNC_PORT` | 6080 | noVNC web port |
-
-### Example with Authentication
+Run with config:
 
 ```bash
-docker run -d \
-  --name jadx-ai-mcp \
-  -p 6080:6080 \
-  -p 8650:8650 \
-  -e JADX_MCP_BIND_ADDRESS=0.0.0.0 \
-  -e JADX_MCP_AUTH_ENABLED=true \
-  -e JADX_MCP_AUTH_TOKEN=your-secret-token-here \
-  -v $(pwd)/apks:/apks \
-  jadx-ai-mcp
+docker run -d -p 8651:8651 \
+  -v $(pwd)/config:/app/data/config \
+  xjoker/jadx-mcp-server \
+  uv run jadx_mcp_server --http --host 0.0.0.0 --config /app/data/config/jadx-config.toml
+```
+
+## Build from Source
+
+```bash
+# All-in-One
+docker build -t jadx-ai-mcp -f docker/Dockerfile .
+
+# MCP Server only
+docker build -t jadx-mcp-server -f docker/Dockerfile.mcp .
 ```
 
 ## Troubleshooting
 
-### Check container logs
 ```bash
+# Check logs
 docker logs jadx-ai-mcp
-```
 
-### Access container shell
-```bash
+# Access shell
 docker exec -it jadx-ai-mcp bash
-```
 
-### Check service status
-```bash
+# Check services (All-in-One)
 docker exec jadx-ai-mcp supervisorctl status
 ```
+
