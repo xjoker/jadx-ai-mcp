@@ -83,84 +83,54 @@ public class ResourceRoutes {
     /**
      * Handle the /strings MCP tool call.
      * 
-     * Simple synchronous approach (like original):
-     * - Load only res/values/strings.xml (single file)
-     * - Return list of available variants for reference
+     * For large APKs, resources.arsc parsing can take minutes and block the server.
+     * This implementation only checks for standalone strings.xml files,
+     * and returns a suggestion to use get_resource_file for specific locales.
      */
     public void handleStrings(Context ctx) {
         try {
             List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-            List<String> availableVariants = new ArrayList<>();
-            String defaultContent = null;
+            String standaloneContent = null;
+            boolean hasResourcesArsc = false;
             
+            // Quick scan: only check for standalone strings.xml (no resources.arsc parsing)
             for (ResourceFile resFile : resourceFiles) {
-                try {
-                    if ("resources.arsc".equals(resFile.getDeobfName())) {
-                        ResContainer container = resFile.loadContent();
-                        if (container != null) {
-                            for (ResContainer file : container.getSubFiles()) {
-                                String fileName = file.getFileName();
-                                if (fileName != null && fileName.contains("strings.xml")) {
-                                    availableVariants.add(fileName);
-                                    // Load only the default strings.xml
-                                    if ("res/values/strings.xml".equals(fileName)) {
-                                        defaultContent = file.getText().getCodeStr();
-                                    }
-                                }
-                            }
-                        }
-                        break; // Only process first resources.arsc
-                    }
-                } catch (Exception e) {
-                    logger.warn("Error processing resource file: " + e.getMessage());
-                }
-            }
-            
-            // Check for specific variant request
-            String requestedVariant = ctx.queryParam("variant");
-            if (requestedVariant != null && !requestedVariant.isEmpty()) {
-                // User wants specific variant - reload and find it
-                for (ResourceFile resFile : resourceFiles) {
+                String name = resFile.getDeobfName();
+                if (name == null) continue;
+                
+                if ("resources.arsc".equals(name)) {
+                    hasResourcesArsc = true;
+                    // Don't parse resources.arsc - it can hang for large APKs
+                } else if ("res/values/strings.xml".equals(name)) {
+                    // Standalone strings.xml - safe to load
                     try {
-                        if ("resources.arsc".equals(resFile.getDeobfName())) {
-                            for (ResContainer file : resFile.loadContent().getSubFiles()) {
-                                if (requestedVariant.equals(file.getFileName())) {
-                                    Map<String, Object> result = new HashMap<>();
-                                    result.put("type", "resource/strings-xml");
-                                    result.put("loaded_variant", requestedVariant);
-                                    result.put("content", file.getText().getCodeStr());
-                                    result.put("available_variants", availableVariants);
-                                    result.put("total_variants", availableVariants.size());
-                                    ctx.json(result);
-                                    return;
-                                }
-                            }
-                        }
+                        standaloneContent = resFile.loadContent().getText().getCodeStr();
                     } catch (Exception e) {
-                        logger.warn("Error loading variant: " + e.getMessage());
+                        logger.warn("Error loading standalone strings.xml: " + e.getMessage());
                     }
                 }
-                // Variant not found
-                Map<String, Object> error = new HashMap<>();
-                error.put("type", "resource/strings-xml");
-                error.put("error", "Variant not found: " + requestedVariant);
-                error.put("available_variants", availableVariants);
-                ctx.status(404).json(error);
-                return;
             }
             
-            // Return default strings.xml with variants list
             Map<String, Object> result = new HashMap<>();
             result.put("type", "resource/strings-xml");
-            result.put("available_variants", availableVariants);
-            result.put("total_variants", availableVariants.size());
             
-            if (defaultContent != null) {
+            if (standaloneContent != null) {
+                // Standalone strings.xml found
                 result.put("loaded_variant", "res/values/strings.xml");
-                result.put("content", defaultContent);
-            } else if (!availableVariants.isEmpty()) {
-                result.put("message", "No res/values/strings.xml found. Use 'variant' param to load a specific file.");
-                result.put("suggestion", "Call with variant=" + availableVariants.get(0));
+                result.put("content", standaloneContent);
+            } else if (hasResourcesArsc) {
+                // resources.arsc exists but we skip parsing for safety
+                result.put("message", "strings.xml resources are embedded in resources.arsc. " +
+                    "For large APKs, direct parsing can hang the server.");
+                result.put("suggestion", "Use get_resource_file with file_name='res/values/strings.xml' " +
+                    "or other locale like 'res/values-en/strings.xml'");
+                result.put("available_locales_hint", new String[]{
+                    "res/values/strings.xml",
+                    "res/values-en/strings.xml", 
+                    "res/values-zh/strings.xml",
+                    "res/values-zh-rCN/strings.xml",
+                    "res/values-zh-rTW/strings.xml"
+                });
             } else {
                 JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resources found.", logger);
                 return;
