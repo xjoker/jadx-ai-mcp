@@ -1,0 +1,19 @@
+# JADX MCP Server Default Configuration
+# This file is loaded automatically when using Docker
+# Mount your own config file to /opt/jadx/jadx-mcp-server/data/config/jadx-config.toml
+
+[server]
+host = "0.0.0.0"
+port = 8651
+
+[defaults]
+request_timeout = 120
+busy_timeout = 300
+jadx_token = ""  # Set via JADX_MCP_AUTH_TOKEN environment variable
+
+# Pre-connect to local JADX instance in the same container
+[[jadx_instances]]
+name = "local"
+host = "127.0.0.1"
+port = 8650
+enabled = true

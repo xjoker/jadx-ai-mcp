@@ -43,6 +43,8 @@ from src.server.tools.xrefs_tools import (
 from src.server.tools.instance_tools import register_instance_tools
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
+from src.server.auth_middleware import BearerAuthMiddleware
+from src.server.health_monitor import HealthMonitor
 
 
 # CORRECT REGISTRATION PATTERN for FastMCP
@@ -600,26 +602,23 @@ def main():
         """Initialize JADX instances from config file and/or CLI"""
         instances_added = 0
         
-        # 1. Load instances from config file
+        # 1. Load instances from config file (register as pending, health monitor will connect)
         if loaded_config and loaded_config.jadx_instances:
-            print(f"\nLoading JADX instances from config file...")
+            print(f"\nRegistering JADX instances from config file...")
             for inst_cfg in loaded_config.jadx_instances:
                 if not inst_cfg.enabled:
                     print(f"  ⊘ Skipped (disabled): {inst_cfg.name}")
                     continue
                 
-                # Set per-instance token if provided
-                if inst_cfg.token:
-                    # For now, we use shared token. Per-instance token requires InstanceRegistry enhancement.
-                    pass
-                
-                result = await InstanceRegistry.add_instance(
-                    inst_cfg.host, 
-                    inst_cfg.port, 
-                    inst_cfg.name
+                # Register as pending - health monitor will attempt connection
+                result = InstanceRegistry.register_pending_instance(
+                    name=inst_cfg.name,
+                    host=inst_cfg.host, 
+                    port=inst_cfg.port,
+                    token=inst_cfg.token if inst_cfg.token else None,
                 )
                 if result["success"]:
-                    print(f"  ✓ Added: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port})")
+                    print(f"  ✓ Registered: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port}) [pending]")
                     instances_added += 1
                 else:
                     print(f"  ✗ Failed: {inst_cfg.name}: {result['message']}")
@@ -699,6 +698,15 @@ def main():
     # Register instance management tools
     register_instance_tools(mcp)
     
+    # Register authentication middleware (HTTP mode only)
+    require_auth = bool(loaded_config and loaded_config.users) and not allow_anonymous
+    auth_middleware = BearerAuthMiddleware(require_auth=require_auth)
+    mcp.add_middleware(auth_middleware)
+    if require_auth:
+        print(f"✓ Authentication middleware enabled (required)")
+    else:
+        print(f"✓ Authentication middleware enabled (optional)")
+    
     if args.http:
         print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
         if args.mcp_auth_token or (loaded_config and loaded_config.users):
@@ -709,6 +717,32 @@ def main():
             config_loader.add_change_callback(on_config_change)
             # Note: Hot-reload watcher runs in the async event loop managed by FastMCP
             print(f"  Config hot-reload: enabled")
+        
+        # Start background health monitor for JADX instances
+        health_interval = loaded_config.defaults.health_check_interval if loaded_config else 30
+        HealthMonitor.configure(interval=health_interval)
+        
+        # Start health monitor in a background thread with its own event loop
+        import threading
+        import signal
+        
+        def run_health_monitor():
+            """Run health monitor in a separate thread with its own event loop."""
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(HealthMonitor.start())
+                loop.run_forever()
+            except Exception as e:
+                print(f"Health monitor error: {e}")
+            finally:
+                loop.close()
+        
+        health_thread = threading.Thread(target=run_health_monitor, daemon=True)
+        health_thread.start()
+        
+        print(f"  Health monitor: enabled (interval: {health_interval}s)")
         
         mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:

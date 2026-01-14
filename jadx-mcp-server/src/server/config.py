@@ -24,7 +24,7 @@ REQUEST_TIMEOUT: int = 120  # Default timeout in seconds (configurable)
 
 # Logging Setup
 logger = logging.getLogger("jadx-mcp-server")
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 handler = logging.StreamHandler(sys.stderr)
 handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(handler)
@@ -144,7 +144,7 @@ async def health_ping() -> Union[str, Dict[str, Any]]:
         Performs async HTTP health check with configurable timeout.
         Health check does not require authentication.
     """
-    print(f"Attempting to connect to {JADX_HTTP_BASE}/health")
+    logger.info(f"Attempting to connect to {JADX_HTTP_BASE}/health")
     try:
         client = HttpClientManager.get_client()
         resp = await client.get(f"{JADX_HTTP_BASE}/health")
@@ -213,10 +213,14 @@ async def get_from_jadx(
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
 
+    logger.info(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
+    
     try:
         client = HttpClientManager.get_client()
         resp = await client.get(url, params=params, headers=headers)
         resp.raise_for_status()
+        
+        logger.info(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")
 
         # Try to parse JSON, fallback to text if not valid JSON
         try:

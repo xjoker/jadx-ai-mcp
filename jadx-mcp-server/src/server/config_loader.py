@@ -54,6 +54,7 @@ class DefaultsConfig:
     request_timeout: int = 120
     busy_timeout: int = 300
     jadx_token: str = ""  # Default JADX plugin token
+    health_check_interval: int = 30  # Seconds between health checks
 
 
 @dataclass
@@ -81,6 +82,7 @@ class AppConfig:
             request_timeout=defaults_data.get("request_timeout", 120),
             busy_timeout=defaults_data.get("busy_timeout", 300),
             jadx_token=defaults_data.get("jadx_token", ""),
+            health_check_interval=defaults_data.get("health_check_interval", 30),
         )
         
         users = []

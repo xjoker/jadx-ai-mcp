@@ -162,6 +162,66 @@ class InstanceRegistry:
                 }
     
     @classmethod
+    def register_pending_instance(
+        cls, 
+        name: str,
+        host: str, 
+        port: int, 
+        token: str = None,
+        owner: str = None,
+        is_dynamic: bool = False
+    ) -> dict:
+        """
+        Register a JADX instance from config file without requiring immediate connection.
+        
+        The instance is added with 'pending' status and will be connected
+        by the background health monitor when JADX becomes available.
+        
+        Args:
+            name: Instance name (required for config instances)
+            host: JADX instance IP address
+            port: JADX instance port number
+            token: Instance-specific JADX plugin token
+            owner: Owner username (None = shared/static instance)
+            is_dynamic: True if added via AI conversation
+            
+        Returns:
+            {"success": bool, "message": str}
+        """
+        if name in cls._instances:
+            return {
+                "success": False,
+                "message": f"Instance '{name}' already registered",
+            }
+        
+        actual_token = token or cls._shared_auth_token
+        
+        instance = JadxInstance(
+            name=name,
+            host=host,
+            port=port,
+            status="pending",  # Not yet connected
+            apk_info={},
+            last_health_check=None,
+            token=actual_token or "",
+            owner=owner,
+            is_dynamic=is_dynamic,
+        )
+        cls._instances[name] = instance
+        
+        # If first instance, set as default
+        if cls._default_instance is None:
+            cls._default_instance = name
+        
+        owner_info = f" (owner: {owner})" if owner else " (shared)"
+        logger.info(f"Registered pending instance: {name} ({host}:{port}){owner_info}")
+        
+        return {
+            "success": True,
+            "message": f"Registered instance '{name}' (pending connection)",
+        }
+    
+    @classmethod
     async def _fetch_apk_info(cls, host: str, port: int, token: str = None) -> dict:
         """Fetch APK info from JADX instance"""
         url = f"http://{host}:{port}/apk-info"
@@ -170,10 +230,13 @@ class InstanceRegistry:
         if actual_token:
             headers["Authorization"] = f"Bearer {actual_token}"
         
+        logger.info(f"Connecting to JADX instance: {url}")
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            logger.info(f"Connected to JADX: {data.get('apk_package', 'unknown')} v{data.get('version_name', 'unknown')}")
+            return data
     
     @classmethod
     async def _check_health(cls, host: str, port: int) -> bool:
@@ -186,8 +249,11 @@ class InstanceRegistry:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(url, headers=headers)
-                return response.status_code == 200
-        except Exception:
+                is_healthy = response.status_code == 200
+                logger.debug(f"Health check {host}:{port}: {'OK' if is_healthy else 'FAILED'}")
+                return is_healthy
+        except Exception as e:
+            logger.debug(f"Health check {host}:{port} failed: {e}")
             return False
     
     @classmethod
@@ -326,6 +392,11 @@ class InstanceRegistry:
     def get_instance(cls, name: str) -> Optional[JadxInstance]:
         """Get instance by name"""
         return cls._instances.get(name)
+    
+    @classmethod
+    def get_all_instances(cls) -> Dict[str, JadxInstance]:
+        """Get all registered instances (for health monitoring)"""
+        return cls._instances.copy()
     
     @classmethod
     async def health_check_all(cls) -> dict:
