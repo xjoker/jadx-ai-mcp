@@ -72,54 +72,129 @@ public class ResourceRoutes {
     }
 
     /**
-     * @return void
-     * @param Context
+     * Handle the /strings MCP tool call with streaming pagination.
      * 
-     * This routing method handle the /strings mcp tool call.
-     * 1. For each resource file,
-     *  a. Check if file compiled resources archive "resources.arsc"
-     *      i. If yes then load that resource file content
-     *          - for each subFile in content.subfiles
-     *              * if subfile's path == "res/values/strings.xml" then add it to allStringsEntries
-     *      ii. If no then check if file is standalone strings.xml 
-     *          - if yes then load the content and add it to allStringsEntries
+     * Performance optimization:
+     * 1. First pass: Collect string file references WITHOUT loading content
+     * 2. Second pass: Only load content for files within pagination range
+     * 
+     * This prevents timeout on large APKs with many string resources.
      */
     public void handleStrings(Context ctx) {
         try {
-            List<Map<String, String>> allStringEntries = new ArrayList<>();
+            // Phase 1: Collect string file references without loading content
+            List<StringFileRef> stringFileRefs = new ArrayList<>();
             List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-
+            
             for (ResourceFile resFile : resourceFiles) {
                 try {
                     if ("resources.arsc".equals(resFile.getDeobfName())) {
-                        for (ResContainer file : resFile.loadContent().getSubFiles()) {
-                            if ("res/values/strings.xml".equals(file.getFileName())) {
-                                allStringEntries.add(Map.of("file", file.getFileName(),
-                                                            "content", file.getText().getCodeStr()));
+                        // For compiled resources, we need to load to get subfiles list
+                        // but we don't need to get the actual content yet
+                        ResContainer content = resFile.loadContent();
+                        if (content != null) {
+                            for (ResContainer subFile : content.getSubFiles()) {
+                                String fileName = subFile.getFileName();
+                                // Match all strings.xml variants (values, values-zh, etc.)
+                                if (fileName != null && fileName.contains("strings.xml")) {
+                                    stringFileRefs.add(new StringFileRef(fileName, subFile));
+                                }
                             }
                         }
-                    } else if ("res/values/strings.xml".equals(resFile.getDeobfName())) {
-                        allStringEntries.add(Map.of("file", resFile.getDeobfName(), "content",
-                                                     resFile.loadContent().getText().getCodeStr()));
+                    } else if (resFile.getDeobfName() != null && 
+                               resFile.getDeobfName().contains("strings.xml")) {
+                        stringFileRefs.add(new StringFileRef(resFile.getDeobfName(), resFile));
                     }
                 } catch (Exception e) {
-                    logger.error("JADX AI MCP Plugin Error: Error processing resource file during handleStrings(): " + e.getMessage());
+                    logger.warn("Error scanning resource file: " + e.getMessage());
                 }
             }
-
-            if (allStringEntries.isEmpty()) {
+            
+            if (stringFileRefs.isEmpty()) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resource found.", logger);
                 return;
             }
-
-            Map<String, Object> result = paginationUtils.handlePagination(ctx, allStringEntries, "resource/strings-xml",
-                                                                          "strings", item->item);
+            
+            // Phase 2: Parse pagination params and load only needed content
+            int offset = paginationUtils.getIntParam(ctx, "offset", 0);
+            int limit = paginationUtils.getIntParam(ctx, "limit", 0);
+            if (limit == 0) {
+                limit = paginationUtils.getIntParam(ctx, "count", paginationUtils.DEFAULT_PAGE_SIZE);
+            }
+            
+            int totalFiles = stringFileRefs.size();
+            int startIdx = Math.min(offset, totalFiles);
+            int endIdx = Math.min(startIdx + (limit == 0 ? totalFiles : limit), totalFiles);
+            
+            // Load content only for items in range
+            List<Map<String, String>> paginatedEntries = new ArrayList<>();
+            for (int i = startIdx; i < endIdx; i++) {
+                StringFileRef ref = stringFileRefs.get(i);
+                try {
+                    String content = loadStringFileContent(ref);
+                    paginatedEntries.add(Map.of(
+                        "file", ref.fileName,
+                        "content", content
+                    ));
+                } catch (Exception e) {
+                    paginatedEntries.add(Map.of(
+                        "file", ref.fileName,
+                        "error", "Failed to load: " + e.getMessage()
+                    ));
+                }
+            }
+            
+            // Build pagination response
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "resource/strings-xml");
+            result.put("strings", paginatedEntries);
+            
+            Map<String, Object> pagination = new HashMap<>();
+            pagination.put("total", totalFiles);
+            pagination.put("offset", startIdx);
+            pagination.put("limit", endIdx - startIdx);
+            pagination.put("count", paginatedEntries.size());
+            pagination.put("has_more", endIdx < totalFiles);
+            if (endIdx < totalFiles) {
+                pagination.put("next_offset", endIdx);
+            }
+            if (startIdx > 0) {
+                pagination.put("prev_offset", Math.max(0, startIdx - limit));
+            }
+            result.put("pagination", pagination);
+            
             ctx.json(result);
-        } catch (PaginationException e) {
-            JadxAIMCPPluginError.handleError(ctx, "Internal error while generating pagination result for handleStrings(): " + e.getMessage(), e, logger);
+            
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to handle the /strings: " + e.getMessage(), e, logger);
         }
+    }
+    
+    /**
+     * Helper class to hold string file reference without loading content.
+     */
+    private static class StringFileRef {
+        final String fileName;
+        final Object source; // Can be ResContainer or ResourceFile
+        
+        StringFileRef(String fileName, Object source) {
+            this.fileName = fileName;
+            this.source = source;
+        }
+    }
+    
+    /**
+     * Load content from a string file reference.
+     */
+    private String loadStringFileContent(StringFileRef ref) throws Exception {
+        if (ref.source instanceof ResContainer) {
+            ResContainer container = (ResContainer) ref.source;
+            return container.getText().getCodeStr();
+        } else if (ref.source instanceof ResourceFile) {
+            ResourceFile resFile = (ResourceFile) ref.source;
+            return resFile.loadContent().getText().getCodeStr();
+        }
+        throw new IllegalArgumentException("Unknown source type: " + ref.source.getClass());
     }
 
     /**
