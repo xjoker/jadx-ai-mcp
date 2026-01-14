@@ -126,31 +126,6 @@ JADX AI MCP PLUGIN->>JADX MCP SERVER:HTTP RESPONSE
 JADX MCP SERVER->>LLM CLIENT: MCP TOOL RESULT
 ```
 
-### Watch the demos!
-
-- **Perform quick analysis**
-  
-https://github.com/user-attachments/assets/b65c3041-fde3-4803-8d99-45ca77dbe30a
-
-- **Quickly find vulnerabilities**
-
-https://github.com/user-attachments/assets/c184afae-3713-4bc0-a1d0-546c1f4eb57f
-
-- **Multiple AI Agents Support**
-
-https://github.com/user-attachments/assets/6342ea0f-fa8f-44e6-9b3a-4ceb8919a5b0
-
-- **Run with your favorite LLM Client**
-
-https://github.com/user-attachments/assets/b4a6b280-5aa9-4e76-ac72-a0abec73b809
-
-- **Analyze The APK Resources**
-
-https://github.com/user-attachments/assets/f42d8072-0e3e-4f03-93ea-121af4e66eb1
-
-- **Your AI Assistant during debugging of APK using JADX**
-
-https://github.com/user-attachments/assets/2b0bd9b1-95c1-4f32-9b0c-38b864dd6aec
 
 It is combination of two tools:
 1. JADX-AI-MCP

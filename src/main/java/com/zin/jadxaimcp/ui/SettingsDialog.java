@@ -94,9 +94,15 @@ public class SettingsDialog extends JDialog {
      */
     private JPanel createServerConfigPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
+        
+        // Include version and build commit in panel title
+        String versionInfo = String.format("Server Configuration  [v%s | %s]",
+            com.zin.jadxaimcp.utils.JadxAIMCPBanner.VERSION,
+            com.zin.jadxaimcp.utils.JadxAIMCPBanner.BUILD_COMMIT);
+        
         panel.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createEtchedBorder(), 
-            "Server Configuration",
+            versionInfo,
             TitledBorder.LEFT, 
             TitledBorder.TOP
         ));
