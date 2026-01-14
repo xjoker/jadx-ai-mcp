@@ -130,6 +130,7 @@ public class ApkInfoRoutes {
             
             // Plugin version info
             result.put("plugin_version", com.zin.jadxaimcp.utils.JadxAIMCPBanner.VERSION);
+            result.put("build_commit", com.zin.jadxaimcp.utils.JadxAIMCPBanner.BUILD_COMMIT);
             
             logger.debug("JADX AI MCP Plugin: APK info requested");
             ctx.json(result);
