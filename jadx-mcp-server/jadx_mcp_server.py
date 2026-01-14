@@ -701,7 +701,7 @@ def main():
     
     if args.http:
         print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
-        if mcp_auth_token:
+        if args.mcp_auth_token or (loaded_config and loaded_config.users):
             print(f"  Clients must provide: Authorization: Bearer <token>")
         
         # Start config watcher in background (for HTTP mode only)
