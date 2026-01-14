@@ -3,11 +3,10 @@ name = "jadx-mcp-server"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
+    "fastmcp>=2.0.0",
     "httpx>=0.28.1",
-    "mcp[cli]>=1.6.0",
-    "requests>=2.32.3",
 ]
 
 [tool.setuptools]
