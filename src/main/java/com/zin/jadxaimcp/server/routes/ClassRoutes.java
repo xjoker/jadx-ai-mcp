@@ -1058,23 +1058,45 @@ public class ClassRoutes {
 
     /**
      * Search classes by code containing the keyword.
+     * Uses batch processing with early exit to avoid decompiling too many classes.
+     * 
+     * WARNING: This is the most expensive search as it requires full decompilation.
      */
     private Set<JavaClass> searchByCode(List<JavaClass> allClasses, String term,
             String packageFilter, boolean applyPackageFilter) {
-        return allClasses.parallelStream()
-                .filter(cls -> {
-                    try {
-                        // Apply package filter if enabled
-                        if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
-                            return false;
-                        }
-                        String code = cls.getCode();
-                        return code != null && code.toLowerCase().contains(term);
-                    } catch (Exception e) {
-                        return false;
-                    }
-                })
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<JavaClass> results = new LinkedHashSet<>();
+        
+        // Limit: max classes to scan and max results to collect
+        final int MAX_SCAN = 1000;   // Stop scanning after this many classes
+        final int MAX_RESULTS = 100; // Stop after finding this many matches
+        int scanned = 0;
+        
+        for (JavaClass cls : allClasses) {
+            // Early exit conditions
+            if (scanned >= MAX_SCAN || results.size() >= MAX_RESULTS) {
+                logger.info("searchByCode: early exit - scanned={}, results={}", scanned, results.size());
+                break;
+            }
+            
+            try {
+                // Apply package filter if enabled
+                if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
+                    continue;
+                }
+                
+                scanned++;
+                
+                // This triggers decompilation
+                String code = cls.getCode();
+                if (code != null && code.toLowerCase().contains(term)) {
+                    results.add(cls);
+                }
+            } catch (Exception e) {
+                // Skip classes that fail to decompile
+            }
+        }
+        
+        return results;
     }
 
     /**
