@@ -12,6 +12,10 @@ Provides 6 tools for managing multiple JADX instances:
 
 from ..instance_registry import InstanceRegistry
 from ..user_auth import UserAuthManager
+from ..config_loader import get_config_loader
+from ..logging_config import get_logger
+
+logger = get_logger("instance_tools")
 
 
 def register_instance_tools(mcp):
@@ -79,6 +83,10 @@ def register_instance_tools(mcp):
         The instance will be owned by the current user (dynamic instance).
         Other users will not see this instance (except admins).
         
+        NOTE: This operation requires permission. Admin users can add instances by default.
+        Regular users need `can_add_instances: true` in their config, and
+        `security.allow_dynamic_instances` must be enabled globally.
+        
         Args:
             host: JADX instance IP address (e.g., "192.168.1.10" or "localhost")
             port: JADX instance port number (e.g., 8650)
@@ -92,16 +100,42 @@ def register_instance_tools(mcp):
                 "message": "Successfully added instance 'xhs-v8'"
             }
         """
-        # Handle localhost
-        if host.lower() == "localhost":
-            host = "127.0.0.1"
-        
         # Get current user from auth context
         user = UserAuthManager.get_current_user()
         username = user.name if user else "anonymous"
         
+        # === PERMISSION CHECK ===
+        # 1. Check global security setting
+        config_loader = get_config_loader()
+        if config_loader and config_loader.config:
+            config = config_loader.config
+            allow_global = config.security.allow_dynamic_instances
+            
+            # 2. Check user permission
+            user_config = config.get_user_by_token(user.token) if user and user.token else None
+            has_permission = False
+            
+            if user_config:
+                has_permission = user_config.has_add_instances_permission
+            elif user and user.is_admin:
+                has_permission = True
+            
+            if not allow_global and not has_permission:
+                logger.warning(f"User '{username}' denied add_jadx_instance: permission denied")
+                return {
+                    "error": "PERMISSION_DENIED",
+                    "message": "Dynamic instance creation is disabled. Contact admin to enable 'security.allow_dynamic_instances' or grant 'can_add_instances' permission.",
+                    "required_permission": "can_add_instances",
+                }
+        
+        # Handle localhost
+        if host.lower() == "localhost":
+            host = "127.0.0.1"
+        
         # Use default JADX token if not provided
         actual_token = token if token else UserAuthManager.get_default_jadx_token()
+        
+        logger.info(f"User '{username}' adding instance: {host}:{port}")
         
         result = await InstanceRegistry.add_instance(
             host=host,

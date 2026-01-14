@@ -6,14 +6,16 @@ Supports multi-user isolation with owner-based access control.
 """
 
 import asyncio
-import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from .logging_config import get_logger
+
+logger = get_logger("registry")
 
 
 @dataclass
@@ -50,12 +52,19 @@ class JadxInstance:
 
 
 class InstanceRegistry:
-    """JADX Instance Registry (Singleton)"""
+    """
+    JADX Instance Registry (Singleton)
+    
+    Thread-safe implementation supporting concurrent access from:
+    - Main async event loop (MCP tool calls)
+    - Background health monitor thread
+    """
     
     _instances: Dict[str, JadxInstance] = {}
     _default_instance: Optional[str] = None
     _shared_auth_token: Optional[str] = None
-    _lock = asyncio.Lock()
+    _async_lock = asyncio.Lock()  # For async operations
+    _thread_lock = threading.RLock()  # For cross-thread safety
     
     @classmethod
     def set_auth_token(cls, token: str) -> None:
@@ -92,7 +101,7 @@ class InstanceRegistry:
         Returns:
             {"success": bool, "instance": dict, "message": str}
         """
-        async with cls._lock:
+        async with cls._async_lock:
             try:
                 # Determine the token to use for connection
                 actual_token = token or cls._shared_auth_token
@@ -177,6 +186,8 @@ class InstanceRegistry:
         The instance is added with 'pending' status and will be connected
         by the background health monitor when JADX becomes available.
         
+        Thread-safe: Uses threading.RLock for cross-thread safety.
+        
         Args:
             name: Instance name (required for config instances)
             host: JADX instance IP address
@@ -188,38 +199,39 @@ class InstanceRegistry:
         Returns:
             {"success": bool, "message": str}
         """
-        if name in cls._instances:
+        with cls._thread_lock:
+            if name in cls._instances:
+                return {
+                    "success": False,
+                    "message": f"Instance '{name}' already registered",
+                }
+            
+            actual_token = token or cls._shared_auth_token
+            
+            instance = JadxInstance(
+                name=name,
+                host=host,
+                port=port,
+                status="pending",  # Not yet connected
+                apk_info={},
+                last_health_check=None,
+                token=actual_token or "",
+                owner=owner,
+                is_dynamic=is_dynamic,
+            )
+            cls._instances[name] = instance
+            
+            # If first instance, set as default
+            if cls._default_instance is None:
+                cls._default_instance = name
+            
+            owner_info = f" (owner: {owner})" if owner else " (shared)"
+            logger.info(f"Registered pending instance: {name} ({host}:{port}){owner_info}")
+            
             return {
-                "success": False,
-                "message": f"Instance '{name}' already registered",
+                "success": True,
+                "message": f"Registered instance '{name}' (pending connection)",
             }
-        
-        actual_token = token or cls._shared_auth_token
-        
-        instance = JadxInstance(
-            name=name,
-            host=host,
-            port=port,
-            status="pending",  # Not yet connected
-            apk_info={},
-            last_health_check=None,
-            token=actual_token or "",
-            owner=owner,
-            is_dynamic=is_dynamic,
-        )
-        cls._instances[name] = instance
-        
-        # If first instance, set as default
-        if cls._default_instance is None:
-            cls._default_instance = name
-        
-        owner_info = f" (owner: {owner})" if owner else " (shared)"
-        logger.info(f"Registered pending instance: {name} ({host}:{port}){owner_info}")
-        
-        return {
-            "success": True,
-            "message": f"Registered instance '{name}' (pending connection)",
-        }
     
     @classmethod
     async def _fetch_apk_info(cls, host: str, port: int, token: str = None) -> dict:
@@ -390,13 +402,60 @@ class InstanceRegistry:
     
     @classmethod
     def get_instance(cls, name: str) -> Optional[JadxInstance]:
-        """Get instance by name"""
-        return cls._instances.get(name)
+        """Get instance by name (thread-safe)"""
+        with cls._thread_lock:
+            return cls._instances.get(name)
     
     @classmethod
     def get_all_instances(cls) -> Dict[str, JadxInstance]:
-        """Get all registered instances (for health monitoring)"""
-        return cls._instances.copy()
+        """
+        Get all registered instances (thread-safe copy for health monitoring).
+        
+        Returns a copy to prevent modification during iteration.
+        """
+        with cls._thread_lock:
+            return cls._instances.copy()
+    
+    @classmethod
+    def update_instance_status(
+        cls, 
+        name: str, 
+        status: str, 
+        apk_info: Optional[dict] = None,
+        last_check: Optional[str] = None
+    ) -> bool:
+        """
+        Update instance status (thread-safe).
+        
+        Used by HealthMonitor from background thread to update instance state.
+        
+        Args:
+            name: Instance name
+            status: New status ("connected", "disconnected", "pending")
+            apk_info: Optional APK info to update (for newly connected instances)
+            last_check: Optional ISO timestamp of health check
+        
+        Returns:
+            True if updated successfully, False if instance not found
+        """
+        with cls._thread_lock:
+            instance = cls._instances.get(name)
+            if not instance:
+                return False
+            
+            old_status = instance.status
+            instance.status = status
+            
+            if apk_info is not None:
+                instance.apk_info = apk_info
+            
+            if last_check is not None:
+                instance.last_check = last_check
+            
+            if old_status != status:
+                logger.info(f"Instance '{name}' status: {old_status} -> {status}")
+            
+            return True
     
     @classmethod
     async def health_check_all(cls) -> dict:

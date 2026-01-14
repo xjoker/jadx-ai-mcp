@@ -45,6 +45,9 @@ from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
 from src.server.auth_middleware import BearerAuthMiddleware
 from src.server.health_monitor import HealthMonitor
+from src.server.logging_config import configure_logging, get_logger
+
+logger = get_logger("main")
 
 
 # CORRECT REGISTRATION PATTERN for FastMCP

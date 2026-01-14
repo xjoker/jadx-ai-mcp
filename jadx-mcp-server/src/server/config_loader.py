@@ -29,6 +29,14 @@ class UserConfig:
     name: str
     token: str
     is_admin: bool = False
+    can_add_instances: Optional[bool] = None  # None = inherit from is_admin
+    
+    @property
+    def has_add_instances_permission(self) -> bool:
+        """Check if user can add instances. Admin users default to True."""
+        if self.can_add_instances is not None:
+            return self.can_add_instances
+        return self.is_admin  # is_admin implies can_add_instances unless explicitly denied
 
 
 @dataclass
@@ -58,10 +66,17 @@ class DefaultsConfig:
 
 
 @dataclass
+class SecurityConfig:
+    """Security-related configuration options"""
+    allow_dynamic_instances: bool = False  # Default: disabled for safety
+
+
+@dataclass
 class AppConfig:
     """Complete application configuration"""
     server: ServerConfig = field(default_factory=ServerConfig)
     defaults: DefaultsConfig = field(default_factory=DefaultsConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
     users: List[UserConfig] = field(default_factory=list)
     jadx_instances: List[JadxInstanceConfig] = field(default_factory=list)
     
@@ -70,6 +85,7 @@ class AppConfig:
         """Create AppConfig from a parsed TOML dictionary"""
         server_data = data.get("server", {})
         defaults_data = data.get("defaults", {})
+        security_data = data.get("security", {})
         users_data = data.get("users", [])
         instances_data = data.get("jadx_instances", [])
         
@@ -85,12 +101,17 @@ class AppConfig:
             health_check_interval=defaults_data.get("health_check_interval", 30),
         )
         
+        security = SecurityConfig(
+            allow_dynamic_instances=security_data.get("allow_dynamic_instances", False),
+        )
+        
         users = []
         for user in users_data:
             users.append(UserConfig(
                 name=user.get("name", ""),
                 token=user.get("token", ""),
                 is_admin=user.get("is_admin", False),
+                can_add_instances=user.get("can_add_instances"),  # None if not specified
             ))
         
         instances = []
@@ -103,7 +124,7 @@ class AppConfig:
                 enabled=inst.get("enabled", True),
             ))
         
-        return cls(server=server, defaults=defaults, users=users, jadx_instances=instances)
+        return cls(server=server, defaults=defaults, security=security, users=users, jadx_instances=instances)
     
     def get_user_by_token(self, token: str) -> Optional[UserConfig]:
         """Find user by their authentication token"""

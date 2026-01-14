@@ -6,11 +6,12 @@ This ensures connection issues are detected proactively, not only during user re
 """
 
 import asyncio
-import logging
 from datetime import datetime
 from typing import Optional, Callable, List
 
-logger = logging.getLogger("jadx-mcp-server")
+from .logging_config import get_logger
+
+logger = get_logger("health")
 
 
 class HealthMonitor:
@@ -100,9 +101,15 @@ class HealthMonitor:
     
     @classmethod
     async def _run_health_check(cls):
-        """Run health check on all instances."""
+        """
+        Run health check on all instances.
+        
+        Uses thread-safe methods to update instance status since this runs
+        in a separate thread from the main async event loop.
+        """
         from .instance_registry import InstanceRegistry
         
+        # Get thread-safe copy of instances
         instances = InstanceRegistry.get_all_instances()
         if not instances:
             logger.debug("No JADX instances registered, skipping health check")
@@ -111,10 +118,10 @@ class HealthMonitor:
         healthy_count = 0
         unhealthy_count = 0
         pending_count = 0
-        status_changes = []
         
         for name, instance in instances.items():
             old_status = instance.status
+            now_iso = datetime.now().isoformat()
             
             # For pending/disconnected instances, try to fetch APK info
             if old_status in ("pending", "disconnected"):
@@ -123,17 +130,23 @@ class HealthMonitor:
                     apk_info = await InstanceRegistry._fetch_apk_info(
                         instance.host, instance.port, instance.token
                     )
-                    # Success! Update instance
-                    instance.status = "connected"
-                    instance.apk_info = apk_info
-                    instance.last_check = datetime.now().isoformat()
+                    # Success! Update instance using thread-safe method
+                    InstanceRegistry.update_instance_status(
+                        name=name,
+                        status="connected",
+                        apk_info=apk_info,
+                        last_check=now_iso
+                    )
                     healthy_count += 1
                     
                     logger.info(f"[HEALTH] Instance '{name}' now available: {apk_info.get('apk_package', 'unknown')}")
-                    status_changes.append((name, old_status, "connected"))
                 except Exception as e:
                     # Still not available
-                    instance.last_check = datetime.now().isoformat()
+                    InstanceRegistry.update_instance_status(
+                        name=name,
+                        status=old_status,  # Keep same status
+                        last_check=now_iso
+                    )
                     logger.debug(f"[HEALTH] Instance '{name}' still unavailable: {e}")
                     unhealthy_count += 1
             else:
@@ -146,11 +159,13 @@ class HealthMonitor:
                 else:
                     unhealthy_count += 1
                 
-                # Update status if changed
+                # Update status using thread-safe method
                 if old_status != new_status:
-                    instance.status = new_status
-                    instance.last_check = datetime.now().isoformat()
-                    status_changes.append((name, old_status, new_status))
+                    InstanceRegistry.update_instance_status(
+                        name=name,
+                        status=new_status,
+                        last_check=now_iso
+                    )
                     
                     if is_healthy:
                         logger.info(f"[HEALTH] Instance '{name}' recovered: {old_status} -> connected")

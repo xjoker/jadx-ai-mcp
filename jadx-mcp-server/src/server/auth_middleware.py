@@ -8,7 +8,6 @@ This middleware sets the current user context for all MCP tool calls, enabling
 user-specific instance filtering and access control.
 """
 
-import logging
 from typing import Optional
 
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -17,9 +16,10 @@ from mcp import McpError
 from mcp.types import ErrorData
 
 from .user_auth import UserAuthManager, AuthenticatedUser
+from .logging_config import get_logger, set_log_context
 
-# Use the same logger as config.py for consistent output
-logger = logging.getLogger("jadx-mcp-server")
+# Get module logger
+logger = get_logger("auth")
 
 
 class BearerAuthMiddleware(Middleware):

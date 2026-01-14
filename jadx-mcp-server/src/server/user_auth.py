@@ -5,12 +5,13 @@ Manages multi-user authentication, token validation, and admin privileges.
 Provides request context for user identification in MCP tools.
 """
 
-import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from .logging_config import get_logger
+
+logger = get_logger("user_auth")
 
 # Context variable to store current user in async request context
 _current_user: ContextVar[Optional["AuthenticatedUser"]] = ContextVar("current_user", default=None)

@@ -7,12 +7,13 @@ When an instance is processing a request, other clients' requests will immediate
 
 import asyncio
 import functools
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from .logging_config import get_logger
+
+logger = get_logger("busy")
 
 
 @dataclass

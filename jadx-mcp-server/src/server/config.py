@@ -9,11 +9,14 @@ Author: Jafar Pathan (zinja-coder@github)
 License: See LICENSE file
 """
 
-import logging
 import httpx
 import json
-import sys
 from typing import Union, Dict, Any, Optional
+
+from .logging_config import get_logger
+
+# Get module logger
+logger = get_logger("config")
 
 # Default Configuration
 JADX_HOST = "127.0.0.1"
@@ -21,13 +24,6 @@ JADX_PORT = 8650
 JADX_HTTP_BASE = f"http://{JADX_HOST}:{JADX_PORT}"
 AUTH_TOKEN: Optional[str] = None
 REQUEST_TIMEOUT: int = 120  # Default timeout in seconds (configurable)
-
-# Logging Setup
-logger = logging.getLogger("jadx-mcp-server")
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler(sys.stderr)
-handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(handler)
 
 
 # HTTP Connection Pool Manager
@@ -204,9 +200,9 @@ async def get_from_jadx(
         if registry_token:
             auth_token = registry_token
             
-    except ImportError:
+    except ImportError as e:
         # InstanceRegistry not available, use legacy single-instance mode
-        pass
+        logger.warning(f"InstanceRegistry import failed, using legacy mode: {e}")
     
     url = f"{base_url}/{endpoint.lstrip('/')}"
     headers = {}
