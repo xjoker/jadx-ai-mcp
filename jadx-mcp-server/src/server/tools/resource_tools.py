@@ -31,26 +31,23 @@ async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
 
 async def get_strings(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
     """
-    Retrieve contents of strings.xml files that exist in application.
+    Retrieve strings.xml content and available locale variants.
 
     Args:
-        offset: Starting index for pagination (default: 0)
-        count: Number of strings to return (0 = all, default: 0)
+        offset: (Deprecated) Was used for pagination, now returns single file
+        count: (Deprecated) Was used for pagination, now returns single file
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Paginated string resources from all strings.xml files
+        dict: Contains 'content' (strings.xml content), 'loaded_variant', 
+              'available_variants' (list of all locale files)
 
     MCP Tool: get_strings
-    Description: Extracts localized string resources for analysis
+    Description: Extracts default strings.xml and lists available locale variants
     """
-    return await PaginationUtils.get_paginated_data(
-        endpoint="strings",
-        offset=offset,
-        count=count,
-        data_extractor=lambda parsed: parsed.get("strings", []),
-        fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id)
-    )
+    # New format: directly return Java response (no pagination extraction)
+    response = await get_from_jadx("strings", {}, instance_id=instance_id)
+    return response
 
 
 async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
