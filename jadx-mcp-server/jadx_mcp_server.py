@@ -133,6 +133,10 @@ async def batch_get_class_source(class_names: list[str], instance_id: Optional[s
 @with_busy_check
 async def search_method_by_name(method_name: str, instance_id: Optional[str] = None) -> dict:
     """Search for a method name across all classes in the APK.
+    
+    WARNING: This performs a global search and may timeout or crash on large/obfuscated APKs.
+    For safer search, consider using search_classes_by_keyword with search_in='method' instead.
+    Refer to the 'search-code' prompt for best practices.
 
     Args:
         method_name: Method name to search for (partial matching supported).
@@ -179,6 +183,12 @@ async def search_classes_by_keyword(
     instance_id: Optional[str] = None,
 ) -> dict:
     """Search for classes containing a specific keyword with flexible filtering options.
+    
+    BEST PRACTICE:
+    - Use search_in='class' for finding class names (fastest, most reliable).
+    - Use search_in='method' or 'field' for specific member searches.
+    - AVOID search_in='code' on large APKs as full-text search may timeout or crash.
+    Refer to the 'search-code' prompt for detailed guidance.
 
     Args:
         search_term: The keyword or string to search for.
@@ -233,7 +243,12 @@ async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
 async def get_strings(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
     """Retrieve contents of strings.xml files.
     
+    WARNING: Large APKs may have thousands of strings. Always use pagination (count parameter)
+    to avoid timeouts. Start with count=50 and paginate as needed.
+    
     Args:
+        offset: Starting index for pagination. Default: 0
+        count: Number of strings to return. Default: 0 (all - NOT recommended for large APKs)
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.resource_tools.get_strings(offset, count, instance_id=instance_id)

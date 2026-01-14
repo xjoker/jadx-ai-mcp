@@ -59,13 +59,26 @@ async def search_method_by_name(method_name: str, instance_id: Optional[str] = N
         result = await get_from_jadx("search-method", {"method_name": method_name}, instance_id=instance_id)
         if "error" in result:
             logger.warning(f"search_method_by_name error response: {result.get('error')}")
+            # Add recovery hints to error response
+            result["suggested_prompt"] = "search-code"
+            result["recovery_hint"] = (
+                "This global search may have timed out or crashed. "
+                "Try using search_classes_by_keyword(search_term='%s', search_in='method') instead." % method_name
+            )
         else:
             match_count = len(result.get("methods", result.get("classes", [])))
             logger.info(f"search_method_by_name: found {match_count} matches")
         return result
     except Exception as e:
         logger.error(f"search_method_by_name exception: {type(e).__name__}: {e}")
-        return {"error": f"Unexpected error: {e}"}
+        return {
+            "error": f"Unexpected error: {e}",
+            "suggested_prompt": "search-code",
+            "recovery_hint": (
+                "This global search failed. Consider using the safer alternative: "
+                "search_classes_by_keyword(search_term='%s', search_in='method')." % method_name
+            ),
+        }
 
 
 async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str] = None) -> dict:
