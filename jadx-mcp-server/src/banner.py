@@ -3,7 +3,7 @@
 
 # MCP Server version - updated automatically during build
 # DO NOT CHANGE THIS LINE FORMAT - it is replaced by CI/CD pipeline
-SERVER_VERSION = "6.0.7"
+SERVER_VERSION = "dev"  # Replaced by CI
 
 def jadx_mcp_server_banner() -> str:
     """

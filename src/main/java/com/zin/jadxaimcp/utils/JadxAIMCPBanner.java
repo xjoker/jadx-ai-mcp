@@ -9,7 +9,7 @@ public class JadxAIMCPBanner {
      * Plugin version - updated automatically during build
      * DO NOT CHANGE THIS LINE FORMAT - it is replaced by CI/CD pipeline
      */
-    public static final String VERSION = "6.0.8";
+    public static final String VERSION = "dev";  // Replaced by CI
     
     /**
      * Build commit SHA - short hash for quick verification
