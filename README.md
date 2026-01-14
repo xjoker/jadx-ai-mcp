@@ -395,6 +395,29 @@ docker run -d --name jadx \
 - 🔌 **Plugin API**: http://localhost:8650
 - 🤖 **MCP Server**: http://localhost:8651
 
+### Performance Optimization (Recommended)
+
+Mount cache directories to **persist JADX decompilation cache** across container restarts:
+
+```bash
+docker run -d --name jadx \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  -v jadx-gui-cache:/root/.jadx-gui \
+  xjoker/jadx-ai-mcp:latest
+```
+
+| Volume | Purpose | Benefit |
+|--------|---------|---------|
+| `/root/.cache` | JADX decompilation cache | 10-50x faster re-analysis |
+| `/root/.jadx-gui` | GUI settings and history | Persistence across restarts |
+| `/apks` | APK file mount point | Easy file access |
+
+> **Tip**: First code search on a large APK triggers decompilation (slow). Subsequent searches on the same APK are fast due to cache.
+
 ### Standalone MCP Server
 
 For production environments with multiple JADX instances:
@@ -406,6 +429,35 @@ docker run -d --name mcp-server \
   xjoker/jadx-mcp-server:latest \
   /usr/local/bin/uv run jadx_mcp_server --http --config /app/data/config/jadx-config.toml
 ```
+
+---
+
+## 🚦 Search Behavior
+
+### Concurrent Search Handling
+
+Search operations use a **serialized lock** to prevent JADX internal state conflicts:
+
+| Scenario | Response | AI Action |
+|----------|----------|-----------|
+| Search available | `200 OK` + results | Process normally |
+| Search busy | `503` + `{"busy": true, "retry_after": 10}` | Wait 10s and retry |
+
+**Why serialization?**
+- JADX decompilation is not thread-safe
+- Concurrent code searches can cause inconsistent results
+- Lock ensures correctness over speed
+
+### Search Mode Performance
+
+| Mode | Speed | Triggers Decompilation |
+|------|-------|------------------------|
+| `search_in="class"` | Fast | No |
+| `search_in="method"` | Fast | No |
+| `search_in="field"` | Fast | No |
+| `search_in="code"` | Slow | Yes (once per class) |
+
+> **Best Practice**: Start with `class`/`method`/`field` searches. Use `search_in="code"` with package filter for targeted full-text search.
 
 ---
 

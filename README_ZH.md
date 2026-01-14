@@ -138,6 +138,29 @@ docker run -d --name jadx \
 - 🔌 **插件 API**: http://localhost:8650
 - 🤖 **MCP Server**: http://localhost:8651
 
+### 性能优化（推荐）
+
+挂载缓存目录以**持久化 JADX 反编译缓存**，加速容器重启后的分析：
+
+```bash
+docker run -d --name jadx \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  -v jadx-gui-cache:/root/.jadx-gui \
+  xjoker/jadx-ai-mcp:latest
+```
+
+| 卷 | 用途 | 收益 |
+|----|------|------|
+| `/root/.cache` | JADX 反编译缓存 | 重复分析速度提升 10-50 倍 |
+| `/root/.jadx-gui` | GUI 设置和历史 | 跨重启持久化 |
+| `/apks` | APK 文件挂载点 | 便于文件访问 |
+
+> **提示**：大型 APK 首次代码搜索会触发反编译（较慢）。同一 APK 的后续搜索因缓存而快速。
+
 ### 独立 MCP Server
 
 用于生产环境，连接多个 JADX 实例：
@@ -149,6 +172,35 @@ docker run -d --name mcp-server \
   xjoker/jadx-mcp-server:latest \
   /usr/local/bin/uv run jadx_mcp_server --http --config /app/data/config/jadx-config.toml
 ```
+
+---
+
+## 🚦 搜索行为
+
+### 并发搜索处理
+
+搜索操作使用**串行锁**防止 JADX 内部状态冲突：
+
+| 场景 | 响应 | AI 动作 |
+|------|------|---------|
+| 搜索可用 | `200 OK` + 结果 | 正常处理 |
+| 搜索忙碌 | `503` + `{"busy": true, "retry_after": 10}` | 等待 10 秒后重试 |
+
+**为什么串行化？**
+- JADX 反编译不是线程安全的
+- 并发代码搜索可能导致不一致结果
+- 锁确保正确性优先于速度
+
+### 搜索模式性能
+
+| 模式 | 速度 | 是否触发反编译 |
+|------|------|----------------|
+| `search_in="class"` | 快 | 否 |
+| `search_in="method"` | 快 | 否 |
+| `search_in="field"` | 快 | 否 |
+| `search_in="code"` | 慢 | 是（每个类一次）|
+
+> **最佳实践**：先使用 `class`/`method`/`field` 搜索。使用 `search_in="code"` 时配合 package 过滤器进行精准全文搜索。
 
 ---
 

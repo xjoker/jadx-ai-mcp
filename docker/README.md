@@ -51,6 +51,29 @@ docker run -d --name jadx-ai-mcp \
 # - MCP Server: http://localhost:8651
 ```
 
+### Performance Optimization (Recommended)
+
+Mount cache volumes to **persist JADX decompilation cache** for faster re-analysis:
+
+```bash
+docker run -d --name jadx-ai-mcp \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  -v jadx-gui-cache:/root/.jadx-gui \
+  xjoker/jadx-ai-mcp
+```
+
+| Volume | Purpose | Benefit |
+|--------|---------|---------|
+| `/root/.cache` | JADX decompilation cache | 10-50x faster re-analysis |
+| `/root/.jadx-gui` | GUI settings and history | Persistence across restarts |
+| `/apks` | APK file mount point | Easy file access |
+
+> **Tip**: First code search on large APK triggers decompilation (slow). Subsequent searches are fast due to cache.
+
 ### Standalone MCP Server
 
 ```bash
