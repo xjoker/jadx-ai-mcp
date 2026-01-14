@@ -98,48 +98,61 @@ public class ResourceRoutes {
     /**
      * Handle the /strings MCP tool call using GUI tab access.
      * 
-     * This approach reads content from already-opened tabs in JADX GUI,
-     * completely avoiding the blocking loadContent() call.
+     * Strategy:
+     * 1. First check if strings.xml is already open in a tab
+     * 2. If open, read content from JTextArea (instant, no blocking)
+     * 3. If not open, return instructions since forcing open may block
      * 
-     * If no strings.xml tabs are open, returns instructions for user
-     * to open them manually in JADX GUI.
+     * For Docker/noVNC users: content is only available after opening 
+     * the file manually in JADX GUI.
      */
     public void handleStrings(Context ctx) {
         try {
             Map<String, Object> result = new HashMap<>();
             result.put("type", "resource/strings-xml");
             
-            // Get all opened tabs that contain strings.xml content
+            // Check all tabs for any strings.xml content
             List<Map<String, String>> openedStringsFiles = getOpenedResourceTabs("strings.xml");
             
             if (!openedStringsFiles.isEmpty()) {
-                // Return content from opened tabs
+                // Content found in open tabs - return it
                 result.put("status", "success");
                 result.put("source", "gui_tabs");
                 result.put("opened_files", openedStringsFiles);
                 result.put("count", openedStringsFiles.size());
                 
-                // If single file, also include content directly
                 if (openedStringsFiles.size() == 1) {
                     result.put("loaded_variant", openedStringsFiles.get(0).get("name"));
                     result.put("content", openedStringsFiles.get(0).get("content"));
                 }
             } else {
-                // No strings.xml tabs open - return instructions
-                result.put("status", "no_tabs_open");
-                result.put("message", "No strings.xml files are currently open in JADX GUI");
-                result.put("instructions", new String[]{
-                    "1. In JADX GUI, expand 'Resources' in the left tree",
-                    "2. Navigate to 'res/values/strings.xml' (or desired locale)",
-                    "3. Double-click to open the file in a tab",
-                    "4. Call get_strings again to retrieve the content",
-                    "Or use fetch_current_class after selecting the tab"
-                });
-                result.put("available_locales_hint", new String[]{
-                    "res/values/strings.xml",
-                    "res/values-en/strings.xml",
-                    "res/values-zh-rCN/strings.xml"
-                });
+                // No tabs open - check if any resource tabs exist at all
+                List<Map<String, String>> anyResourceTabs = getOpenedResourceTabs(".xml");
+                
+                if (!anyResourceTabs.isEmpty()) {
+                    // Some tabs open but not strings.xml
+                    result.put("status", "wrong_file_open");
+                    result.put("message", "Found " + anyResourceTabs.size() + " XML tab(s) but none contain strings.xml");
+                    result.put("open_tabs", anyResourceTabs.stream()
+                        .map(m -> m.get("name"))
+                        .collect(Collectors.toList()));
+                    result.put("suggestion", "Open res/values/strings.xml in JADX GUI, or use fetch_current_class for the current tab");
+                } else {
+                    // No resource tabs open at all
+                    result.put("status", "no_tabs_open");
+                    result.put("message", "No resource files are currently open in JADX GUI");
+                    result.put("how_to_access", new String[]{
+                        "Option A (Recommended for large APKs):",
+                        "  1. In JADX GUI tree: Resources > res/values/strings.xml",
+                        "  2. Double-click to open",
+                        "  3. Call get_strings again",
+                        "",
+                        "Option B (For Docker/noVNC users):",
+                        "  1. Access JADX GUI via noVNC",
+                        "  2. Navigate and open resource file",
+                        "  3. Call get_strings or fetch_current_class"
+                    });
+                }
             }
             
             ctx.json(result);
