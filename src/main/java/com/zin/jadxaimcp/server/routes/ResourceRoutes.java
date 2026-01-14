@@ -92,92 +92,89 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call with async loading.
+     * Handle the /strings MCP tool call with timeout protection.
      * 
-     * Uses Javalin async HTTP to prevent blocking the server.
-     * Resource loading runs in a separate thread with 60s timeout.
+     * Uses ExecutorService + Future.get(timeout) for controlled execution.
+     * 60 second timeout prevents indefinite hang.
      */
     public void handleStrings(Context ctx) {
-        // Parse variant param before async call
         String requestedVariant = ctx.queryParam("variant");
         
-        // Use Javalin async with dedicated thread pool (not ForkJoinPool)
-        ctx.future(() -> CompletableFuture.supplyAsync(() -> {
-            try {
-                List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-                List<String> availableVariants = new ArrayList<>();
-                String defaultContent = null;
-                String targetContent = null;
-                String targetVariant = null;
+        try {
+            // Submit to dedicated executor with timeout
+            java.util.concurrent.Future<Map<String, Object>> future = resourceExecutor.submit(() -> {
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/strings-xml");
                 
-                for (ResourceFile resFile : resourceFiles) {
-                    try {
-                        if ("resources.arsc".equals(resFile.getDeobfName())) {
-                            ResContainer container = resFile.loadContent();
-                            if (container != null) {
-                                for (ResContainer file : container.getSubFiles()) {
-                                    String fileName = file.getFileName();
-                                    if (fileName != null && fileName.contains("strings.xml")) {
-                                        availableVariants.add(fileName);
-                                        
-                                        // Load requested variant or default
-                                        if (requestedVariant != null && requestedVariant.equals(fileName)) {
-                                            targetContent = file.getText().getCodeStr();
-                                            targetVariant = fileName;
-                                        } else if ("res/values/strings.xml".equals(fileName) && requestedVariant == null) {
-                                            defaultContent = file.getText().getCodeStr();
+                try {
+                    List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                    List<String> availableVariants = new ArrayList<>();
+                    String defaultContent = null;
+                    String targetContent = null;
+                    String targetVariant = null;
+                    
+                    for (ResourceFile resFile : resourceFiles) {
+                        try {
+                            if ("resources.arsc".equals(resFile.getDeobfName())) {
+                                ResContainer container = resFile.loadContent();
+                                if (container != null) {
+                                    for (ResContainer file : container.getSubFiles()) {
+                                        String fileName = file.getFileName();
+                                        if (fileName != null && fileName.contains("strings.xml")) {
+                                            availableVariants.add(fileName);
+                                            if (requestedVariant != null && requestedVariant.equals(fileName)) {
+                                                targetContent = file.getText().getCodeStr();
+                                                targetVariant = fileName;
+                                            } else if ("res/values/strings.xml".equals(fileName) && requestedVariant == null) {
+                                                defaultContent = file.getText().getCodeStr();
+                                            }
                                         }
                                     }
                                 }
+                                break;
                             }
-                            break;
+                        } catch (Exception e) {
+                            logger.warn("Error processing resource: " + e.getMessage());
                         }
-                    } catch (Exception e) {
-                        logger.warn("Error processing resource file: " + e.getMessage());
                     }
+                    
+                    result.put("available_variants", availableVariants);
+                    result.put("total_variants", availableVariants.size());
+                    
+                    if (targetContent != null) {
+                        result.put("loaded_variant", targetVariant);
+                        result.put("content", targetContent);
+                    } else if (defaultContent != null) {
+                        result.put("loaded_variant", "res/values/strings.xml");
+                        result.put("content", defaultContent);
+                    } else if (requestedVariant != null) {
+                        result.put("error", "Variant not found: " + requestedVariant);
+                    } else if (!availableVariants.isEmpty()) {
+                        result.put("message", "No res/values/strings.xml found");
+                        result.put("suggestion", "Use variant=" + availableVariants.get(0));
+                    } else {
+                        result.put("error", "No strings.xml resources found");
+                    }
+                } catch (Exception e) {
+                    result.put("error", "Internal error: " + e.getMessage());
                 }
-                
-                Map<String, Object> result = new HashMap<>();
-                result.put("type", "resource/strings-xml");
-                result.put("available_variants", availableVariants);
-                result.put("total_variants", availableVariants.size());
-                
-                if (targetContent != null) {
-                    result.put("loaded_variant", targetVariant);
-                    result.put("content", targetContent);
-                } else if (defaultContent != null) {
-                    result.put("loaded_variant", "res/values/strings.xml");
-                    result.put("content", defaultContent);
-                } else if (requestedVariant != null) {
-                    result.put("error", "Variant not found: " + requestedVariant);
-                } else if (!availableVariants.isEmpty()) {
-                    result.put("message", "No res/values/strings.xml found");
-                    result.put("suggestion", "Use variant=" + availableVariants.get(0));
-                } else {
-                    result.put("error", "No strings.xml resources found");
-                }
-                
                 return result;
-                
-            } catch (Exception e) {
-                Map<String, Object> error = new HashMap<>();
-                error.put("type", "resource/strings-xml");
-                error.put("error", "Internal error: " + e.getMessage());
-                return error;
-            }
-        }, resourceExecutor).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-          .exceptionally(ex -> {
-              Map<String, Object> timeout = new HashMap<>();
-              timeout.put("type", "resource/strings-xml");
-              if (ex.getCause() instanceof java.util.concurrent.TimeoutException) {
-                  timeout.put("error", "Resource loading timed out after 60 seconds");
-                  timeout.put("reason", "The APK's resources.arsc is too large to process");
-                  timeout.put("workaround", "Navigate to Resources in JADX GUI, then use fetch_current_class");
-              } else {
-                  timeout.put("error", "Loading failed: " + ex.getMessage());
-              }
-              return timeout;
-          }));
+            });
+            
+            // Wait with 60 second timeout
+            Map<String, Object> result = future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            ctx.json(result);
+            
+        } catch (java.util.concurrent.TimeoutException e) {
+            Map<String, Object> timeout = new HashMap<>();
+            timeout.put("type", "resource/strings-xml");
+            timeout.put("error", "Resource loading timed out after 60 seconds");
+            timeout.put("reason", "The APK's resources.arsc is too large");
+            timeout.put("workaround", "Navigate to Resources in JADX GUI, then use fetch_current_class");
+            ctx.status(504).json(timeout);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error in handleStrings: " + e.getMessage(), e, logger);
+        }
     }
     
     /**
@@ -211,8 +208,8 @@ public class ResourceRoutes {
      * @return void
      * @param Context
      * 
-     * Handle the /get-resource-file MCP tool call with async loading.
-     * Uses Javalin async to prevent blocking, with 60s timeout.
+     * Handle the /get-resource-file MCP tool call with timeout protection.
+     * Uses ExecutorService + Future.get(timeout) for controlled execution.
      */
     public void handleGetResourceFile(Context ctx) {
         String fileName = ctx.queryParam("file_name");
@@ -221,64 +218,64 @@ public class ResourceRoutes {
             return;
         }
 
-        // Use Javalin async with CompletableFuture
-        ctx.future(() -> CompletableFuture.supplyAsync(() -> {
-            try {
-                List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-                Map<String, String> resFileContent = new HashMap<>();
-                
-                for (ResourceFile resFile : resourceFiles) {
-                    if (resFile == null || resFile.getDeobfName() == null) continue;
+        try {
+            java.util.concurrent.Future<Map<String, Object>> future = resourceExecutor.submit(() -> {
+                try {
+                    List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                    Map<String, String> resFileContent = new HashMap<>();
                     
-                    if (resFile.getDeobfName().equals(fileName)) {
-                        // Direct match - standalone resource file
-                        resFileContent.put("file_name", resFile.getDeobfName());
-                        resFileContent.put("content", resFile.loadContent().getText().getCodeStr());
-                        break;
-                    } else if ("resources.arsc".equals(resFile.getDeobfName())) {
-                        // Search in resources.arsc subfiles
-                        ResContainer container = resFile.loadContent();
-                        if (container != null) {
-                            for (ResContainer file : container.getSubFiles()) {
-                                if (fileName.equals(file.getFileName())) {
-                                    resFileContent.put("file_name", file.getFileName());
-                                    resFileContent.put("content", file.getText().getCodeStr());
-                                    break;
+                    for (ResourceFile resFile : resourceFiles) {
+                        if (resFile == null || resFile.getDeobfName() == null) continue;
+                        
+                        if (resFile.getDeobfName().equals(fileName)) {
+                            resFileContent.put("file_name", resFile.getDeobfName());
+                            resFileContent.put("content", resFile.loadContent().getText().getCodeStr());
+                            break;
+                        } else if ("resources.arsc".equals(resFile.getDeobfName())) {
+                            ResContainer container = resFile.loadContent();
+                            if (container != null) {
+                                for (ResContainer file : container.getSubFiles()) {
+                                    if (fileName.equals(file.getFileName())) {
+                                        resFileContent.put("file_name", file.getFileName());
+                                        resFileContent.put("content", file.getText().getCodeStr());
+                                        break;
+                                    }
                                 }
                             }
+                            if (!resFileContent.isEmpty()) break;
                         }
-                        if (!resFileContent.isEmpty()) break;
                     }
+                    
+                    if (!resFileContent.isEmpty()) {
+                        return Map.of("type", "resource/text", "file", resFileContent);
+                    }
+                    
+                    Map<String, Object> notFound = new HashMap<>();
+                    notFound.put("type", "resource/text");
+                    notFound.put("error", "No resource file found: " + fileName);
+                    return notFound;
+                    
+                } catch (Exception e) {
+                    Map<String, Object> error = new HashMap<>();
+                    error.put("type", "resource/text");
+                    error.put("error", "Internal error: " + e.getMessage());
+                    return error;
                 }
-                
-                if (!resFileContent.isEmpty()) {
-                    return Map.of("type", "resource/text", "file", resFileContent);
-                }
-                
-                Map<String, Object> notFound = new HashMap<>();
-                notFound.put("type", "resource/text");
-                notFound.put("error", "No resource file found: " + fileName);
-                return notFound;
-                
-            } catch (Exception e) {
-                Map<String, Object> error = new HashMap<>();
-                error.put("type", "resource/text");
-                error.put("error", "Internal error: " + e.getMessage());
-                return error;
-            }
-        }, resourceExecutor).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-          .exceptionally(ex -> {
-              Map<String, Object> timeout = new HashMap<>();
-              timeout.put("type", "resource/text");
-              if (ex.getCause() instanceof java.util.concurrent.TimeoutException) {
-                  timeout.put("error", "Resource loading timed out after 60 seconds");
-                  timeout.put("reason", "The APK's resources.arsc is too large");
-                  timeout.put("workaround", "Navigate to Resources > " + fileName + " in JADX GUI, then use fetch_current_class");
-              } else {
-                  timeout.put("error", "Loading failed: " + ex.getMessage());
-              }
-              return timeout;
-          }));
+            });
+            
+            Map<String, Object> result = future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            ctx.json(result);
+            
+        } catch (java.util.concurrent.TimeoutException e) {
+            Map<String, Object> timeout = new HashMap<>();
+            timeout.put("type", "resource/text");
+            timeout.put("error", "Resource loading timed out after 60 seconds");
+            timeout.put("reason", "The APK's resources.arsc is too large");
+            timeout.put("workaround", "Navigate to Resources > " + fileName + " in JADX GUI, then use fetch_current_class");
+            ctx.status(504).json(timeout);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error in handleGetResourceFile: " + e.getMessage(), e, logger);
+        }
     }
 
     /**
