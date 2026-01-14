@@ -59,8 +59,11 @@ jobs:
       - name: Update version in all files
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
-          sed -i "s|<version>6.0.0</version>|<version>${VERSION}</version>|" pom.xml
+          # Update pom.xml - match any version in the first occurrence
+          sed -i "0,/<version>[0-9.]*<\/version>/s/<version>[0-9.]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
+          # Update Java banner
           sed -i "s|VERSION = \".*\"|VERSION = \"${VERSION}\"|" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
+          # Update Python banner
           sed -i "s|SERVER_VERSION = \".*\"|SERVER_VERSION = \"${VERSION}\"|" jadx-mcp-server/src/banner.py
 
       - name: Build with Maven
