@@ -141,89 +141,86 @@ public class ResourceRoutes {
     }
     
     /**
-     * Serve strings.xml files from unified cache with pagination.
+     * Serve strings.xml with hybrid approach:
+     * - Default: load only res/values/strings.xml (fast)
+     * - Return list of all available variants for reference
+     * - Support 'variant' param to load specific variant
      */
     private void serveStringsFromUnifiedCache(Context ctx) {
         // Get pre-computed strings.xml files from unified cache (O(1))
-        List<ResContainer> stringsFiles = ResourceCacheManager.getStringsFiles();
+        List<ResContainer> allStringsFiles = ResourceCacheManager.getStringsFiles();
         
-        if (stringsFiles.isEmpty()) {
+        if (allStringsFiles.isEmpty()) {
             JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resource found in cache.", logger);
             return;
         }
         
-        // Parse pagination params
-        int offset = paginationUtils.getIntParam(ctx, "offset", 0);
-        int limit = paginationUtils.getIntParam(ctx, "limit", 0);
-        if (limit == 0) {
-            limit = paginationUtils.getIntParam(ctx, "count", paginationUtils.DEFAULT_PAGE_SIZE);
-        }
+        // Collect all variant file names for reference
+        List<String> availableVariants = new ArrayList<>();
+        ResContainer defaultStrings = null;
         
-        int totalFiles = stringsFiles.size();
-        int startIdx = Math.max(0, Math.min(offset, totalFiles));
-        int endIdx = Math.min(startIdx + (limit == 0 ? totalFiles : limit), totalFiles);
-        
-        // Check if content should be skipped (return file list only)
-        boolean skipContent = "true".equals(ctx.queryParam("list_only"));
-        
-        // Load content only for items in range (with per-file timeout)
-        List<Map<String, Object>> paginatedEntries = new ArrayList<>();
-        for (int i = startIdx; i < endIdx; i++) {
-            ResContainer file = stringsFiles.get(i);
+        for (ResContainer file : allStringsFiles) {
             String fileName = file.getFileName();
-            if (fileName == null) fileName = "unknown";
-            
-            Map<String, Object> entry = new HashMap<>();
-            entry.put("file", fileName);
-            
-            if (skipContent) {
-                // Just return file names for fast response
-                paginatedEntries.add(entry);
-            } else {
-                // Load content with 5s timeout per file
-                try {
-                    final ResContainer finalFile = file;
-                    java.util.concurrent.CompletableFuture<String> future = 
-                        java.util.concurrent.CompletableFuture.supplyAsync(() -> 
-                            ResourceCacheManager.getContent(finalFile));
-                    
-                    String content = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
-                    
-                    if (content != null) {
-                        entry.put("content", content);
-                    } else {
-                        entry.put("error", "Content unavailable");
-                    }
-                } catch (java.util.concurrent.TimeoutException e) {
-                    entry.put("error", "Content loading timed out (file too large)");
-                    entry.put("suggestion", "Use get_resource_file to load this file directly");
-                } catch (Exception e) {
-                    entry.put("error", "Failed to load: " + e.getMessage());
+            if (fileName != null) {
+                availableVariants.add(fileName);
+                // Find the default strings.xml (res/values/strings.xml)
+                if ("res/values/strings.xml".equals(fileName)) {
+                    defaultStrings = file;
                 }
-                paginatedEntries.add(entry);
             }
         }
         
-        // Build pagination response
+        // Check for specific variant request
+        String requestedVariant = ctx.queryParam("variant");
+        ResContainer targetFile = null;
+        
+        if (requestedVariant != null && !requestedVariant.isEmpty()) {
+            // User requested specific variant
+            for (ResContainer file : allStringsFiles) {
+                if (requestedVariant.equals(file.getFileName())) {
+                    targetFile = file;
+                    break;
+                }
+            }
+            if (targetFile == null) {
+                Map<String, Object> error = new HashMap<>();
+                error.put("type", "resource/strings-xml");
+                error.put("error", "Requested variant not found: " + requestedVariant);
+                error.put("available_variants", availableVariants);
+                ctx.status(404).json(error);
+                return;
+            }
+        } else {
+            // Default: use res/values/strings.xml
+            targetFile = defaultStrings;
+        }
+        
+        // Build response
         Map<String, Object> result = new HashMap<>();
         result.put("type", "resource/strings-xml");
-        result.put("strings", paginatedEntries);
         result.put("cached", true);
+        result.put("available_variants", availableVariants);
+        result.put("total_variants", availableVariants.size());
         
-        Map<String, Object> pagination = new HashMap<>();
-        pagination.put("total", totalFiles);
-        pagination.put("offset", startIdx);
-        pagination.put("limit", endIdx - startIdx);
-        pagination.put("count", paginatedEntries.size());
-        pagination.put("has_more", endIdx < totalFiles);
-        if (endIdx < totalFiles) {
-            pagination.put("next_offset", endIdx);
+        if (targetFile != null) {
+            String fileName = targetFile.getFileName();
+            result.put("loaded_variant", fileName);
+            
+            try {
+                String content = ResourceCacheManager.getContent(targetFile);
+                if (content != null) {
+                    result.put("content", content);
+                } else {
+                    result.put("error", "Content unavailable for: " + fileName);
+                }
+            } catch (Exception e) {
+                result.put("error", "Failed to load " + fileName + ": " + e.getMessage());
+            }
+        } else {
+            // No default strings.xml found, just return variant list
+            result.put("message", "No res/values/strings.xml found. Use 'variant' param to load a specific file.");
+            result.put("suggestion", "Call with variant=res/values-en/strings.xml to load English strings");
         }
-        if (startIdx > 0) {
-            int prevLimit = limit > 0 ? limit : paginationUtils.DEFAULT_PAGE_SIZE;
-            pagination.put("prev_offset", Math.max(0, startIdx - prevLimit));
-        }
-        result.put("pagination", pagination);
         
         ctx.json(result);
     }
