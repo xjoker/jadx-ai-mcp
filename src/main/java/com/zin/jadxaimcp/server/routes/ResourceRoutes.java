@@ -40,10 +40,27 @@ public class ResourceRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ResourceRoutes.class);
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
+    
+    // Cache for strings.xml file references to avoid repeated loading
+    private static volatile List<StringFileRef> cachedStringFileRefs = null;
+    private static volatile boolean cacheLoading = false;
+    private static volatile String cacheError = null;
+    private static final Object cacheLock = new Object();
 
     public ResourceRoutes(MainWindow mainWindow) {
         this.mainWindow = mainWindow;
         this.paginationUtils = new PaginationUtils();
+    }
+    
+    /**
+     * Clear the strings cache (call when APK changes).
+     */
+    public static void clearStringsCache() {
+        synchronized (cacheLock) {
+            cachedStringFileRefs = null;
+            cacheLoading = false;
+            cacheError = null;
+        }
     }
 
     /**
@@ -72,130 +89,169 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call with streaming pagination.
+     * Handle the /strings MCP tool call with background caching.
      * 
-     * Performance optimization:
-     * 1. First pass: Collect string file references WITHOUT loading content
-     * 2. Second pass: Only load content for files within pagination range
-     * 
-     * This prevents timeout on large APKs with many string resources.
+     * Performance optimization for large APKs:
+     * 1. First request triggers background loading, returns 202 Accepted
+     * 2. Subsequent requests use cache for instant response
+     * 3. Cache is populated by background thread
      */
     public void handleStrings(Context ctx) {
         try {
-            // Phase 1: Collect string file references
-            // Note: loadContent() for resources.arsc can be slow on large APKs
-            List<StringFileRef> stringFileRefs = new ArrayList<>();
-            List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-            boolean resourcesTimedOut = false;
+            // Check 1: If cache is available, serve directly
+            if (cachedStringFileRefs != null) {
+                serveStringsFromCache(ctx, cachedStringFileRefs);
+                return;
+            }
+            
+            // Check 2: If cache had an error, report it
+            if (cacheError != null) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/strings-xml");
+                result.put("error", cacheError);
+                result.put("suggestion", "Use get_resource_file with specific path like 'res/values/strings.xml'");
+                ctx.status(500).json(result);
+                return;
+            }
+            
+            // Check 3: If loading is in progress, return 202 Accepted
+            if (cacheLoading) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/strings-xml");
+                result.put("status", "loading");
+                result.put("message", "strings.xml data is being loaded in background, please retry in 10 seconds");
+                result.put("retry_after", 10);
+                ctx.status(202).json(result);
+                return;
+            }
+            
+            // Trigger background loading
+            synchronized (cacheLock) {
+                if (!cacheLoading && cachedStringFileRefs == null) {
+                    cacheLoading = true;
+                    
+                    // Get resources reference before async
+                    final List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                    
+                    java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        loadStringsToCache(resourceFiles);
+                    });
+                }
+            }
+            
+            // Return 202 to indicate loading started
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "resource/strings-xml");
+            result.put("status", "loading_started");
+            result.put("message", "Background loading started, please retry in 30 seconds");
+            result.put("retry_after", 30);
+            ctx.status(202).json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to handle the /strings: " + e.getMessage(), e, logger);
+        }
+    }
+    
+    /**
+     * Load strings to cache in background thread.
+     */
+    private void loadStringsToCache(List<ResourceFile> resourceFiles) {
+        try {
+            List<StringFileRef> refs = new ArrayList<>();
             
             for (ResourceFile resFile : resourceFiles) {
                 try {
                     if ("resources.arsc".equals(resFile.getDeobfName())) {
-                        // Use timeout protection for large resources.arsc loading
-                        try {
-                            java.util.concurrent.CompletableFuture<ResContainer> future = 
-                                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                                    try {
-                                        return resFile.loadContent();
-                                    } catch (Exception e) {
-                                        return null;
-                                    }
-                                });
-                            
-                            // 30 second timeout for resources.arsc parsing
-                            ResContainer content = future.get(30, java.util.concurrent.TimeUnit.SECONDS);
-                            
-                            if (content != null) {
-                                for (ResContainer subFile : content.getSubFiles()) {
-                                    String fileName = subFile.getFileName();
-                                    if (fileName != null && fileName.contains("strings.xml")) {
-                                        stringFileRefs.add(new StringFileRef(fileName, subFile));
-                                    }
+                        ResContainer content = resFile.loadContent();
+                        if (content != null) {
+                            for (ResContainer subFile : content.getSubFiles()) {
+                                String fileName = subFile.getFileName();
+                                if (fileName != null && fileName.contains("strings.xml")) {
+                                    refs.add(new StringFileRef(fileName, subFile));
                                 }
                             }
-                        } catch (java.util.concurrent.TimeoutException e) {
-                            logger.warn("Timeout loading resources.arsc - APK may be too large");
-                            resourcesTimedOut = true;
-                        } catch (Exception e) {
-                            logger.warn("Error loading resources.arsc: " + e.getMessage());
                         }
                     } else if (resFile.getDeobfName() != null && 
                                resFile.getDeobfName().contains("strings.xml")) {
-                        stringFileRefs.add(new StringFileRef(resFile.getDeobfName(), resFile));
+                        refs.add(new StringFileRef(resFile.getDeobfName(), resFile));
                     }
                 } catch (Exception e) {
                     logger.warn("Error scanning resource file: " + e.getMessage());
                 }
             }
             
-            // Handle timeout case
-            if (stringFileRefs.isEmpty() && resourcesTimedOut) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("type", "resource/strings-xml");
-                result.put("error", "resources.arsc parsing timed out - APK is too large");
-                result.put("suggestion", "Use get_resource_file with specific path like 'res/values/strings.xml'");
-                ctx.status(504).json(result);
-                return;
-            }
-            
-            if (stringFileRefs.isEmpty()) {
-                JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resource found.", logger);
-                return;
-            }
-            
-            // Phase 2: Parse pagination params and load only needed content
-            int offset = paginationUtils.getIntParam(ctx, "offset", 0);
-            int limit = paginationUtils.getIntParam(ctx, "limit", 0);
-            if (limit == 0) {
-                limit = paginationUtils.getIntParam(ctx, "count", paginationUtils.DEFAULT_PAGE_SIZE);
-            }
-            
-            int totalFiles = stringFileRefs.size();
-            int startIdx = Math.min(offset, totalFiles);
-            int endIdx = Math.min(startIdx + (limit == 0 ? totalFiles : limit), totalFiles);
-            
-            // Load content only for items in range
-            List<Map<String, String>> paginatedEntries = new ArrayList<>();
-            for (int i = startIdx; i < endIdx; i++) {
-                StringFileRef ref = stringFileRefs.get(i);
-                try {
-                    String content = loadStringFileContent(ref);
-                    paginatedEntries.add(Map.of(
-                        "file", ref.fileName,
-                        "content", content
-                    ));
-                } catch (Exception e) {
-                    paginatedEntries.add(Map.of(
-                        "file", ref.fileName,
-                        "error", "Failed to load: " + e.getMessage()
-                    ));
+            synchronized (cacheLock) {
+                if (refs.isEmpty()) {
+                    cacheError = "No strings.xml resource found in APK";
+                } else {
+                    cachedStringFileRefs = refs;
+                    logger.info("Strings cache loaded: " + refs.size() + " files");
                 }
+                cacheLoading = false;
             }
-            
-            // Build pagination response
-            Map<String, Object> result = new HashMap<>();
-            result.put("type", "resource/strings-xml");
-            result.put("strings", paginatedEntries);
-            
-            Map<String, Object> pagination = new HashMap<>();
-            pagination.put("total", totalFiles);
-            pagination.put("offset", startIdx);
-            pagination.put("limit", endIdx - startIdx);
-            pagination.put("count", paginatedEntries.size());
-            pagination.put("has_more", endIdx < totalFiles);
-            if (endIdx < totalFiles) {
-                pagination.put("next_offset", endIdx);
-            }
-            if (startIdx > 0) {
-                pagination.put("prev_offset", Math.max(0, startIdx - limit));
-            }
-            result.put("pagination", pagination);
-            
-            ctx.json(result);
-            
         } catch (Exception e) {
-            JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to handle the /strings: " + e.getMessage(), e, logger);
+            synchronized (cacheLock) {
+                cacheError = "Failed to load strings: " + e.getMessage();
+                cacheLoading = false;
+            }
+            logger.error("Error loading strings cache: " + e.getMessage());
         }
+    }
+    
+    /**
+     * Serve strings from cache with pagination.
+     */
+    private void serveStringsFromCache(Context ctx, List<StringFileRef> stringFileRefs) {
+        int offset = paginationUtils.getIntParam(ctx, "offset", 0);
+        int limit = paginationUtils.getIntParam(ctx, "limit", 0);
+        if (limit == 0) {
+            limit = paginationUtils.getIntParam(ctx, "count", paginationUtils.DEFAULT_PAGE_SIZE);
+        }
+        
+        int totalFiles = stringFileRefs.size();
+        int startIdx = Math.min(offset, totalFiles);
+        int endIdx = Math.min(startIdx + (limit == 0 ? totalFiles : limit), totalFiles);
+        
+        // Load content only for items in range
+        List<Map<String, String>> paginatedEntries = new ArrayList<>();
+        for (int i = startIdx; i < endIdx; i++) {
+            StringFileRef ref = stringFileRefs.get(i);
+            try {
+                String content = loadStringFileContent(ref);
+                paginatedEntries.add(Map.of(
+                    "file", ref.fileName,
+                    "content", content
+                ));
+            } catch (Exception e) {
+                paginatedEntries.add(Map.of(
+                    "file", ref.fileName,
+                    "error", "Failed to load: " + e.getMessage()
+                ));
+            }
+        }
+        
+        // Build pagination response
+        Map<String, Object> result = new HashMap<>();
+        result.put("type", "resource/strings-xml");
+        result.put("strings", paginatedEntries);
+        result.put("cached", true);
+        
+        Map<String, Object> pagination = new HashMap<>();
+        pagination.put("total", totalFiles);
+        pagination.put("offset", startIdx);
+        pagination.put("limit", endIdx - startIdx);
+        pagination.put("count", paginatedEntries.size());
+        pagination.put("has_more", endIdx < totalFiles);
+        if (endIdx < totalFiles) {
+            pagination.put("next_offset", endIdx);
+        }
+        if (startIdx > 0) {
+            int finalLimit = limit;
+            pagination.put("prev_offset", Math.max(0, startIdx - finalLimit));
+        }
+        result.put("pagination", pagination);
+        
+        ctx.json(result);
     }
     
     /**
