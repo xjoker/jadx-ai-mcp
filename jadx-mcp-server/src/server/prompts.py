@@ -42,10 +42,10 @@ Follow this standard reverse engineering workflow:
 **Search Modes** (from fastest to slowest):
 | Mode | Use Case | Speed |
 |:---|:---|:---:|
-| `search_in="class"` | Find class names | ⚡ Fast |
-| `search_in="method"` | Find method names | ⚡ Fast |
-| `search_in="field"` | Find field names | ⚡ Fast |
-| `search_in="code"` | Full-text search in decompiled code | 🐢 Slow |
+| `search_in="class"` | Find class names | Fast |
+| `search_in="method"` | Find method names | Fast |
+| `search_in="field"` | Find field names | Fast |
+| `search_in="code"` | Full-text search in decompiled code | Slow |
 
 **Recommended Strategy**:
 1.  **Start with metadata search**:

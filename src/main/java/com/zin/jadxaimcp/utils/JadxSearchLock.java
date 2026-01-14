@@ -37,9 +37,6 @@ public final class JadxSearchLock {
     // Recommended retry interval in seconds
     public static final int RETRY_AFTER_SECONDS = 10;
     
-    // Maximum wait time for lock acquisition (for blocking mode)
-    public static final int MAX_WAIT_SECONDS = 120;
-    
     private JadxSearchLock() {
         // Prevent instantiation
     }
