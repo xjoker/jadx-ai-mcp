@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.io.InputStream;
+import java.util.concurrent.CompletableFuture;
 
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
@@ -81,67 +82,92 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call.
+     * Handle the /strings MCP tool call with async loading.
      * 
-     * For large APKs, resources.arsc parsing can take minutes and block the server.
-     * This implementation only checks for standalone strings.xml files,
-     * and returns a suggestion to use get_resource_file for specific locales.
+     * Uses Javalin async HTTP to prevent blocking the server.
+     * Resource loading runs in a separate thread with 60s timeout.
      */
     public void handleStrings(Context ctx) {
-        try {
-            List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-            String standaloneContent = null;
-            boolean hasResourcesArsc = false;
-            
-            // Quick scan: only check for standalone strings.xml (no resources.arsc parsing)
-            for (ResourceFile resFile : resourceFiles) {
-                String name = resFile.getDeobfName();
-                if (name == null) continue;
+        // Parse variant param before async call
+        String requestedVariant = ctx.queryParam("variant");
+        
+        // Use Javalin async with CompletableFuture
+        ctx.future(() -> CompletableFuture.supplyAsync(() -> {
+            try {
+                List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                List<String> availableVariants = new ArrayList<>();
+                String defaultContent = null;
+                String targetContent = null;
+                String targetVariant = null;
                 
-                if ("resources.arsc".equals(name)) {
-                    hasResourcesArsc = true;
-                    // Don't parse resources.arsc - it can hang for large APKs
-                } else if ("res/values/strings.xml".equals(name)) {
-                    // Standalone strings.xml - safe to load
+                for (ResourceFile resFile : resourceFiles) {
                     try {
-                        standaloneContent = resFile.loadContent().getText().getCodeStr();
+                        if ("resources.arsc".equals(resFile.getDeobfName())) {
+                            ResContainer container = resFile.loadContent();
+                            if (container != null) {
+                                for (ResContainer file : container.getSubFiles()) {
+                                    String fileName = file.getFileName();
+                                    if (fileName != null && fileName.contains("strings.xml")) {
+                                        availableVariants.add(fileName);
+                                        
+                                        // Load requested variant or default
+                                        if (requestedVariant != null && requestedVariant.equals(fileName)) {
+                                            targetContent = file.getText().getCodeStr();
+                                            targetVariant = fileName;
+                                        } else if ("res/values/strings.xml".equals(fileName) && requestedVariant == null) {
+                                            defaultContent = file.getText().getCodeStr();
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
                     } catch (Exception e) {
-                        logger.warn("Error loading standalone strings.xml: " + e.getMessage());
+                        logger.warn("Error processing resource file: " + e.getMessage());
                     }
                 }
+                
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/strings-xml");
+                result.put("available_variants", availableVariants);
+                result.put("total_variants", availableVariants.size());
+                
+                if (targetContent != null) {
+                    result.put("loaded_variant", targetVariant);
+                    result.put("content", targetContent);
+                } else if (defaultContent != null) {
+                    result.put("loaded_variant", "res/values/strings.xml");
+                    result.put("content", defaultContent);
+                } else if (requestedVariant != null) {
+                    result.put("error", "Variant not found: " + requestedVariant);
+                } else if (!availableVariants.isEmpty()) {
+                    result.put("message", "No res/values/strings.xml found");
+                    result.put("suggestion", "Use variant=" + availableVariants.get(0));
+                } else {
+                    result.put("error", "No strings.xml resources found");
+                }
+                
+                return result;
+                
+            } catch (Exception e) {
+                Map<String, Object> error = new HashMap<>();
+                error.put("type", "resource/strings-xml");
+                error.put("error", "Internal error: " + e.getMessage());
+                return error;
             }
-            
-            Map<String, Object> result = new HashMap<>();
-            result.put("type", "resource/strings-xml");
-            
-            if (standaloneContent != null) {
-                // Standalone strings.xml found
-                result.put("loaded_variant", "res/values/strings.xml");
-                result.put("content", standaloneContent);
-            } else if (hasResourcesArsc) {
-                // resources.arsc exists but we skip parsing for safety
-                result.put("message", "strings.xml resources are embedded in resources.arsc. " +
-                    "For large APKs, direct parsing can hang the server.");
-                result.put("suggestion", "Use get_resource_file with file_name='res/values/strings.xml' " +
-                    "or other locale like 'res/values-en/strings.xml'");
-                result.put("available_locales_hint", new String[]{
-                    "res/values/strings.xml",
-                    "res/values-en/strings.xml", 
-                    "res/values-zh/strings.xml",
-                    "res/values-zh-rCN/strings.xml",
-                    "res/values-zh-rTW/strings.xml"
-                });
-            } else {
-                JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resources found.", logger);
-                return;
-            }
-            
-            ctx.json(result);
-            
-        } catch (Exception e) {
-            JadxAIMCPPluginError.handleError(ctx, 
-                "Internal error in handleStrings: " + e.getMessage(), e, logger);
-        }
+        }).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+          .exceptionally(ex -> {
+              Map<String, Object> timeout = new HashMap<>();
+              timeout.put("type", "resource/strings-xml");
+              if (ex.getCause() instanceof java.util.concurrent.TimeoutException) {
+                  timeout.put("error", "Resource loading timed out after 60 seconds");
+                  timeout.put("reason", "The APK's resources.arsc is too large to process");
+                  timeout.put("workaround", "Navigate to Resources in JADX GUI, then use fetch_current_class");
+              } else {
+                  timeout.put("error", "Loading failed: " + ex.getMessage());
+              }
+              return timeout;
+          }));
     }
     
     /**
@@ -175,16 +201,8 @@ public class ResourceRoutes {
      * @return void
      * @param Context
      * 
-     * This method handle the /get-resource-file mcp tool call.
-     * 
-     * First it validates the http request for 'file_name' parameter.
-     * Then for each ResourceFile 
-     *  1. if this ResourceFile's is equal to the requested file
-     *      a. return this file
-     *  2. If this ResourceFile is compiled resource archive
-     *      a. Use cached subfiles from ResourceCacheManager if available
-     *  3. Break once any matching file is found
-     * If none found then handle it else return the requested file.
+     * Handle the /get-resource-file MCP tool call with async loading.
+     * Uses Javalin async to prevent blocking, with 60s timeout.
      */
     public void handleGetResourceFile(Context ctx) {
         String fileName = ctx.queryParam("file_name");
@@ -193,56 +211,64 @@ public class ResourceRoutes {
             return;
         }
 
-        try {
-            Map<String, String> resFileContent = new HashMap<>();
-            
-            // First try to find in cached subfiles (from resources.arsc)
-            if (ResourceCacheManager.isReady()) {
-                ResContainer cached = ResourceCacheManager.findSubFile(fileName);
-                if (cached != null) {
-                    String content = ResourceCacheManager.getContent(cached);
-                    if (content != null) {
-                        resFileContent.put("file_name", cached.getFileName());
-                        resFileContent.put("content", content);
-                    }
-                }
-            }
-            
-            // If not found in cache, try standalone resource files
-            if (resFileContent.isEmpty()) {
+        // Use Javalin async with CompletableFuture
+        ctx.future(() -> CompletableFuture.supplyAsync(() -> {
+            try {
                 List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                Map<String, String> resFileContent = new HashMap<>();
+                
                 for (ResourceFile resFile : resourceFiles) {
                     if (resFile == null || resFile.getDeobfName() == null) continue;
                     
                     if (resFile.getDeobfName().equals(fileName)) {
-                        // Direct match - load content
+                        // Direct match - standalone resource file
                         resFileContent.put("file_name", resFile.getDeobfName());
                         resFileContent.put("content", resFile.loadContent().getText().getCodeStr());
                         break;
+                    } else if ("resources.arsc".equals(resFile.getDeobfName())) {
+                        // Search in resources.arsc subfiles
+                        ResContainer container = resFile.loadContent();
+                        if (container != null) {
+                            for (ResContainer file : container.getSubFiles()) {
+                                if (fileName.equals(file.getFileName())) {
+                                    resFileContent.put("file_name", file.getFileName());
+                                    resFileContent.put("content", file.getText().getCodeStr());
+                                    break;
+                                }
+                            }
+                        }
+                        if (!resFileContent.isEmpty()) break;
                     }
                 }
+                
+                if (!resFileContent.isEmpty()) {
+                    return Map.of("type", "resource/text", "file", resFileContent);
+                }
+                
+                Map<String, Object> notFound = new HashMap<>();
+                notFound.put("type", "resource/text");
+                notFound.put("error", "No resource file found: " + fileName);
+                return notFound;
+                
+            } catch (Exception e) {
+                Map<String, Object> error = new HashMap<>();
+                error.put("type", "resource/text");
+                error.put("error", "Internal error: " + e.getMessage());
+                return error;
             }
-            
-            // If still not found and cache not ready, suggest retry
-            if (resFileContent.isEmpty() && 
-                ResourceCacheManager.getStatus() == ResourceCacheManager.CacheStatus.LOADING) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("type", "resource/text");
-                result.put("status", "loading");
-                result.put("message", "Resource cache is loading, please retry in 10 seconds");
-                result.put("retry_after", 10);
-                ctx.status(202).json(result);
-                return;
-            }
-
-            if (resFileContent.isEmpty()) {
-                JadxAIMCPPluginError.handleError(ctx, 404, "No resource file found: " + fileName, logger);
-                return;
-            }
-            ctx.json(Map.of("type", "resource/text", "file", resFileContent, "cached", ResourceCacheManager.isReady()));
-        } catch (Exception e) {
-            JadxAIMCPPluginError.handleError(ctx, "Internal Error occurred while trying to handle the handleGetResourceFile(): " + e.getMessage(), e, logger);
-        }
+        }).orTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+          .exceptionally(ex -> {
+              Map<String, Object> timeout = new HashMap<>();
+              timeout.put("type", "resource/text");
+              if (ex.getCause() instanceof java.util.concurrent.TimeoutException) {
+                  timeout.put("error", "Resource loading timed out after 60 seconds");
+                  timeout.put("reason", "The APK's resources.arsc is too large");
+                  timeout.put("workaround", "Navigate to Resources > " + fileName + " in JADX GUI, then use fetch_current_class");
+              } else {
+                  timeout.put("error", "Loading failed: " + ex.getMessage());
+              }
+              return timeout;
+          }));
     }
 
     /**
