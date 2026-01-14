@@ -43,17 +43,24 @@ class PaginationUtils:
         Validate and normalize pagination parameters.
 
         Args:
-            offset: Requested starting offset (can be negative or excessive)
-            count: Requested item count (can be negative or excessive)
+            offset: Requested starting offset (must be non-negative)
+            count: Requested item count (must be non-negative)
 
         Returns:
             tuple[int, int]: Validated (offset, count) within safe bounds
 
-        Note:
-            Clamps values to [0, MAX_OFFSET] and [0, MAX_PAGE_SIZE]
+        Raises:
+            ValueError: If offset or count is negative
         """
-        offset = max(0, min(offset, PaginationUtils.MAX_OFFSET))
-        count = max(0, min(count, PaginationUtils.MAX_PAGE_SIZE))
+        # Reject negative values with explicit error
+        if offset < 0:
+            raise ValueError(f"offset must be non-negative, got: {offset}")
+        if count < 0:
+            raise ValueError(f"count must be non-negative, got: {count}")
+        
+        # Clamp to maximum bounds
+        offset = min(offset, PaginationUtils.MAX_OFFSET)
+        count = min(count, PaginationUtils.MAX_PAGE_SIZE)
         return offset, count
 
     @staticmethod
@@ -98,7 +105,10 @@ class PaginationUtils:
             Returns error dict on failures with descriptive error messages
         """
         # Validate parameters
-        offset, count = PaginationUtils.validate_pagination_params(offset, count)
+        try:
+            offset, count = PaginationUtils.validate_pagination_params(offset, count)
+        except ValueError as e:
+            return {"error": f"Invalid pagination parameters: {str(e)}"}
 
         # Build query parameters
         params = {"offset": offset}
