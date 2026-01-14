@@ -25,7 +25,8 @@ from src.server.tools.class_tools import (
     get_main_application_classes_names, get_main_application_classes_code, get_main_activity_class
 )
 from src.server.tools.search_tools import (
-    get_method_by_name, search_method_by_name, batch_get_method_by_name, search_classes_by_keyword
+    get_method_by_name, search_method_by_name, batch_get_method_by_name, search_classes_by_keyword,
+    get_method_signature, get_method_callees
 )
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
@@ -38,7 +39,7 @@ from src.server.tools.debug_tools import (
     debug_get_stack_frames, debug_get_threads, debug_get_variables
 )
 from src.server.tools.xrefs_tools import (
-    get_xrefs_to_class, get_xrefs_to_method, get_xrefs_to_field
+    get_xrefs_to_class, get_xrefs_to_method, get_xrefs_to_field, batch_get_xrefs
 )
 from src.server.tools.instance_tools import register_instance_tools
 from src.server.instance_registry import InstanceRegistry
@@ -170,6 +171,7 @@ async def get_methods_of_class(class_name: str, instance_id: Optional[str] = Non
 async def search_classes_by_keyword(
     search_term: str,
     package: str = "",
+    exclude: str = "",
     search_in: str = "code",
     offset: int = 0,
     count: int = 20,
@@ -186,7 +188,7 @@ async def search_classes_by_keyword(
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.search_classes_by_keyword(
-        search_term, package, search_in, offset, count, instance_id=instance_id
+        search_term, package, exclude, search_in, offset, count, instance_id=instance_id
     )
 
 
@@ -326,6 +328,32 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
 
 @mcp.tool()
 @with_busy_check
+async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
+    """Get structured signature information for a method including return type and parameters.
+    
+    Args:
+        class_name: Fully qualified class name (e.g., com.example.MainActivity)
+        method_name: Method name to get signature for
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.search_tools.get_method_signature(class_name, method_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def get_method_callees(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
+    """Get methods called by the specified method (callees analysis).
+    
+    Args:
+        class_name: Fully qualified class name (e.g., com.example.MainActivity)
+        method_name: Method name to analyze
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.search_tools.get_method_callees(class_name, method_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
 async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
     """Renames a package and all its classes.
     
@@ -410,6 +438,18 @@ async def get_xrefs_to_field(
     return await tools.xrefs_tools.get_xrefs_to_field(
         class_name, field_name, offset, count, instance_id=instance_id
     )
+
+
+@mcp.tool()
+@with_busy_check
+async def batch_get_xrefs(targets: list[str], instance_id: Optional[str] = None) -> dict:
+    """Fetch cross-references for multiple targets in a single request.
+    
+    Args:
+        targets: List of "type:class[:member]" strings.
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.xrefs_tools.batch_get_xrefs(targets, instance_id=instance_id)
 
 
 @mcp.tool()

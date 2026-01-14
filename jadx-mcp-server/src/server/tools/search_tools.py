@@ -94,6 +94,7 @@ async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str
 async def search_classes_by_keyword(
     search_term: str,
     package: str = "",
+    exclude: str = "",
     search_in: str = "code",
     offset: int = 0,
     count: int = 20,
@@ -105,6 +106,7 @@ async def search_classes_by_keyword(
     Args:
         search_term: The keyword or string to search for.
         package (optional): Package name to limit the search scope.
+        exclude (optional): Comma-separated package prefixes to exclude/ignore.
         search_in (optional): Comma-separated list of search scopes (class,method,field,code,comment).
         offset (optional): Starting index for pagination. Default: 0
         count (optional): Maximum number of results to return. Default: 20
@@ -123,6 +125,7 @@ async def search_classes_by_keyword(
         additional_params={
             "search_term": search_term,
             "package": package,
+            "exclude": exclude,
             "search_in": search_in,
         },
         data_extractor=lambda parsed: parsed.get("classes", []),
