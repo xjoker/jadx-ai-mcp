@@ -767,6 +767,18 @@ public class ClassRoutes {
 
         // Parse optional package filter parameter
         String packageFilter = ctx.queryParam("package");
+        
+        // Parse optional exclude parameter (comma-separated package prefixes to exclude)
+        String excludeParam = ctx.queryParam("exclude");
+        List<String> excludePrefixes = new ArrayList<>();
+        if (excludeParam != null && !excludeParam.isEmpty()) {
+            for (String prefix : excludeParam.split(",")) {
+                String trimmed = prefix.trim();
+                if (!trimmed.isEmpty()) {
+                    excludePrefixes.add(trimmed);
+                }
+            }
+        }
 
         // Parse search locations, default to CODE if not specified
         Set<SearchLocation> searchLocations = parseSearchLocations(ctx.queryParam("search_in"));
@@ -795,8 +807,29 @@ public class ClassRoutes {
                 matchingClassesSet.addAll(locationResults);
             }
 
-            // Convert to list for pagination
-            List<JavaClass> matchingClasses = new ArrayList<>(matchingClassesSet);
+            // Apply exclusion filter
+            List<JavaClass> matchingClasses;
+            if (!excludePrefixes.isEmpty()) {
+                matchingClasses = new ArrayList<>();
+                for (JavaClass cls : matchingClassesSet) {
+                    String fullName = cls.getFullName();
+                    boolean excluded = false;
+                    for (String prefix : excludePrefixes) {
+                        if (fullName.startsWith(prefix)) {
+                            excluded = true;
+                            break;
+                        }
+                    }
+                    if (!excluded) {
+                        matchingClasses.add(cls);
+                    }
+                }
+                logger.info("JADX AI MCP: Excluded {} classes with prefixes: {}", 
+                    matchingClassesSet.size() - matchingClasses.size(), excludePrefixes);
+            } else {
+                // Convert to list for pagination
+                matchingClasses = new ArrayList<>(matchingClassesSet);
+            }
 
             logger.info("JADX AI MCP: Search completed. Found {} unique classes matching '{}' in locations: {}",
                     matchingClasses.size(), searchTerm, searchLocations);

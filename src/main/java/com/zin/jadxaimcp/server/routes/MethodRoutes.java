@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.HashMap;
 
@@ -377,6 +378,88 @@ public class MethodRoutes {
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving method signature: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
+     * @return void
+     * @param Context
+     * 
+     * This method handles the /method-callees MCP tool call.
+     * Returns a list of methods called by the specified method.
+     * 
+     * Uses code text parsing to identify method calls (pattern matching approach).
+     * 
+     * Request parameters:
+     * - class_name (required): Fully qualified class name
+     * - method_name (required): Method name to analyze
+     * 
+     * Returns JSON with list of potential callees (class.method patterns found in code).
+     */
+    public void handleMethodCallees(Context ctx) {
+        String className = ctx.queryParam("class_name");
+        String methodName = validateMethodParam(ctx);
+        if (methodName == null) return;
+        
+        if (className == null || className.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'class_name'", logger);
+            return;
+        }
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                if (cls.getFullName().equals(className)) {
+                    for (JavaMethod method : cls.getMethods()) {
+                        if (method.getName().equalsIgnoreCase(methodName)) {
+                            String code = method.getCodeStr();
+                            
+                            // Parse method calls from code
+                            // Pattern: identifier.methodName( or ClassName.staticMethod(
+                            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                                "([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\.\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
+                            );
+                            java.util.regex.Matcher matcher = pattern.matcher(code);
+                            
+                            Set<String> calleesSet = new java.util.LinkedHashSet<>();
+                            while (matcher.find()) {
+                                String receiver = matcher.group(1);
+                                String calledMethod = matcher.group(2);
+                                // Filter out common false positives
+                                if (!receiver.equals("this") && !receiver.equals("super")) {
+                                    calleesSet.add(receiver + "." + calledMethod);
+                                }
+                            }
+                            
+                            // Also find new ClassName() constructor calls
+                            java.util.regex.Pattern ctorPattern = java.util.regex.Pattern.compile(
+                                "new\\s+([a-zA-Z_][a-zA-Z0-9_.]+)\\s*\\("
+                            );
+                            java.util.regex.Matcher ctorMatcher = ctorPattern.matcher(code);
+                            while (ctorMatcher.find()) {
+                                calleesSet.add(ctorMatcher.group(1) + ".<init>");
+                            }
+                            
+                            List<String> callees = new ArrayList<>(calleesSet);
+                            
+                            Map<String, Object> response = new HashMap<>();
+                            response.put("class_name", className);
+                            response.put("method_name", methodName);
+                            response.put("callees_count", callees.size());
+                            response.put("callees", callees);
+                            response.put("note", "Pattern-based analysis; may include false positives from strings/comments");
+                            ctx.json(response);
+                            return;
+                        }
+                    }
+                    JadxAIMCPPluginError.handleError(ctx, 404, 
+                        "Method " + methodName + " not found in class " + className, logger);
+                    return;
+                }
+            }
+            JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving method callees: " + e.getMessage(), e, logger);
         }
     }
 }

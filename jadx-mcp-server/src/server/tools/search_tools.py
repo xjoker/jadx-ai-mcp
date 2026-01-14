@@ -160,3 +160,32 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
     if "error" in result:
         logger.warning(f"get_method_signature error: {result.get('error')}")
     return result
+
+
+async def get_method_callees(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
+    """
+    Get methods called by the specified method (callees analysis).
+
+    Args:
+        class_name: Fully qualified class name (e.g., com.example.MainActivity)
+        method_name: Method name to analyze
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Analysis result containing:
+            - class_name: Containing class name
+            - method_name: Method name
+            - callees_count: Number of potential callees found
+            - callees: List of "receiver.method" patterns found in code
+            - note: Warning about pattern-based analysis accuracy
+
+    MCP Tool: get_method_callees
+    Description: Analyzes method code to identify called methods (pattern-based)
+    """
+    logger.info(f"get_method_callees: class={class_name}, method={method_name}, instance={instance_id}")
+    result = await get_from_jadx(
+        "method-callees", {"class_name": class_name, "method_name": method_name}, instance_id=instance_id
+    )
+    if "error" in result:
+        logger.warning(f"get_method_callees error: {result.get('error')}")
+    return result

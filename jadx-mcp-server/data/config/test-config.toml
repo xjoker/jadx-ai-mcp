@@ -1,0 +1,22 @@
+# JADX MCP Server Test Configuration
+# Testing multi-user authentication
+
+[server]
+host = "127.0.0.1"
+port = 8651
+
+[defaults]
+request_timeout = 120
+busy_timeout = 300
+jadx_token = ""
+
+# Test Users
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+is_admin = false
+
+[[users]]
+name = "admin"
+token = "token-admin-zzzzz"
+is_admin = true

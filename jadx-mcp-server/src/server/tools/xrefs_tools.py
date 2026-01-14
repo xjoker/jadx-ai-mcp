@@ -92,3 +92,28 @@ async def get_xrefs_to_field(class_name: str, field_name: str, offset: int = 0, 
         data_extractor=lambda parsed: parsed.get("references", []),
         fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id)
     )
+
+
+async def batch_get_xrefs(targets: list[str], instance_id: Optional[str] = None) -> dict:
+    """
+    Fetch cross-references for multiple targets in a single request.
+
+    This reduces MCP interaction overhead when analyzing multiple related classes/methods/fields.
+    Maximum 10 targets per request.
+
+    Args:
+        targets: List of "type:class[:member]" strings. Examples:
+            - "class:com.example.MyClass"
+            - "method:com.example.MyClass:myMethod"
+            - "field:com.example.MyClass:myField"
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Contains 'results' array with target, found status, xrefs_count, and xrefs for each,
+              plus 'total' count
+
+    MCP Tool: batch_get_xrefs
+    Description: Batch retrieval of cross-references for classes, methods, and fields
+    """
+    targets_str = ",".join(targets)
+    return await get_from_jadx("batch-xrefs", {"targets": targets_str}, instance_id=instance_id)

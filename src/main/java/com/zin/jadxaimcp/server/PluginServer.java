@@ -311,11 +311,13 @@ public class PluginServer {
         app.get("/batch-method-by-name", methodRoutes::handleBatchMethodByName);
         app.get("/search-method", methodRoutes::handleSearchMethod);
         app.get("/method-signature", methodRoutes::handleMethodSignature);
+        app.get("/method-callees", methodRoutes::handleMethodCallees);
         
         // --- Xrefs ---
         app.get("/xrefs-to-class", xrefsRoutes::handleXrefsToClass);
         app.get("/xrefs-to-method", xrefsRoutes::handleXrefsToMethod);
         app.get("/xrefs-to-field", xrefsRoutes::handleXrefsToField);
+        app.get("/batch-xrefs", xrefsRoutes::handleBatchXrefs);
 
         // --- Resources & Manifest ---
         app.get("/manifest", resourceRoutes::handleManifest);

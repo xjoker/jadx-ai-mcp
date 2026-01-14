@@ -420,4 +420,150 @@ public class XrefsRoutes {
         Map<String, Object> result = paginationUtils.handlePagination(ctx, referenceList, "xrefs", "references", ref -> ref);
         ctx.json(result);
     }
+
+    /**
+     * @return void
+     * @param Context
+     * 
+     * This routing method handles the /batch-xrefs MCP tool call.
+     * Allows fetching xrefs for multiple targets in a single request.
+     * 
+     * Request parameters:
+     * - targets (required): Comma-separated list of "type:class_name[:method_or_field]" 
+     *   Examples: 
+     *   - "class:com.example.MyClass"
+     *   - "method:com.example.MyClass:myMethod"
+     *   - "field:com.example.MyClass:myField"
+     * 
+     * Returns JSON with results for each target.
+     * Max limit: 10 targets per request.
+     */
+    public void handleBatchXrefs(Context ctx) {
+        String targetsParam = ctx.queryParam("targets");
+        if (targetsParam == null || targetsParam.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, 
+                "Missing 'targets' parameter. Format: type:class[:member]", logger);
+            return;
+        }
+
+        String[] targets = targetsParam.split(",");
+        final int MAX_BATCH_SIZE = 10;
+        if (targets.length > MAX_BATCH_SIZE) {
+            JadxAIMCPPluginError.handleError(ctx, 400, 
+                "Too many targets. Maximum " + MAX_BATCH_SIZE + " per request.", logger);
+            return;
+        }
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            List<Map<String, Object>> results = new ArrayList<>();
+
+            for (String target : targets) {
+                String trimmed = target.trim();
+                String[] parts = trimmed.split(":", 3);
+                
+                Map<String, Object> result = new HashMap<>();
+                result.put("target", trimmed);
+                
+                if (parts.length < 2) {
+                    result.put("found", false);
+                    result.put("error", "Invalid format. Use type:class[:member]");
+                    results.add(result);
+                    continue;
+                }
+
+                String type = parts[0].toLowerCase();
+                String className = parts[1];
+                
+                JavaClass targetClass = null;
+                for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                    if (cls.getFullName().equals(className)) {
+                        targetClass = cls;
+                        break;
+                    }
+                }
+                
+                if (targetClass == null) {
+                    result.put("found", false);
+                    result.put("error", "Class not found");
+                    results.add(result);
+                    continue;
+                }
+
+                List<Map<String, String>> xrefs = new ArrayList<>();
+                Set<String> seen = new HashSet<>();
+
+                try {
+                    switch (type) {
+                        case "class":
+                            ClassNode classNode = targetClass.getClassNode();
+                            for (MethodNode mth : classNode.getUseInMth()) {
+                                Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
+                                addIfUnique(xrefs, seen, ref);
+                            }
+                            break;
+                            
+                        case "method":
+                            if (parts.length < 3) {
+                                result.put("found", false);
+                                result.put("error", "Method name required");
+                                results.add(result);
+                                continue;
+                            }
+                            String methodName = parts[2];
+                            for (JavaMethod method : targetClass.getMethods()) {
+                                if (method.getName().equals(methodName)) {
+                                    for (MethodNode mth : method.getMethodNode().getUseIn()) {
+                                        Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
+                                        addIfUnique(xrefs, seen, ref);
+                                    }
+                                }
+                            }
+                            break;
+                            
+                        case "field":
+                            if (parts.length < 3) {
+                                result.put("found", false);
+                                result.put("error", "Field name required");
+                                results.add(result);
+                                continue;
+                            }
+                            String fieldName = parts[2];
+                            for (JavaField field : targetClass.getFields()) {
+                                if (field.getName().equals(fieldName)) {
+                                    for (MethodNode mth : field.getFieldNode().getUseIn()) {
+                                        Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
+                                        addIfUnique(xrefs, seen, ref);
+                                    }
+                                }
+                            }
+                            break;
+                            
+                        default:
+                            result.put("found", false);
+                            result.put("error", "Invalid type. Use class/method/field");
+                            results.add(result);
+                            continue;
+                    }
+                    
+                    result.put("found", true);
+                    result.put("xrefs_count", xrefs.size());
+                    result.put("xrefs", xrefs);
+                } catch (Exception e) {
+                    result.put("found", false);
+                    result.put("error", "Failed: " + e.getMessage());
+                }
+                
+                results.add(result);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("results", results);
+            response.put("total", targets.length);
+            ctx.json(response);
+
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error in batch xrefs: " + e.getMessage(), e, logger);
+        }
+    }
 }
