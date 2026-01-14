@@ -15,8 +15,8 @@ from fastmcp import FastMCP
 from src.banner import jadx_mcp_server_banner
 from src.server import config, tools
 
-# Initialize MCP Server
-mcp = FastMCP("JADX-AI-MCP Plugin Reverse Engineering Server")
+# Initialize MCP Server with stateless HTTP mode (no session required)
+mcp = FastMCP("JADX-AI-MCP Plugin Reverse Engineering Server", stateless_http=True)
 
 # Import and register ALL tools using correct FastMCP pattern
 from src.server.tools.class_tools import (
