@@ -62,10 +62,15 @@ jobs:
       - name: Update version in all files
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
+          # Get short commit SHA (7 chars)
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          
           # Update pom.xml - match any version in the first occurrence
           sed -i "0,/<version>[0-9.]*<\/version>/s/<version>[0-9.]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
-          # Update Java banner
+          # Update Java banner - version
           sed -i "s|VERSION = \".*\"|VERSION = \"${VERSION}\"|" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
+          # Update Java banner - build commit
+          sed -i "s|BUILD_COMMIT = \".*\"|BUILD_COMMIT = \"${SHORT_SHA}\"|" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
           # Update Python banner
           sed -i "s|SERVER_VERSION = \".*\"|SERVER_VERSION = \"${VERSION}\"|" jadx-mcp-server/src/banner.py
 
