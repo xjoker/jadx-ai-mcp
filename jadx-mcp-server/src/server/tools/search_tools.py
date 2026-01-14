@@ -11,6 +11,9 @@ License: See LICENSE file
 from typing import Optional
 from src.server.config import get_from_jadx
 from src.PaginationUtils import PaginationUtils
+from src.server.logging_config import get_logger
+
+logger = get_logger("search_tools")
 
 
 async def get_method_by_name(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
@@ -28,9 +31,13 @@ async def get_method_by_name(class_name: str, method_name: str, instance_id: Opt
     MCP Tool: get_method_by_name
     Description: Retrieves specific method implementation from a known class
     """
-    return await get_from_jadx(
+    logger.info(f"get_method_by_name: class={class_name}, method={method_name}, instance={instance_id}")
+    result = await get_from_jadx(
         "method-by-name", {"class_name": class_name, "method_name": method_name}, instance_id=instance_id
     )
+    if "error" in result:
+        logger.warning(f"get_method_by_name failed: {result.get('error')}")
+    return result
 
 
 async def search_method_by_name(method_name: str, instance_id: Optional[str] = None) -> dict:
@@ -47,7 +54,18 @@ async def search_method_by_name(method_name: str, instance_id: Optional[str] = N
     MCP Tool: search_method_by_name
     Description: Finds all occurrences of a method name across the APK
     """
-    return await get_from_jadx("search-method", {"method_name": method_name}, instance_id=instance_id)
+    logger.info(f"search_method_by_name: method={method_name}, instance={instance_id}")
+    try:
+        result = await get_from_jadx("search-method", {"method_name": method_name}, instance_id=instance_id)
+        if "error" in result:
+            logger.warning(f"search_method_by_name error response: {result.get('error')}")
+        else:
+            match_count = len(result.get("methods", result.get("classes", [])))
+            logger.info(f"search_method_by_name: found {match_count} matches")
+        return result
+    except Exception as e:
+        logger.error(f"search_method_by_name exception: {type(e).__name__}: {e}")
+        return {"error": f"Unexpected error: {e}"}
 
 
 async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str] = None) -> dict:
@@ -110,3 +128,35 @@ async def search_classes_by_keyword(
         data_extractor=lambda parsed: parsed.get("classes", []),
         fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id),
     )
+
+
+async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
+    """
+    Get structured signature information for a method including return type and parameters.
+
+    Args:
+        class_name: Fully qualified class name (e.g., com.example.MainActivity)
+        method_name: Method name to get signature for
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Structured method signature containing:
+            - class_name: Containing class name
+            - method_name: Method name
+            - overloads: Number of overloaded versions
+            - signatures: List of signature objects with:
+                - return_type: Return type
+                - parameters: List of {name, type} objects
+                - access_flags: Access modifiers
+                - is_constructor: Whether this is a constructor
+
+    MCP Tool: get_method_signature
+    Description: Retrieves structured method signature for hook code generation
+    """
+    logger.info(f"get_method_signature: class={class_name}, method={method_name}, instance={instance_id}")
+    result = await get_from_jadx(
+        "method-signature", {"class_name": class_name, "method_name": method_name}, instance_id=instance_id
+    )
+    if "error" in result:
+        logger.warning(f"get_method_signature error: {result.get('error')}")
+    return result

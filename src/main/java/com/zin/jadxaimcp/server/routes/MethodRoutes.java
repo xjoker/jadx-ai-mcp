@@ -212,14 +212,15 @@ public class MethodRoutes {
      * @return void
      * @param Context
      * 
-     * This method handles the /seach-method mcp tool call.
+     * This method handles the /search-method MCP tool call.
      * 
-     * After validating the 'method_name' parameter.
+     * Searches for methods by name across all classes.
+     * Returns structured JSON with matching method locations.
      * 
      * 1. for each java class
      *  - for each method in that class
-     *      - if it matches the search term then add it to results
-     * 2. return the results.
+     *      - if method name matches (case-insensitive partial match) then add to results
+     * 2. return JSON results with pagination support.
      */
     public void handleSearchMethod(Context ctx) {
         String methodName = validateMethodParam(ctx);
@@ -227,14 +228,28 @@ public class MethodRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            List<String> results = new ArrayList<>();
+            List<Map<String, String>> results = new ArrayList<>();
+            String searchTerm = methodName.toLowerCase();
 
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getCode().toLowerCase().contains(methodName.toLowerCase())) {
-                    results.add(cls.getFullName());
+                for (JavaMethod method : cls.getMethods()) {
+                    // Match method name (case-insensitive, partial match)
+                    if (method.getName().toLowerCase().contains(searchTerm)) {
+                        Map<String, String> match = new HashMap<>();
+                        match.put("class_name", cls.getFullName());
+                        match.put("method_name", method.getName());
+                        match.put("is_constructor", String.valueOf(method.isConstructor()));
+                        results.add(match);
+                    }
                 }
             }
-            ctx.result(String.join("\n", results));
+            
+            // Return JSON response with pagination
+            Map<String, Object> response = paginationUtils.handlePagination(
+                ctx, results, "search-method", "methods", m -> m);
+            ctx.json(response);
+        } catch (PaginationException e) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error: " + e.getMessage(), logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error during method search: " + e.getMessage(), e, logger);
         }    
@@ -281,5 +296,87 @@ public class MethodRoutes {
         result.put("decl", String.valueOf(method.getCodeNodeRef()));
         result.put("code", codeStr);
         ctx.json(result);
+    }
+
+    /**
+     * @return void
+     * @param Context
+     * 
+     * This method handles the /method-signature MCP tool call.
+     * Returns structured signature information for a method including:
+     * - Return type
+     * - Parameter types and names
+     * - Access modifiers
+     * - Throws declarations
+     */
+    public void handleMethodSignature(Context ctx) {
+        String className = ctx.queryParam("class_name");
+        String methodName = validateMethodParam(ctx);
+        if (methodName == null) return;
+        
+        if (className == null || className.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'class_name'", logger);
+            return;
+        }
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                if (cls.getFullName().equals(className)) {
+                    List<Map<String, Object>> signatures = new ArrayList<>();
+                    
+                    for (JavaMethod method : cls.getMethods()) {
+                        if (method.getName().equalsIgnoreCase(methodName)) {
+                            Map<String, Object> sig = new HashMap<>();
+                            sig.put("method_name", method.getName());
+                            sig.put("return_type", method.getReturnType() != null ? 
+                                method.getReturnType().toString() : "void");
+                            sig.put("access_flags", method.getAccessFlags().toString());
+                            sig.put("is_constructor", method.isConstructor());
+                            
+                            // Parameters - iterate through argument types from MethodNode
+                            List<Map<String, String>> params = new ArrayList<>();
+                            try {
+                                List<jadx.core.dex.instructions.args.ArgType> argTypes = 
+                                    method.getMethodNode().getMethodInfo().getArgumentsTypes();
+                                int idx = 0;
+                                for (jadx.core.dex.instructions.args.ArgType argType : argTypes) {
+                                    Map<String, String> param = new HashMap<>();
+                                    param.put("name", "arg" + idx);
+                                    param.put("type", argType.toString());
+                                    params.add(param);
+                                    idx++;
+                                }
+                            } catch (Exception e) {
+                                logger.warn("Failed to get arguments for {}: {}", methodName, e.getMessage());
+                            }
+                            sig.put("parameters", params);
+                            
+                            // Full declaration
+                            sig.put("declaration", String.valueOf(method.getCodeNodeRef()));
+                            
+                            signatures.add(sig);
+                        }
+                    }
+                    
+                    if (signatures.isEmpty()) {
+                        JadxAIMCPPluginError.handleError(ctx, 404, 
+                            "Method " + methodName + " not found in class " + className, logger);
+                        return;
+                    }
+                    
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("class_name", className);
+                    response.put("method_name", methodName);
+                    response.put("overloads", signatures.size());
+                    response.put("signatures", signatures);
+                    ctx.json(response);
+                    return;
+                }
+            }
+            JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving method signature: " + e.getMessage(), e, logger);
+        }
     }
 }

@@ -12,6 +12,9 @@ License: See LICENSE file
 from typing import Optional
 from src.server.config import get_from_jadx
 from src.PaginationUtils import PaginationUtils
+from src.server.logging_config import get_logger
+
+logger = get_logger("class_tools")
 
 
 async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
@@ -27,7 +30,15 @@ async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
     MCP Tool: fetch_current_class
     Description: Retrieves the class currently open in JADX-GUI editor
     """
-    return await get_from_jadx("current-class", instance_id=instance_id)
+    logger.info(f"fetch_current_class: instance={instance_id}")
+    result = await get_from_jadx("current-class", instance_id=instance_id)
+    if "error" in result:
+        logger.warning(f"fetch_current_class error: {result.get('error')}")
+    elif not result.get("class_name"):
+        logger.warning("fetch_current_class: no class selected in JADX-GUI")
+    else:
+        logger.info(f"fetch_current_class: got class {result.get('class_name')}")
+    return result
 
 
 async def get_selected_text(instance_id: Optional[str] = None) -> dict:
@@ -149,7 +160,7 @@ async def get_smali_of_class(class_name: str, instance_id: Optional[str] = None)
     Fetch the smali representation of a class.
 
     Args:
-        class_name: Fully qualified class name
+        class_name: Fully qualified class name (for inner classes use $ syntax: OuterClass$InnerClass)
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
@@ -158,7 +169,14 @@ async def get_smali_of_class(class_name: str, instance_id: Optional[str] = None)
     MCP Tool: get_smali_of_class
     Description: Retrieves low-level smali bytecode for advanced analysis
     """
-    return await get_from_jadx("smali-of-class", {"class_name": class_name}, instance_id=instance_id)
+    # Auto-convert dot to $ for inner classes if needed
+    normalized_name = class_name
+    logger.info(f"get_smali_of_class: class={class_name}, instance={instance_id}")
+    
+    result = await get_from_jadx("smali-of-class", {"class_name": normalized_name}, instance_id=instance_id)
+    if "error" in result:
+        logger.warning(f"get_smali_of_class error: {result.get('error')}")
+    return result
 
 
 async def get_main_application_classes_names(instance_id: Optional[str] = None) -> dict:
@@ -215,3 +233,37 @@ async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
     Description: Identifies and retrieves the app's entry point activity
     """
     return await get_from_jadx("main-activity", instance_id=instance_id)
+
+
+async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> dict:
+    """
+    Get structured information about a class including inheritance, interfaces, and members.
+
+    Args:
+        class_name: Fully qualified class name (e.g., com.example.MainActivity)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Structured class information containing:
+            - class_name: Full class name
+            - simple_name: Short class name
+            - package: Package name
+            - super_class: Parent class name
+            - interfaces: List of implemented interface names
+            - inner_classes: List of inner class names
+            - is_interface: Whether this is an interface
+            - is_enum: Whether this is an enum
+            - is_inner: Whether this is an inner class
+            - methods_count: Number of methods
+            - fields_count: Number of fields
+            - method_names: List of method names
+            - field_names: List of field names
+
+    MCP Tool: get_class_info
+    Description: Retrieves structured class metadata including inheritance hierarchy
+    """
+    logger.info(f"get_class_info: class={class_name}, instance={instance_id}")
+    result = await get_from_jadx("class-info", {"class_name": class_name}, instance_id=instance_id)
+    if "error" in result:
+        logger.warning(f"get_class_info error: {result.get('error')}")
+    return result

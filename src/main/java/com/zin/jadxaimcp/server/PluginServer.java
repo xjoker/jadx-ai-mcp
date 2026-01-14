@@ -303,12 +303,14 @@ public class PluginServer {
         app.get("/main-application-classes-names", classRoutes::handleMainApplicationClassesNames);
         app.get("/main-activity", classRoutes::handleMainActivity);
         app.get("/search-classes-by-keyword", classRoutes::handleSearchClassesByKeyword);
+        app.get("/class-info", classRoutes::handleClassInfo);
 
 
         // --- Methods ---
         app.get("/method-by-name", methodRoutes::handleMethodByName);
         app.get("/batch-method-by-name", methodRoutes::handleBatchMethodByName);
         app.get("/search-method", methodRoutes::handleSearchMethod);
+        app.get("/method-signature", methodRoutes::handleMethodSignature);
         
         // --- Xrefs ---
         app.get("/xrefs-to-class", xrefsRoutes::handleXrefsToClass);

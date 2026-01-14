@@ -411,6 +411,111 @@ public class ClassRoutes {
     }
 
     /**
+     * @param Context
+     * @return void
+     * 
+     *         This routing method handles the /class-info MCP tool call.
+     *         Returns structured information about a class including:
+     *         - Super class name
+     *         - Implemented interfaces
+     *         - Access modifiers (public, abstract, final, etc.)
+     *         - Method and field counts
+     *         - Inner classes
+     */
+    public void handleClassInfo(Context ctx) {
+        String className = checkClassParam(ctx);
+        if (className == null)
+            return;
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                if (cls.getFullName().equals(className)) {
+                    Map<String, Object> info = new HashMap<>();
+                    info.put("class_name", cls.getFullName());
+                    info.put("simple_name", cls.getName());
+                    info.put("package", cls.getPackage());
+                    
+                    // Access modifiers - use ClassNode for detailed info
+                    try {
+                        jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                        jadx.core.dex.info.AccessInfo accessInfo = classNode.getAccessFlags();
+                        info.put("access_flags", accessInfo.toString());
+                        info.put("is_interface", accessInfo.isInterface());
+                        info.put("is_enum", accessInfo.isEnum());
+                        info.put("is_abstract", accessInfo.isAbstract());
+                        info.put("is_final", accessInfo.isFinal());
+                    } catch (Exception e) {
+                        info.put("access_flags", "unknown");
+                        info.put("is_interface", false);
+                        info.put("is_enum", false);
+                    }
+                    info.put("is_inner", cls.isInner());
+                    
+                    // Super class - using ClassNode to get parent info
+                    try {
+                        jadx.core.dex.instructions.args.ArgType superType = cls.getClassNode().getSuperClass();
+                        if (superType != null) {
+                            String superClass = superType.toString();
+                            info.put("super_class", superClass);
+                        } else {
+                            info.put("super_class", "java.lang.Object");
+                        }
+                    } catch (Exception e) {
+                        info.put("super_class", "java.lang.Object");
+                    }
+                    
+                    // Interfaces
+                    List<String> interfaces = new ArrayList<>();
+                    try {
+                        for (jadx.core.dex.instructions.args.ArgType iface : cls.getClassNode().getInterfaces()) {
+                            interfaces.add(iface.toString());
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Failed to get interfaces for {}: {}", className, e.getMessage());
+                    }
+                    info.put("interfaces", interfaces);
+                    
+                    // Inner classes
+                    List<String> innerClasses = new ArrayList<>();
+                    try {
+                        for (JavaClass inner : cls.getInnerClasses()) {
+                            innerClasses.add(inner.getFullName());
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Failed to get inner classes for {}: {}", className, e.getMessage());
+                    }
+                    info.put("inner_classes", innerClasses);
+                    
+                    // Method and field counts
+                    info.put("methods_count", cls.getMethods().size());
+                    info.put("fields_count", cls.getFields().size());
+                    
+                    // Method names (for quick overview)
+                    List<String> methodNames = new ArrayList<>();
+                    for (JavaMethod m : cls.getMethods()) {
+                        methodNames.add(m.getName());
+                    }
+                    info.put("method_names", methodNames);
+                    
+                    // Field names
+                    List<String> fieldNames = new ArrayList<>();
+                    for (JavaField f : cls.getFields()) {
+                        fieldNames.add(f.getName());
+                    }
+                    info.put("field_names", fieldNames);
+                    
+                    ctx.json(info);
+                    return;
+                }
+            }
+            JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving class info: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
      * @return void
      * @param Context
      * 
