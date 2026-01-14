@@ -20,6 +20,7 @@ import java.util.HashMap;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
+import com.zin.jadxaimcp.utils.JadxSearchLock;
 
 public class MethodRoutes {
     private static final Logger logger = LoggerFactory.getLogger(MethodRoutes.class);
@@ -63,24 +64,30 @@ public class MethodRoutes {
             // Case 1: Search in all classes if no class name provided
             // Use ClassNode for fast method name lookup without triggering decompilation
             if (className == null || className.isEmpty()) {
-                for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                    if (classNode == null) continue;
-                    
-                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                        if (mth.getMethodInfo().getName().equalsIgnoreCase(methodName)) {
-                            // Found! Now get the JavaMethod (this triggers decompilation for this class only)
-                            for (JavaMethod method : cls.getMethods()) {
-                                if (method.getName().equalsIgnoreCase(methodName)) {
-                                    returnMethodResult(ctx, cls, method);
-                                    return;
+                // Acquire global lock for search operation
+                JadxSearchLock.lock();
+                try {
+                    for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                        jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                        if (classNode == null) continue;
+                        
+                        for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                            if (mth.getMethodInfo().getName().equalsIgnoreCase(methodName)) {
+                                // Found! Now get the JavaMethod (this triggers decompilation for this class only)
+                                for (JavaMethod method : cls.getMethods()) {
+                                    if (method.getName().equalsIgnoreCase(methodName)) {
+                                        returnMethodResult(ctx, cls, method);
+                                        return;
+                                    }
                                 }
                             }
                         }
                     }
+                } finally {
+                    JadxSearchLock.unlock();
                 }
             } 
-            // Case 2: Search in specific class
+            // Case 2: Search in specific class (no global search, minimal lock needed)
             else {
                 for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                     if (cls.getFullName().equals(className)) {
@@ -253,49 +260,55 @@ public class MethodRoutes {
             int collected = 0;
             boolean hitLimit = false;
 
-            outerLoop:
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                // Use ClassNode.getMethods() to avoid triggering decompilation!
-                // ClassNode has method metadata from DEX without needing full decompilation
-                jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                if (classNode == null) continue;
-                
-                for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                    // Get method name from MethodInfo (no decompilation needed)
-                    String mthName = mth.getMethodInfo().getName();
+            // Acquire global lock to prevent concurrent operations
+            JadxSearchLock.lock();
+            try {
+                outerLoop:
+                for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                    // Use ClassNode.getMethods() to avoid triggering decompilation!
+                    // ClassNode has method metadata from DEX without needing full decompilation
+                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                    if (classNode == null) continue;
                     
-                    // Match method name (case-insensitive, partial match)
-                    if (mthName.toLowerCase().contains(searchTerm)) {
-                        totalMatches++;
+                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                        // Get method name from MethodInfo (no decompilation needed)
+                        String mthName = mth.getMethodInfo().getName();
                         
-                        // Check absolute limit
-                        if (totalMatches > MAX_TOTAL) {
-                            hitLimit = true;
-                            break outerLoop;
-                        }
-                        
-                        // Skip for offset
-                        if (skipped < offset) {
-                            skipped++;
-                            continue;
-                        }
-                        
-                        // Collect if under count limit
-                        if (collected < count) {
-                            Map<String, String> match = new HashMap<>();
-                            match.put("class_name", cls.getFullName());
-                            match.put("method_name", mthName);
-                            match.put("is_constructor", String.valueOf(mth.getMethodInfo().isConstructor()));
-                            results.add(match);
-                            collected++;
-                        }
-                        
-                        // Early exit if we have enough
-                        if (collected >= count && totalMatches >= offset + count + 1) {
-                            break outerLoop;
+                        // Match method name (case-insensitive, partial match)
+                        if (mthName.toLowerCase().contains(searchTerm)) {
+                            totalMatches++;
+                            
+                            // Check absolute limit
+                            if (totalMatches > MAX_TOTAL) {
+                                hitLimit = true;
+                                break outerLoop;
+                            }
+                            
+                            // Skip for offset
+                            if (skipped < offset) {
+                                skipped++;
+                                continue;
+                            }
+                            
+                            // Collect if under count limit
+                            if (collected < count) {
+                                Map<String, String> match = new HashMap<>();
+                                match.put("class_name", cls.getFullName());
+                                match.put("method_name", mthName);
+                                match.put("is_constructor", String.valueOf(mth.getMethodInfo().isConstructor()));
+                                results.add(match);
+                                collected++;
+                            }
+                            
+                            // Early exit if we have enough
+                            if (collected >= count && totalMatches >= offset + count + 1) {
+                                break outerLoop;
+                            }
                         }
                     }
                 }
+            } finally {
+                JadxSearchLock.unlock();
             }
             
             // Build response with pagination info

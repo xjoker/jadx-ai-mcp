@@ -209,6 +209,8 @@ Built-in prompts to guide AI for effective reverse engineering workflows:
 | `analyze-activity` | Step-by-step guide for analyzing Android Activities from Manifest |
 | `search-code` | Efficient code search strategy to avoid timeouts on large APKs |
 | `trace-method` | Method tracing workflow: implementation → callers → callees |
+| `warm-up-package` | Pre-warm decompilation cache for faster subsequent analysis |
+| `batch-operations` | Best practices for batch operations to reduce overhead |
 
 **Usage Example:**
 
@@ -498,23 +500,45 @@ flowchart LR
     Defaults --> |"Applied to all"| Conn["Connections"]
 ```
 
-| Section | Key | Description |
-|---------|-----|-------------|
-| `[server]` | `host` | MCP Server bind address |
-| `[server]` | `port` | MCP Server port |
-| `[defaults]` | `request_timeout` | HTTP timeout for JADX requests |
-| `[defaults]` | `busy_timeout` | Max busy wait time for instance lock |
-| `[defaults]` | `jadx_token` | Default auth token for JADX plugins |
-| `[defaults]` | `health_check_interval` | Background health check interval (seconds) |
-| `[security]` | `allow_dynamic_instances` | Allow users to add instances via AI |
-| `[[users]]` | `name` | Username for identification |
-| `[[users]]` | `token` | Bearer token for MCP client auth |
-| `[[users]]` | `is_admin` | Can see all users' dynamic instances |
-| `[[users]]` | `can_add_instances` | Override permission to add instances |
-| `[[jadx_instances]]` | `name` | Instance identifier |
-| `[[jadx_instances]]` | `host` | JADX plugin IP address |
-| `[[jadx_instances]]` | `port` | JADX plugin port |
-| `[[jadx_instances]]` | `enabled` | Whether to connect on startup |
+**`[server]`** - Server binding
+
+| Key | Description |
+|-----|-------------|
+| `host` | MCP Server bind address |
+| `port` | MCP Server port |
+
+**`[defaults]`** - Default settings
+
+| Key | Description |
+|-----|-------------|
+| `request_timeout` | HTTP timeout for JADX requests |
+| `busy_timeout` | Max busy wait time for instance lock |
+| `jadx_token` | Default auth token for JADX plugins |
+| `health_check_interval` | Background health check interval (seconds) |
+
+**`[security]`** - Security options
+
+| Key | Description |
+|-----|-------------|
+| `allow_dynamic_instances` | Allow users to add instances via AI |
+
+**`[[users]]`** - User authentication (repeatable)
+
+| Key | Description |
+|-----|-------------|
+| `name` | Username for identification |
+| `token` | Bearer token for MCP client auth |
+| `is_admin` | Can see all users' dynamic instances |
+| `can_add_instances` | Override permission to add instances |
+
+**`[[jadx_instances]]`** - Pre-configured instances (repeatable)
+
+| Key | Description |
+|-----|-------------|
+| `name` | Instance identifier |
+| `host` | JADX plugin IP address |
+| `port` | JADX plugin port |
+| `enabled` | Whether to connect on startup |
 
 ---
 

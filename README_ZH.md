@@ -243,23 +243,45 @@ flowchart LR
     Defaults --> |"应用于所有"| Conn["连接"]
 ```
 
-| 配置节 | 键 | 描述 |
-|--------|-----|------|
-| `[server]` | `host` | MCP Server 绑定地址 |
-| `[server]` | `port` | MCP Server 端口 |
-| `[defaults]` | `request_timeout` | JADX 请求的 HTTP 超时 |
-| `[defaults]` | `busy_timeout` | 实例锁最大等待时间 |
-| `[defaults]` | `jadx_token` | JADX 插件的默认认证 Token |
-| `[defaults]` | `health_check_interval` | 后台健康检查间隔（秒）|
-| `[security]` | `allow_dynamic_instances` | 允许用户通过 AI 添加实例 |
-| `[[users]]` | `name` | 用户名（用于标识） |
-| `[[users]]` | `token` | MCP 客户端认证的 Bearer Token |
-| `[[users]]` | `is_admin` | 可查看所有用户的动态实例 |
-| `[[users]]` | `can_add_instances` | 覆盖添加实例权限 |
-| `[[jadx_instances]]` | `name` | 实例标识符 |
-| `[[jadx_instances]]` | `host` | JADX 插件 IP 地址 |
-| `[[jadx_instances]]` | `port` | JADX 插件端口 |
-| `[[jadx_instances]]` | `enabled` | 是否在启动时连接 |
+**`[server]`** - 服务器绑定
+
+| 键 | 描述 |
+|-----|------|
+| `host` | MCP Server 绑定地址 |
+| `port` | MCP Server 端口 |
+
+**`[defaults]`** - 默认设置
+
+| 键 | 描述 |
+|-----|------|
+| `request_timeout` | JADX 请求的 HTTP 超时 |
+| `busy_timeout` | 实例锁最大等待时间 |
+| `jadx_token` | JADX 插件的默认认证 Token |
+| `health_check_interval` | 后台健康检查间隔（秒）|
+
+**`[security]`** - 安全选项
+
+| 键 | 描述 |
+|-----|------|
+| `allow_dynamic_instances` | 允许用户通过 AI 添加实例 |
+
+**`[[users]]`** - 用户认证（可重复）
+
+| 键 | 描述 |
+|-----|------|
+| `name` | 用户名（用于标识）|
+| `token` | MCP 客户端认证的 Bearer Token |
+| `is_admin` | 可查看所有用户的动态实例 |
+| `can_add_instances` | 覆盖添加实例权限 |
+
+**`[[jadx_instances]]`** - 预配置实例（可重复）
+
+| 键 | 描述 |
+|-----|------|
+| `name` | 实例标识符 |
+| `host` | JADX 插件 IP 地址 |
+| `port` | JADX 插件端口 |
+| `enabled` | 是否在启动时连接 |
 
 ---
 
@@ -440,6 +462,8 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:
 | `analyze-activity` | 从 Manifest 开始分析 Android Activity 的工作流 |
 | `search-code` | 高效代码搜索策略，避免大型 APK 超时 |
 | `trace-method` | 方法追踪工作流：实现 → 调用者 → 被调用者 |
+| `warm-up-package` | 预热反编译缓存，加速后续分析 |
+| `batch-operations` | 批量操作最佳实践，减少交互开销 |
 
 **使用示例：**
 

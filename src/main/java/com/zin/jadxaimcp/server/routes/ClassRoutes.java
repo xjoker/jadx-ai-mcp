@@ -39,6 +39,7 @@ import java.util.regex.Pattern;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
+import com.zin.jadxaimcp.utils.JadxSearchLock;
 
 public class ClassRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ClassRoutes.class);
@@ -808,11 +809,18 @@ public class ClassRoutes {
             // Use LinkedHashSet to maintain order and ensure deduplication
             Set<JavaClass> matchingClassesSet = new LinkedHashSet<>();
 
-            // Search in each specified location
-            for (SearchLocation location : searchLocations) {
-                Set<JavaClass> locationResults = searchInLocation(allClasses, term, location, packageFilter,
-                        applyPackageFilter);
-                matchingClassesSet.addAll(locationResults);
+            // Acquire global lock to prevent concurrent search operations
+            // This protects JADX internal state during decompilation
+            JadxSearchLock.lock();
+            try {
+                // Search in each specified location
+                for (SearchLocation location : searchLocations) {
+                    Set<JavaClass> locationResults = searchInLocation(allClasses, term, location, packageFilter,
+                            applyPackageFilter);
+                    matchingClassesSet.addAll(locationResults);
+                }
+            } finally {
+                JadxSearchLock.unlock();
             }
 
             // Apply exclusion filter
@@ -1060,13 +1068,13 @@ public class ClassRoutes {
      * Search classes by code containing the keyword.
      * 
      * WARNING: This is the most expensive search as it requires full decompilation.
-     * Uses parallelStream for performance, relies on external pagination to limit results.
+     * Uses sequential stream to avoid JADX internal state race conditions.
      */
     private Set<JavaClass> searchByCode(List<JavaClass> allClasses, String term,
             String packageFilter, boolean applyPackageFilter) {
-        // Use parallelStream for better performance on large APKs
-        // External pagination handles offset/limit
-        return allClasses.parallelStream()
+        // Use sequential stream to avoid race conditions in JADX decompilation
+        // parallelStream can cause intermittent empty results due to internal state conflicts
+        return allClasses.stream()
                 .filter(cls -> {
                     try {
                         // Apply package filter if enabled
