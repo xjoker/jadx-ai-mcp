@@ -487,23 +487,31 @@ public class ClassRoutes {
                     }
                     info.put("inner_classes", innerClasses);
                     
-                    // Method and field counts
-                    info.put("methods_count", cls.getMethods().size());
-                    info.put("fields_count", cls.getFields().size());
-                    
-                    // Method names (for quick overview)
-                    List<String> methodNames = new ArrayList<>();
-                    for (JavaMethod m : cls.getMethods()) {
-                        methodNames.add(m.getName());
+                    // Method and field counts (using ClassNode to avoid triggering decompilation)
+                    jadx.core.dex.nodes.ClassNode infoClassNode = cls.getClassNode();
+                    if (infoClassNode != null) {
+                        info.put("methods_count", infoClassNode.getMethods().size());
+                        info.put("fields_count", infoClassNode.getFields().size());
+                        
+                        // Method names (for quick overview)
+                        List<String> methodNames = new ArrayList<>();
+                        for (jadx.core.dex.nodes.MethodNode m : infoClassNode.getMethods()) {
+                            methodNames.add(m.getMethodInfo().getName());
+                        }
+                        info.put("method_names", methodNames);
+                        
+                        // Field names
+                        List<String> fieldNames = new ArrayList<>();
+                        for (jadx.core.dex.nodes.FieldNode f : infoClassNode.getFields()) {
+                            fieldNames.add(f.getFieldInfo().getName());
+                        }
+                        info.put("field_names", fieldNames);
+                    } else {
+                        info.put("methods_count", 0);
+                        info.put("fields_count", 0);
+                        info.put("method_names", new ArrayList<>());
+                        info.put("field_names", new ArrayList<>());
                     }
-                    info.put("method_names", methodNames);
-                    
-                    // Field names
-                    List<String> fieldNames = new ArrayList<>();
-                    for (JavaField f : cls.getFields()) {
-                        fieldNames.add(f.getName());
-                    }
-                    info.put("field_names", fieldNames);
                     
                     ctx.json(info);
                     return;

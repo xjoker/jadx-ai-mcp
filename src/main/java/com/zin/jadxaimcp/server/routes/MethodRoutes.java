@@ -61,12 +61,21 @@ public class MethodRoutes {
             }
 
             // Case 1: Search in all classes if no class name provided
+            // Use ClassNode for fast method name lookup without triggering decompilation
             if (className == null || className.isEmpty()) {
                 for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                    for (JavaMethod method : cls.getMethods()) {
-                        if (method.getName().equalsIgnoreCase(methodName)) {
-                            returnMethodResult(ctx, cls, method);
-                            return;
+                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                    if (classNode == null) continue;
+                    
+                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                        if (mth.getMethodInfo().getName().equalsIgnoreCase(methodName)) {
+                            // Found! Now get the JavaMethod (this triggers decompilation for this class only)
+                            for (JavaMethod method : cls.getMethods()) {
+                                if (method.getName().equalsIgnoreCase(methodName)) {
+                                    returnMethodResult(ctx, cls, method);
+                                    return;
+                                }
+                            }
                         }
                     }
                 }
