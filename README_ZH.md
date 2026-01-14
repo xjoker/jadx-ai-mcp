@@ -172,7 +172,14 @@ port = 8651               # MCP Server 端口
 [defaults]
 request_timeout = 120     # HTTP 请求超时（秒）
 busy_timeout = 300        # 最大等待时间（秒）
-jadx_token = ""           # 默认 JADX 插件认证 Token
+jadx_token = ""           # 默认 JADX 插件认证 Token（或设置 JADX_MCP_AUTH_TOKEN 环境变量）
+health_check_interval = 30  # 后台健康检查间隔（秒）
+
+# =============================================================================
+# 安全设置
+# =============================================================================
+[security]
+allow_dynamic_instances = false  # 允许用户通过 AI 添加实例
 
 # =============================================================================
 # 多用户认证
@@ -192,6 +199,7 @@ token = "token-bob-yyyyy"
 name = "admin"
 token = "token-admin-zzzzz"
 is_admin = true           # 管理员可查看所有用户的实例
+can_add_instances = true  # 显式授予添加实例权限
 
 # =============================================================================
 # 预配置 JADX 实例
@@ -240,10 +248,14 @@ flowchart LR
 | `[server]` | `host` | MCP Server 绑定地址 |
 | `[server]` | `port` | MCP Server 端口 |
 | `[defaults]` | `request_timeout` | JADX 请求的 HTTP 超时 |
+| `[defaults]` | `busy_timeout` | 实例锁最大等待时间 |
 | `[defaults]` | `jadx_token` | JADX 插件的默认认证 Token |
+| `[defaults]` | `health_check_interval` | 后台健康检查间隔（秒）|
+| `[security]` | `allow_dynamic_instances` | 允许用户通过 AI 添加实例 |
 | `[[users]]` | `name` | 用户名（用于标识） |
 | `[[users]]` | `token` | MCP 客户端认证的 Bearer Token |
 | `[[users]]` | `is_admin` | 可查看所有用户的动态实例 |
+| `[[users]]` | `can_add_instances` | 覆盖添加实例权限 |
 | `[[jadx_instances]]` | `name` | 实例标识符 |
 | `[[jadx_instances]]` | `host` | JADX 插件 IP 地址 |
 | `[[jadx_instances]]` | `port` | JADX 插件端口 |
@@ -419,27 +431,79 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:
 
 ---
 
+## 🧭 MCP Prompts（AI 引导）
+
+内置 prompts 引导 AI 进行高效逆向工程：
+
+| Prompt | 描述 |
+|--------|------|
+| `analyze-activity` | 从 Manifest 开始分析 Android Activity 的工作流 |
+| `search-code` | 高效代码搜索策略，避免大型 APK 超时 |
+| `trace-method` | 方法追踪工作流：实现 → 调用者 → 被调用者 |
+
+**使用示例：**
+
+```
+使用 analyze-activity prompt 分析 MainActivity
+```
+
+---
+
 ## 📝 MCP 工具列表
 
 所有工具都支持可选的 `instance_id` 参数用于多实例定向。
 
 ### 代码分析工具
-- `fetch_current_class` — 获取当前选中类的源码
-- `get_class_source` — 获取指定类的完整源码
-- `batch_get_class_source` — 批量获取多个类的源码（最多 20 个）
-- `get_method_by_name` — 获取方法的源码
-- `search_classes_by_keyword` — 按关键字搜索类
+- `fetch_current_class(instance_id?)` — 获取当前选中类的源码
+- `get_selected_text(instance_id?)` — 获取当前选中的文本
+- `get_all_classes(offset, count, instance_id?)` — 列出项目中所有类
+- `get_class_source(class_name, instance_id?)` — 获取指定类的完整源码
+- `batch_get_class_source(class_names, instance_id?)` — **批量获取多个类的源码（最多 20 个）**
+- `get_class_info(class_name, instance_id?)` — **获取类结构（继承、接口、成员数量）**
+- `get_method_by_name(class_name, method_name, instance_id?)` — 获取方法的源码
+- `batch_get_method_by_name(methods, instance_id?)` — **批量获取多个方法（格式：class:method，最多 20 个）**
+- `get_method_signature(class_name, method_name, instance_id?)` — **获取方法签名（返回类型、参数）**
+- `get_method_callees(class_name, method_name, instance_id?)` — **获取该方法调用的其他方法**
+- `search_method_by_name(method_name, instance_id?)` — 跨类搜索方法
+- `search_classes_by_keyword(search_term, package?, exclude?, search_in?, offset?, count?, instance_id?)` — 按关键字搜索（支持排除过滤）
+- `get_methods_of_class(class_name, instance_id?)` — 列出类中的方法
+- `get_fields_of_class(class_name, instance_id?)` — 列出类中的字段
+- `get_smali_of_class(class_name, instance_id?)` — 获取类的 smali 代码
+- `get_main_activity_class(instance_id?)` — 从 AndroidManifest.xml 获取主 Activity
+- `get_main_application_classes_code(offset?, count?, instance_id?)` — 获取主应用类的代码
+- `get_main_application_classes_names(instance_id?)` — 获取主应用类的名称
 
 ### 资源工具
-- `get_android_manifest` — 获取 AndroidManifest.xml
-- `get_strings` — 获取 strings.xml 文件
-- `get_resource_file` — 获取资源文件内容
+- `get_android_manifest(instance_id?)` — 获取 AndroidManifest.xml
+- `get_strings(offset?, count?, instance_id?)` — 获取 strings.xml 文件
+- `get_all_resource_file_names(offset?, count?, instance_id?)` — 列出所有资源文件名
+- `get_resource_file(resource_name, instance_id?)` — 获取资源文件内容
+
+### 重构工具
+- `rename_class(class_name, new_name, instance_id?)` — 重命名类
+- `rename_method(method_name, new_name, instance_id?)` — 重命名方法
+- `rename_field(class_name, field_name, new_name, instance_id?)` — 重命名字段
+- `rename_package(old_name, new_name, instance_id?)` — 重命名包
+
+### 调试工具
+- `debug_get_stack_frames(instance_id?)` — 获取调试器的栈帧
+- `debug_get_threads(instance_id?)` — 获取调试器的线程信息
+- `debug_get_variables(instance_id?)` — 获取调试器的变量
+
+### 交叉引用工具
+- `get_xrefs_to_class(class_name, offset?, count?, instance_id?)` — 查找类的所有引用
+- `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — 查找方法的所有引用
+- `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — 查找字段的所有引用
+- `batch_get_xrefs(targets, instance_id?)` — **批量查询交叉引用（最多 10 个）**
 
 ### 多实例管理工具
-- `list_jadx_instances` — 列出所有已连接的实例
-- `add_jadx_instance` — 动态添加新实例
-- `remove_jadx_instance` — 移除实例
-- `health_check_jadx_instances` — 检查所有实例健康状态
+- `list_jadx_instances()` — 列出所有已连接的实例
+- `add_jadx_instance(host, port, name?)` — 动态添加新实例
+- `remove_jadx_instance(name)` — 移除实例
+- `set_default_jadx_instance(name)` — 设置默认实例
+- `get_jadx_instance_info(name)` — 获取实例详细信息
+- `health_check_jadx_instances()` — 检查所有实例健康状态
+- `check_instance_status(instance_name?)` — **检查实例是否忙碌**
 
 ---
 

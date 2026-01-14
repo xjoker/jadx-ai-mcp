@@ -111,12 +111,74 @@ docker run -d -p 8651:8651 \
 
 ## Build from Source
 
+### Base Image (System Dependencies)
+
+The All-in-One image uses a pre-built base image for faster CI builds:
+
 ```bash
-# All-in-One
+# Build base image (only needed when system deps change)
+docker build -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
+
+# Push to registry (maintainers only)
+docker push xjoker/jadx-ai-mcp-base:1.0
+```
+
+### Application Images
+
+```bash
+# All-in-One (uses base image)
 docker build -t jadx-ai-mcp -f docker/Dockerfile .
 
-# MCP Server only
+# MCP Server only (standalone, no base image needed)
 docker build -t jadx-mcp-server -f docker/Dockerfile.mcp .
+```
+
+---
+
+## Multi-Instance Deployment
+
+Deploy multiple JADX instances for parallel APK analysis:
+
+```mermaid
+flowchart TB
+    MCP[MCP Server :8651] --> J1[JADX #1 :8650<br/>app-v1.apk]
+    MCP --> J2[JADX #2 :8660<br/>app-v2.apk]
+    MCP --> J3[JADX #3 :8670<br/>dev.apk]
+```
+
+### Example Setup
+
+```bash
+# Terminal 1: JADX instance for app-v1
+docker run -d --name jadx-v1 -p 8650:8650 -p 6080:6080 \
+  -v $(pwd)/app-v1.apk:/apks/app.apk \
+  xjoker/jadx-ai-mcp
+
+# Terminal 2: JADX instance for app-v2  
+docker run -d --name jadx-v2 -p 8660:8650 -p 6081:6080 \
+  -v $(pwd)/app-v2.apk:/apks/app.apk \
+  xjoker/jadx-ai-mcp
+
+# Terminal 3: MCP Server connecting both
+docker run -d --name mcp -p 8651:8651 \
+  -v $(pwd)/config:/app/data/config \
+  xjoker/jadx-mcp-server
+
+# Configure instances in config/jadx-config.toml
+```
+
+**config/jadx-config.toml:**
+
+```toml
+[[jadx_instances]]
+name = "app-v1"
+host = "host.docker.internal"  # or container IP
+port = 8650
+
+[[jadx_instances]]
+name = "app-v2"
+host = "host.docker.internal"
+port = 8660
 ```
 
 ## Troubleshooting

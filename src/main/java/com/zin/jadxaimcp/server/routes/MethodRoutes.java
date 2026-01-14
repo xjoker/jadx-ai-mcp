@@ -227,30 +227,73 @@ public class MethodRoutes {
         String methodName = validateMethodParam(ctx);
         if (methodName == null) return;
 
+        // Pagination parameters with early-exit limit
+        int offset = paginationUtils.getIntParam(ctx, "offset", 0);
+        int count = paginationUtils.getIntParam(ctx, "count", 50);
+        final int MAX_COUNT = 200;  // Absolute max per request
+        final int MAX_TOTAL = 500;  // Absolute max total results to scan
+        count = Math.min(count, MAX_COUNT);
+
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
             List<Map<String, String>> results = new ArrayList<>();
             String searchTerm = methodName.toLowerCase();
+            
+            int totalMatches = 0;
+            int skipped = 0;
+            int collected = 0;
+            boolean hitLimit = false;
 
+            outerLoop:
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 for (JavaMethod method : cls.getMethods()) {
                     // Match method name (case-insensitive, partial match)
                     if (method.getName().toLowerCase().contains(searchTerm)) {
-                        Map<String, String> match = new HashMap<>();
-                        match.put("class_name", cls.getFullName());
-                        match.put("method_name", method.getName());
-                        match.put("is_constructor", String.valueOf(method.isConstructor()));
-                        results.add(match);
+                        totalMatches++;
+                        
+                        // Check absolute limit
+                        if (totalMatches > MAX_TOTAL) {
+                            hitLimit = true;
+                            break outerLoop;
+                        }
+                        
+                        // Skip for offset
+                        if (skipped < offset) {
+                            skipped++;
+                            continue;
+                        }
+                        
+                        // Collect if under count limit
+                        if (collected < count) {
+                            Map<String, String> match = new HashMap<>();
+                            match.put("class_name", cls.getFullName());
+                            match.put("method_name", method.getName());
+                            match.put("is_constructor", String.valueOf(method.isConstructor()));
+                            results.add(match);
+                            collected++;
+                        }
+                        
+                        // Early exit if we have enough
+                        if (collected >= count && totalMatches >= offset + count + 1) {
+                            break outerLoop;
+                        }
                     }
                 }
             }
             
-            // Return JSON response with pagination
-            Map<String, Object> response = paginationUtils.handlePagination(
-                ctx, results, "search-method", "methods", m -> m);
+            // Build response with pagination info
+            Map<String, Object> response = new HashMap<>();
+            response.put("type", "search-method");
+            response.put("methods", results);
+            response.put("offset", offset);
+            response.put("count", collected);
+            response.put("has_more", totalMatches > offset + collected);
+            response.put("next_offset", offset + collected);
+            if (hitLimit) {
+                response.put("limited", true);
+                response.put("note", "Results capped at " + MAX_TOTAL + ". Use package filter or more specific search term.");
+            }
             ctx.json(response);
-        } catch (PaginationException e) {
-            JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error: " + e.getMessage(), logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error during method search: " + e.getMessage(), e, logger);
         }    

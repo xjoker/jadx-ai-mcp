@@ -177,10 +177,13 @@ The following MCP tools are available. **All tools support an optional `instance
 - `get_all_classes(offset, count, instance_id?)` — List all classes in the project
 - `get_class_source(class_name, instance_id?)` — Get full source of a given class
 - `batch_get_class_source(class_names, instance_id?)` — **Batch retrieve multiple class sources (max 20)**
+- `get_class_info(class_name, instance_id?)` — **Get class structure (inheritance, interfaces, member counts)**
 - `get_method_by_name(class_name, method_name, instance_id?)` — Fetch a method's source
 - `batch_get_method_by_name(methods, instance_id?)` — **Batch retrieve multiple methods (format: class:method, max 20)**
+- `get_method_signature(class_name, method_name, instance_id?)` — **Get structured method signature (return type, params)**
+- `get_method_callees(class_name, method_name, instance_id?)` — **Get methods called by this method**
 - `search_method_by_name(method_name, instance_id?)` — Search method across classes
-- `search_classes_by_keyword(search_term, package?, search_in?, offset?, count?, instance_id?)` — Search for classes by keyword
+- `search_classes_by_keyword(search_term, package?, exclude?, search_in?, offset?, count?, instance_id?)` — Search with optional exclusion filter
 - `get_methods_of_class(class_name, instance_id?)` — List methods in a class
 - `get_fields_of_class(class_name, instance_id?)` — List fields in a class
 - `get_smali_of_class(class_name, instance_id?)` — Fetch smali of class
@@ -209,6 +212,7 @@ The following MCP tools are available. **All tools support an optional `instance
 - `get_xrefs_to_class(class_name, offset?, count?, instance_id?)` — Find all references to a class
 - `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — Find all references to a method
 - `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — Find all references to a field
+- `batch_get_xrefs(targets, instance_id?)` — **Batch query xrefs for multiple targets (max 10)**
 
 ### Multi-Instance Management Tools
 - `list_jadx_instances()` — List all connected JADX instances
@@ -217,6 +221,25 @@ The following MCP tools are available. **All tools support an optional `instance
 - `set_default_jadx_instance(name)` — Set the default instance for tool calls
 - `get_jadx_instance_info(name)` — Get detailed info about an instance
 - `health_check_jadx_instances()` — Check health of all instances
+- `check_instance_status(instance_name?)` — **Check if instance is busy processing**
+
+---
+
+## 🧭 MCP Prompts (AI Guidance)
+
+Built-in prompts to guide AI for effective reverse engineering workflows:
+
+| Prompt | Description |
+|--------|-------------|
+| `analyze-activity` | Step-by-step guide for analyzing Android Activities from Manifest |
+| `search-code` | Efficient code search strategy to avoid timeouts on large APKs |
+| `trace-method` | Method tracing workflow: implementation → callers → callees |
+
+**Usage Example:**
+
+```
+Use the analyze-activity prompt to analyze MainActivity
+```
 
 ---
 
@@ -429,7 +452,14 @@ port = 8651               # MCP Server port
 [defaults]
 request_timeout = 120     # HTTP request timeout (seconds)
 busy_timeout = 300        # Max busy wait time (seconds)
-jadx_token = ""           # Default JADX plugin auth token
+jadx_token = ""           # Default JADX plugin auth token (or set JADX_MCP_AUTH_TOKEN env var)
+health_check_interval = 30  # Background health check interval (seconds)
+
+# =============================================================================
+# Security Settings
+# =============================================================================
+[security]
+allow_dynamic_instances = false  # Allow users to add instances via AI commands
 
 # =============================================================================
 # Multi-User Authentication
@@ -449,6 +479,7 @@ token = "token-bob-yyyyy"
 name = "admin"
 token = "token-admin-zzzzz"
 is_admin = true           # Admin can see all users' instances
+can_add_instances = true  # Explicitly grant instance addition permission
 
 # =============================================================================
 # Pre-configured JADX Instances
@@ -497,10 +528,14 @@ flowchart LR
 | `[server]` | `host` | MCP Server bind address |
 | `[server]` | `port` | MCP Server port |
 | `[defaults]` | `request_timeout` | HTTP timeout for JADX requests |
+| `[defaults]` | `busy_timeout` | Max busy wait time for instance lock |
 | `[defaults]` | `jadx_token` | Default auth token for JADX plugins |
+| `[defaults]` | `health_check_interval` | Background health check interval (seconds) |
+| `[security]` | `allow_dynamic_instances` | Allow users to add instances via AI |
 | `[[users]]` | `name` | Username for identification |
 | `[[users]]` | `token` | Bearer token for MCP client auth |
 | `[[users]]` | `is_admin` | Can see all users' dynamic instances |
+| `[[users]]` | `can_add_instances` | Override permission to add instances |
 | `[[jadx_instances]]` | `name` | Instance identifier |
 | `[[jadx_instances]]` | `host` | JADX plugin IP address |
 | `[[jadx_instances]]` | `port` | JADX plugin port |

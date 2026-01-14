@@ -22,7 +22,8 @@ mcp = FastMCP("JADX-AI-MCP Plugin Reverse Engineering Server", stateless_http=Tr
 from src.server.tools.class_tools import (
     fetch_current_class, get_selected_text, get_class_source, batch_get_class_source,
     get_all_classes, get_methods_of_class, get_fields_of_class, get_smali_of_class,
-    get_main_application_classes_names, get_main_application_classes_code, get_main_activity_class
+    get_main_application_classes_names, get_main_application_classes_code, get_main_activity_class,
+    get_class_info
 )
 from src.server.tools.search_tools import (
     get_method_by_name, search_method_by_name, batch_get_method_by_name, search_classes_by_keyword,
@@ -131,7 +132,12 @@ async def batch_get_class_source(class_names: list[str], instance_id: Optional[s
 
 @mcp.tool()
 @with_busy_check
-async def search_method_by_name(method_name: str, instance_id: Optional[str] = None) -> dict:
+async def search_method_by_name(
+    method_name: str,
+    offset: int = 0,
+    count: int = 50,
+    instance_id: Optional[str] = None
+) -> dict:
     """Search for a method name across all classes in the APK.
     
     WARNING: This performs a global search and may timeout or crash on large/obfuscated APKs.
@@ -140,9 +146,11 @@ async def search_method_by_name(method_name: str, instance_id: Optional[str] = N
 
     Args:
         method_name: Method name to search for (partial matching supported).
+        offset: Starting index for pagination. Default: 0
+        count: Number of results to return. Default: 50, max: 200
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.search_tools.search_method_by_name(method_name, instance_id=instance_id)
+    return await tools.search_tools.search_method_by_name(method_name, offset, count, instance_id=instance_id)
 
 
 @mcp.tool()
@@ -307,6 +315,22 @@ async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.class_tools.get_main_activity_class(instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> dict:
+    """Get structured information about a class including inheritance, interfaces, and members.
+
+    Args:
+        class_name: Fully qualified class name (e.g., com.example.MainActivity)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    
+    Returns:
+        dict with: class_name, package, super_class, interfaces, is_abstract, 
+                   method_count, field_count, method_names, field_names
+    """
+    return await tools.class_tools.get_class_info(class_name, instance_id=instance_id)
 
 
 @mcp.tool()

@@ -24,6 +24,22 @@ public class PaginationUtils {
     public final int MAX_OFFSET = 1000000;
 
     /**
+     * Helper method to parse integer query parameters with a default value.
+     */
+    public int getIntParam(Context ctx, String paramName, int defaultValue) {
+        String param = ctx.queryParam(paramName);
+        if (param == null || param.isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(param.trim());
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid integer parameter '{}': '{}', using default: {}", paramName, param, defaultValue);
+            return defaultValue;
+        }
+    }
+
+    /**
      * @param ctx The HTTP request context containing pagination parameters
      * @param allItems The complete list of items to paginate
      * @param dataType A string identifying the type of data being paginated

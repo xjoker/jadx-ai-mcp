@@ -40,23 +40,34 @@ async def get_method_by_name(class_name: str, method_name: str, instance_id: Opt
     return result
 
 
-async def search_method_by_name(method_name: str, instance_id: Optional[str] = None) -> dict:
+async def search_method_by_name(
+    method_name: str,
+    offset: int = 0,
+    count: int = 50,
+    instance_id: Optional[str] = None
+) -> dict:
     """
-    Search for a method name across all classes.
+    Search for a method name across all classes with pagination.
 
     Args:
         method_name: Method name to search for (partial matching supported)
+        offset: Starting index for pagination (default: 0)
+        count: Number of results to return (default: 50, max: 200)
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: List of all classes containing methods with matching names
+        dict: Paginated list of methods with has_more, next_offset for continuation
 
     MCP Tool: search_method_by_name
-    Description: Finds all occurrences of a method name across the APK
+    Description: Finds all occurrences of a method name across the APK with pagination
     """
-    logger.info(f"search_method_by_name: method={method_name}, instance={instance_id}")
+    logger.info(f"search_method_by_name: method={method_name}, offset={offset}, count={count}, instance={instance_id}")
     try:
-        result = await get_from_jadx("search-method", {"method_name": method_name}, instance_id=instance_id)
+        result = await get_from_jadx(
+            "search-method", 
+            {"method_name": method_name, "offset": offset, "count": count}, 
+            instance_id=instance_id
+        )
         if "error" in result:
             logger.warning(f"search_method_by_name error response: {result.get('error')}")
             # Add recovery hints to error response
@@ -67,7 +78,7 @@ async def search_method_by_name(method_name: str, instance_id: Optional[str] = N
             )
         else:
             match_count = len(result.get("methods", result.get("classes", [])))
-            logger.info(f"search_method_by_name: found {match_count} matches")
+            logger.info(f"search_method_by_name: found {match_count} matches, has_more={result.get('has_more')}")
         return result
     except Exception as e:
         logger.error(f"search_method_by_name exception: {type(e).__name__}: {e}")
