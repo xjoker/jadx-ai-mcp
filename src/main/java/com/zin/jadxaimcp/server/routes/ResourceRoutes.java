@@ -35,17 +35,12 @@ import java.io.InputStream;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
+import com.zin.jadxaimcp.utils.ResourceCacheManager;
 
 public class ResourceRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ResourceRoutes.class);
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
-    
-    // Cache for strings.xml file references to avoid repeated loading
-    private static volatile List<StringFileRef> cachedStringFileRefs = null;
-    private static volatile boolean cacheLoading = false;
-    private static volatile String cacheError = null;
-    private static final Object cacheLock = new Object();
 
     public ResourceRoutes(MainWindow mainWindow) {
         this.mainWindow = mainWindow;
@@ -53,14 +48,11 @@ public class ResourceRoutes {
     }
     
     /**
-     * Clear the strings cache (call when APK changes).
+     * Clear the resource cache (call when APK changes).
+     * Delegates to unified ResourceCacheManager.
      */
     public static void clearStringsCache() {
-        synchronized (cacheLock) {
-            cachedStringFileRefs = null;
-            cacheLoading = false;
-            cacheError = null;
-        }
+        ResourceCacheManager.clearCache();
     }
 
     /**
@@ -89,142 +81,111 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call with background caching.
+     * Handle the /strings MCP tool call using unified ResourceCacheManager.
      * 
      * Performance optimization for large APKs:
-     * 1. First request triggers background loading, returns 202 Accepted
-     * 2. Subsequent requests use cache for instant response
-     * 3. Cache is populated by background thread
+     * 1. First request triggers background loading via ResourceCacheManager
+     * 2. Subsequent requests use shared cache for instant response
      */
     public void handleStrings(Context ctx) {
         try {
-            // Check 1: If cache is available, serve directly
-            if (cachedStringFileRefs != null) {
-                serveStringsFromCache(ctx, cachedStringFileRefs);
-                return;
-            }
+            ResourceCacheManager.CacheStatus status = ResourceCacheManager.getStatus();
             
-            // Check 2: If cache had an error, report it
-            if (cacheError != null) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("type", "resource/strings-xml");
-                result.put("error", cacheError);
-                result.put("suggestion", "Use get_resource_file with specific path like 'res/values/strings.xml'");
-                ctx.status(500).json(result);
-                return;
-            }
-            
-            // Check 3: If loading is in progress, return 202 Accepted
-            if (cacheLoading) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("type", "resource/strings-xml");
-                result.put("status", "loading");
-                result.put("message", "strings.xml data is being loaded in background, please retry in 10 seconds");
-                result.put("retry_after", 10);
-                ctx.status(202).json(result);
-                return;
-            }
-            
-            // Trigger background loading
-            synchronized (cacheLock) {
-                if (!cacheLoading && cachedStringFileRefs == null) {
-                    cacheLoading = true;
+            switch (status) {
+                case READY:
+                    serveStringsFromUnifiedCache(ctx);
+                    return;
                     
-                    // Get resources reference before async
-                    final List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                case LOADING:
+                    Map<String, Object> loading = new HashMap<>();
+                    loading.put("type", "resource/strings-xml");
+                    loading.put("status", "loading");
+                    loading.put("message", "Resource data is being loaded in background, please retry in 10 seconds");
+                    loading.put("retry_after", 10);
+                    ctx.status(202).json(loading);
+                    return;
                     
-                    java.util.concurrent.CompletableFuture.runAsync(() -> {
-                        loadStringsToCache(resourceFiles);
-                    });
-                }
-            }
-            
-            // Return 202 to indicate loading started
-            Map<String, Object> result = new HashMap<>();
-            result.put("type", "resource/strings-xml");
-            result.put("status", "loading_started");
-            result.put("message", "Background loading started, please retry in 30 seconds");
-            result.put("retry_after", 30);
-            ctx.status(202).json(result);
-            
-        } catch (Exception e) {
-            JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to handle the /strings: " + e.getMessage(), e, logger);
-        }
-    }
-    
-    /**
-     * Load strings to cache in background thread.
-     */
-    private void loadStringsToCache(List<ResourceFile> resourceFiles) {
-        try {
-            List<StringFileRef> refs = new ArrayList<>();
-            
-            for (ResourceFile resFile : resourceFiles) {
-                try {
-                    if ("resources.arsc".equals(resFile.getDeobfName())) {
-                        ResContainer content = resFile.loadContent();
-                        if (content != null) {
-                            for (ResContainer subFile : content.getSubFiles()) {
-                                String fileName = subFile.getFileName();
-                                if (fileName != null && fileName.contains("strings.xml")) {
-                                    refs.add(new StringFileRef(fileName, subFile));
-                                }
-                            }
-                        }
-                    } else if (resFile.getDeobfName() != null && 
-                               resFile.getDeobfName().contains("strings.xml")) {
-                        refs.add(new StringFileRef(resFile.getDeobfName(), resFile));
+                case ERROR:
+                    Map<String, Object> error = new HashMap<>();
+                    error.put("type", "resource/strings-xml");
+                    error.put("error", ResourceCacheManager.getErrorMessage());
+                    error.put("suggestion", "Use get_resource_file with specific path like 'res/values/strings.xml'");
+                    ctx.status(500).json(error);
+                    return;
+                    
+                case NOT_INITIALIZED:
+                    // Trigger background loading
+                    boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("type", "resource/strings-xml");
+                    if (started) {
+                        result.put("status", "loading_started");
+                        result.put("message", "Background loading started, please retry in 30 seconds");
+                        result.put("retry_after", 30);
+                    } else {
+                        result.put("status", "loading");
+                        result.put("message", "Loading already in progress, please retry in 10 seconds");
+                        result.put("retry_after", 10);
                     }
-                } catch (Exception e) {
-                    logger.warn("Error scanning resource file: " + e.getMessage());
-                }
+                    ctx.status(202).json(result);
+                    return;
+                    
+                default:
+                    JadxAIMCPPluginError.handleError(ctx, 500, "Unknown cache status", logger);
             }
             
-            synchronized (cacheLock) {
-                if (refs.isEmpty()) {
-                    cacheError = "No strings.xml resource found in APK";
-                } else {
-                    cachedStringFileRefs = refs;
-                    logger.info("Strings cache loaded: " + refs.size() + " files");
-                }
-                cacheLoading = false;
-            }
         } catch (Exception e) {
-            synchronized (cacheLock) {
-                cacheError = "Failed to load strings: " + e.getMessage();
-                cacheLoading = false;
-            }
-            logger.error("Error loading strings cache: " + e.getMessage());
+            JadxAIMCPPluginError.handleError(ctx, 
+                "Internal error occurred while trying to handle the /strings: " + e.getMessage(), e, logger);
         }
     }
     
     /**
-     * Serve strings from cache with pagination.
+     * Serve strings.xml files from unified cache with pagination.
      */
-    private void serveStringsFromCache(Context ctx, List<StringFileRef> stringFileRefs) {
+    private void serveStringsFromUnifiedCache(Context ctx) {
+        // Get strings.xml files from unified cache
+        List<ResContainer> stringsFiles = ResourceCacheManager.getSubFilesMatching("strings.xml");
+        
+        if (stringsFiles.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 404, "No strings.xml resource found in cache.", logger);
+            return;
+        }
+        
+        // Parse pagination params
         int offset = paginationUtils.getIntParam(ctx, "offset", 0);
         int limit = paginationUtils.getIntParam(ctx, "limit", 0);
         if (limit == 0) {
             limit = paginationUtils.getIntParam(ctx, "count", paginationUtils.DEFAULT_PAGE_SIZE);
         }
         
-        int totalFiles = stringFileRefs.size();
-        int startIdx = Math.min(offset, totalFiles);
+        int totalFiles = stringsFiles.size();
+        int startIdx = Math.max(0, Math.min(offset, totalFiles));
         int endIdx = Math.min(startIdx + (limit == 0 ? totalFiles : limit), totalFiles);
         
         // Load content only for items in range
         List<Map<String, String>> paginatedEntries = new ArrayList<>();
         for (int i = startIdx; i < endIdx; i++) {
-            StringFileRef ref = stringFileRefs.get(i);
+            ResContainer file = stringsFiles.get(i);
+            String fileName = file.getFileName();
+            if (fileName == null) fileName = "unknown";
+            
             try {
-                String content = loadStringFileContent(ref);
-                paginatedEntries.add(Map.of(
-                    "file", ref.fileName,
-                    "content", content
-                ));
+                String content = ResourceCacheManager.getContent(file);
+                if (content != null) {
+                    paginatedEntries.add(Map.of(
+                        "file", fileName,
+                        "content", content
+                    ));
+                } else {
+                    paginatedEntries.add(Map.of(
+                        "file", fileName,
+                        "error", "Content unavailable"
+                    ));
+                }
             } catch (Exception e) {
                 paginatedEntries.add(Map.of(
-                    "file", ref.fileName,
+                    "file", fileName,
                     "error", "Failed to load: " + e.getMessage()
                 ));
             }
@@ -246,8 +207,8 @@ public class ResourceRoutes {
             pagination.put("next_offset", endIdx);
         }
         if (startIdx > 0) {
-            int finalLimit = limit;
-            pagination.put("prev_offset", Math.max(0, startIdx - finalLimit));
+            int prevLimit = limit > 0 ? limit : paginationUtils.DEFAULT_PAGE_SIZE;
+            pagination.put("prev_offset", Math.max(0, startIdx - prevLimit));
         }
         result.put("pagination", pagination);
         
@@ -292,9 +253,8 @@ public class ResourceRoutes {
      *  1. if this ResourceFile's is equal to the requested file
      *      a. return this file
      *  2. If this ResourceFile is compiled resource archive
-     *      a. Then for each subfile in this compiled resource archive
-     *          - Check if the subfile is the one requested - if yes then return it
-     *  3. Break once any mathcing file is found
+     *      a. Use cached subfiles from ResourceCacheManager if available
+     *  3. Break once any matching file is found
      * If none found then handle it else return the requested file.
      */
     public void handleGetResourceFile(Context ctx) {
@@ -305,31 +265,54 @@ public class ResourceRoutes {
         }
 
         try {
-            List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
             Map<String, String> resFileContent = new HashMap<>();
-
-            for (ResourceFile resFile : resourceFiles) {
-                if (resFile.getDeobfName().equals(fileName)) {
-                    resFileContent.put("file_name", resFile.getDeobfName());
-                    resFileContent.put("content", resFile.loadContent().getText().getCodeStr());
-                    break;
-                } else if ("resources.arsc".equals(resFile.getDeobfName())) {
-                    for (ResContainer file : resFile.loadContent().getSubFiles()) {
-                        resFileContent.put("file_name", file.getFileName());
-                        resFileContent.put("content", file.getText().getCodeStr());
+            
+            // First try to find in cached subfiles (from resources.arsc)
+            if (ResourceCacheManager.isReady()) {
+                ResContainer cached = ResourceCacheManager.findSubFile(fileName);
+                if (cached != null) {
+                    String content = ResourceCacheManager.getContent(cached);
+                    if (content != null) {
+                        resFileContent.put("file_name", cached.getFileName());
+                        resFileContent.put("content", content);
+                    }
+                }
+            }
+            
+            // If not found in cache, try standalone resource files
+            if (resFileContent.isEmpty()) {
+                List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                for (ResourceFile resFile : resourceFiles) {
+                    if (resFile == null || resFile.getDeobfName() == null) continue;
+                    
+                    if (resFile.getDeobfName().equals(fileName)) {
+                        // Direct match - load content
+                        resFileContent.put("file_name", resFile.getDeobfName());
+                        resFileContent.put("content", resFile.loadContent().getText().getCodeStr());
                         break;
                     }
                 }
-                if (!resFileContent.isEmpty()) break;
+            }
+            
+            // If still not found and cache not ready, suggest retry
+            if (resFileContent.isEmpty() && 
+                ResourceCacheManager.getStatus() == ResourceCacheManager.CacheStatus.LOADING) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/text");
+                result.put("status", "loading");
+                result.put("message", "Resource cache is loading, please retry in 10 seconds");
+                result.put("retry_after", 10);
+                ctx.status(202).json(result);
+                return;
             }
 
             if (resFileContent.isEmpty()) {
-                JadxAIMCPPluginError.handleError(ctx, 404, "No resource file found", logger);
+                JadxAIMCPPluginError.handleError(ctx, 404, "No resource file found: " + fileName, logger);
                 return;
             }
-            ctx.json(Map.of("type", "resource/text", "file", resFileContent));
+            ctx.json(Map.of("type", "resource/text", "file", resFileContent, "cached", ResourceCacheManager.isReady()));
         } catch (Exception e) {
-            JadxAIMCPPluginError.handleError(ctx, "Internal Error occured while trying to handle the handleGetResourceFile(): " + e.getMessage(), e, logger);
+            JadxAIMCPPluginError.handleError(ctx, "Internal Error occurred while trying to handle the handleGetResourceFile(): " + e.getMessage(), e, logger);
         }
     }
 
@@ -341,36 +324,66 @@ public class ResourceRoutes {
      * 
      * For each resource file, 
      *  1. if the resource file if compiled resource archive "resources.arsc"
-     *      a. load the content of complied resource archive.
-     *      b. get all the sub files.
-     *      c. get the names of or sub files' names.
-     *  2. if it is standalone file, then directly get it's name.
-     *  3. If none file is found, return error
-     *  4. else return the list of resoure files names with pagination support.
+     *      a. Use cached subfiles from ResourceCacheManager if available.
+     *      b. Fall back to loading if cache not ready.
+     *  2. If standalone file, directly get its name.
+     *  3. If none found, return error.
+     *  4. Return the list of resource file names with pagination support.
      */
     public void handleListAllResourceFilesNames(Context ctx) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            List<ResourceFile> resourceFiles = wrapper.getResources();
             List<String> resourceFileNames = new ArrayList<>();
-
-            for (ResourceFile resFile : resourceFiles) {
-                try {
-                    if (resFile.getDeobfName().equals("resources.arsc")) {
-                        ResContainer container = resFile.loadContent();
-                        List<ResContainer> subFiles = container.getSubFiles();
-                        for (ResContainer file : subFiles) {
-                            resourceFileNames.add(file.getFileName());
+            
+            // Check if unified cache is available
+            ResourceCacheManager.CacheStatus status = ResourceCacheManager.getStatus();
+            
+            if (status == ResourceCacheManager.CacheStatus.READY) {
+                // Use cached subfile names
+                resourceFileNames.addAll(ResourceCacheManager.getSubFileNames());
+            } else if (status == ResourceCacheManager.CacheStatus.LOADING) {
+                // Return 202 if still loading
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "application-resources");
+                result.put("status", "loading");
+                result.put("message", "Resource cache is loading, please retry in 10 seconds");
+                result.put("retry_after", 10);
+                ctx.status(202).json(result);
+                return;
+            } else if (status == ResourceCacheManager.CacheStatus.NOT_INITIALIZED) {
+                // Trigger cache loading
+                boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "application-resources");
+                result.put("status", started ? "loading_started" : "loading");
+                result.put("message", "Resource cache loading started, please retry in 30 seconds");
+                result.put("retry_after", 30);
+                ctx.status(202).json(result);
+                return;
+            }
+            // On ERROR status, we still try to get standalone files
+            
+            // Also add standalone resource files (not in resources.arsc)
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            if (wrapper != null) {
+                List<ResourceFile> resourceFiles = wrapper.getResources();
+                if (resourceFiles != null) {
+                    for (ResourceFile resFile : resourceFiles) {
+                        if (resFile != null && resFile.getDeobfName() != null) {
+                            String name = resFile.getDeobfName();
+                            // Skip resources.arsc as subfiles are already in cache
+                            if (!"resources.arsc".equals(name) && !resourceFileNames.contains(name)) {
+                                resourceFileNames.add(name);
+                            }
                         }
                     }
-                    resourceFileNames.add(resFile.getDeobfName());
-                } catch (Exception e) {
-                    logger.error("JADX AI MCP Error: Internal error occurred while trying to read the resourcefile in handleListAllResourceFilesNames" + e.getMessage(), e);
                 }
             }
 
             if (resourceFileNames.isEmpty()) {
-                JadxAIMCPPluginError.handleError(ctx, 404, "No resources found.", logger);
+                String errorMsg = status == ResourceCacheManager.CacheStatus.ERROR 
+                    ? "Cache error: " + ResourceCacheManager.getErrorMessage()
+                    : "No resources found.";
+                JadxAIMCPPluginError.handleError(ctx, 404, errorMsg, logger);
                 return;
             }
 
@@ -380,6 +393,9 @@ public class ResourceRoutes {
                 "application-resources",
                 "files",
                 item -> item);
+            
+            // Add cache status info
+            result.put("cached", status == ResourceCacheManager.CacheStatus.READY);
 
             ctx.json(result);
         } catch (PaginationException e) {
