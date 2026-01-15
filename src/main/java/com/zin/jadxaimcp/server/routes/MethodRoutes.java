@@ -518,8 +518,17 @@ public class MethodRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
+            
+            // Initialize cache if not already done
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+            
+            // Get from cache
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
+            JavaClass cls = classMap.get(className);
+            
+            if (cls != null) {
                     for (JavaMethod method : cls.getMethods()) {
                         if (method.getName().equalsIgnoreCase(methodName)) {
                             String code = method.getCodeStr();
@@ -566,7 +575,8 @@ public class MethodRoutes {
                         "Method " + methodName + " not found in class " + className, logger);
                     return;
                 }
-            }
+            
+            // Class not found
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving method callees: " + e.getMessage(), e, logger);
