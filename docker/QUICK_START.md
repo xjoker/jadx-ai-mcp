@@ -61,27 +61,33 @@ claude mcp add --transport http jadx http://localhost:8651/mcp
 
 ## 📊 架构图
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Docker Compose                            │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐                                           │
-│  │  MCP Server  │◀────── Claude / LLM Client                │
-│  │   :8651      │                                           │
-│  └──────┬───────┘                                           │
-│         │ jadx-network                                      │
-│  ┌──────┴──────┬───────────────┬───────────────┐           │
-│  ▼             ▼               ▼               │           │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐       │           │
-│  │ JADX #1 │   │ JADX #2 │   │ JADX #3 │       │           │
-│  │ :6080   │   │ :6081   │   │ :6082   │       │           │
-│  │ :8650   │   │ :8660   │   │ :8670   │       │           │
-│  └─────────┘   └─────────┘   └─────────┘       │           │
-│                                                 │           │
-│  ┌─────────────────────────────────────────────┴───────┐   │
-│  │                  ./apks/ (共享)                       │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph DockerCompose["Docker Compose"]
+        subgraph MCP["MCP Server"]
+            MCPServer["jadx-mcp-server<br/>:8651"]
+        end
+        
+        subgraph Network["jadx-network"]
+            J1["JADX #1<br/>:6080 / :8650"]
+            J2["JADX #2<br/>:6081 / :8660"]
+            J3["JADX #3<br/>:6082 / :8670"]
+        end
+        
+        subgraph Volume["./apks/ (共享)"]
+            APK1["jadx-1/target.apk"]
+            APK2["jadx-2/target.apk"]
+            APK3["jadx-3/target.apk"]
+        end
+    end
+    
+    Client["Claude / LLM Client"] --> MCPServer
+    MCPServer --> J1
+    MCPServer --> J2
+    MCPServer --> J3
+    J1 -.-> APK1
+    J2 -.-> APK2
+    J3 -.-> APK3
 ```
 
 ## 🎯 使用场景

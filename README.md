@@ -104,6 +104,24 @@ Thanks to these wonderful people for their contributions ⭐
 
 ---
 
+## 🎯 Project Positioning
+
+**JADX-AI-MCP** is a **bridge between JADX and AI/LLM via MCP protocol**.
+
+**This is:**
+- ✅ Enable Claude/ChatGPT to directly invoke JADX decompilation capabilities
+- ✅ Support multi-instance, multi-user remote collaborative analysis
+- ✅ Production-ready Docker deployment solution
+
+**This is NOT:**
+- ❌ A replacement for JADX GUI
+- ❌ A production-grade security service (no audit logs, no fine-grained RBAC)
+- ❌ A complete automated reverse engineering framework
+
+> 📖 For security considerations, see [SECURITY.md](SECURITY.md)
+
+---
+
 ## 🤖 What is JADX-AI-MCP?
 
 **JADX-AI-MCP** is a plugin for the [JADX decompiler](https://github.com/skylot/jadx) that integrates directly with [Model Context Protocol (MCP)](https://github.com/anthropic/mcp) to provide **live reverse engineering support with LLMs like Claude**.
@@ -826,29 +844,20 @@ sequenceDiagram
 
 **`security.allow_dynamic_instances` Logic:**
 
-```
-Permission Check Flow:
-┌─────────────────────────────────────────────────────┐
-│ AI calls add_jadx_instance(host, port, name?)      │
-└─────────────────────┬───────────────────────────────┘
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│ User is admin (is_admin: true)?                    │
-│   → YES: ALLOW (admin bypass)                      │
-│   → NO: Continue...                                │
-└─────────────────────┬───────────────────────────────┘
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│ User has can_add_instances: true?                  │
-│   → YES: ALLOW                                     │
-│   → NO: Continue...                                │
-└─────────────────────┬───────────────────────────────┘
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│ Global allow_dynamic_instances: true?              │
-│   → YES: ALLOW                                     │
-│   → NO: DENY (PERMISSION_DENIED error)             │
-└─────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["AI calls add_jadx_instance(host, port, name?)"] --> B{"User is admin?<br/>(is_admin: true)"}
+    B -->|YES| C["✅ ALLOW<br/>(admin bypass)"]
+    B -->|NO| D{"User has<br/>can_add_instances: true?"}
+    D -->|YES| E["✅ ALLOW"]
+    D -->|NO| F{"Global<br/>allow_dynamic_instances: true?"}
+    F -->|YES| G["✅ ALLOW"]
+    F -->|NO| H["❌ DENY<br/>(PERMISSION_DENIED)"]
+    
+    style C fill:#90EE90
+    style E fill:#90EE90
+    style G fill:#90EE90
+    style H fill:#FFB6C1
 ```
 
 **Enable Dynamic Instances:**

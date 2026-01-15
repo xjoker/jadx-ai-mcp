@@ -22,6 +22,24 @@
 
 ---
 
+## 🎯 项目定位
+
+**JADX-AI-MCP** 是 **JADX 与 AI/LLM 之间的 MCP 协议桥接层**。
+
+**这是：**
+- ✅ 让 Claude/ChatGPT 等 AI 能直接调用 JADX 反编译能力
+- ✅ 支持多实例、多用户的远程协作分析
+- ✅ 提供开箱即用的 Docker 部署方案
+
+**这不是：**
+- ❌ 替代 JADX GUI 的独立工具
+- ❌ 生产级安全服务（无审计日志、无细粒度 RBAC）
+- ❌ 完整的自动化逆向框架
+
+> 📖 安全相关说明请参阅 [SECURITY.md](SECURITY.md)
+
+---
+
 ## 🤖 什么是 JADX-AI-MCP？
 
 **JADX-AI-MCP** 是 [JADX 反编译器](https://github.com/skylot/jadx)的插件，直接与 [Model Context Protocol (MCP)](https://github.com/anthropic/mcp) 集成，为 **Claude 等 LLM 提供实时逆向工程支持**。
@@ -563,29 +581,20 @@ sequenceDiagram
 
 **`security.allow_dynamic_instances` 权限检查逻辑：**
 
-```
-权限检查流程:
-┌─────────────────────────────────────────────────────┐
-│ AI 调用 add_jadx_instance(host, port, name?)       │
-└─────────────────────┬───────────────────────────────┘
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│ 用户是管理员 (is_admin: true)?                      │
-│   → 是: 允许 (管理员直通)                           │
-│   → 否: 继续检查...                                 │
-└─────────────────────┬───────────────────────────────┘
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│ 用户配置 can_add_instances: true?                  │
-│   → 是: 允许                                        │
-│   → 否: 继续检查...                                 │
-└─────────────────────┬───────────────────────────────┘
-                      ▼
-┌─────────────────────────────────────────────────────┐
-│ 全局设置 allow_dynamic_instances: true?            │
-│   → 是: 允许                                        │
-│   → 否: 拒绝 (返回 PERMISSION_DENIED 错误)          │
-└─────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["AI 调用 add_jadx_instance(host, port, name?)"] --> B{"用户是管理员?<br/>(is_admin: true)"}
+    B -->|是| C["✅ 允许<br/>(管理员直通)"]
+    B -->|否| D{"用户配置<br/>can_add_instances: true?"}
+    D -->|是| E["✅ 允许"]
+    D -->|否| F{"全局设置<br/>allow_dynamic_instances: true?"}
+    F -->|是| G["✅ 允许"]
+    F -->|否| H["❌ 拒绝<br/>(PERMISSION_DENIED)"]
+    
+    style C fill:#90EE90
+    style E fill:#90EE90
+    style G fill:#90EE90
+    style H fill:#FFB6C1
 ```
 
 **启用动态实例：**
