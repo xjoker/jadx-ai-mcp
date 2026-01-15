@@ -807,13 +807,93 @@ sequenceDiagram
     MCP->>Client: MCP Tool Result
 ```
 
-### User Isolation
+### User Isolation & Permissions
 
-| Instance Type | Visibility |
-|---------------|------------|
-| **Config Instances** | All users (shared) |
-| **Dynamic Instances** | Owner only |
-| **Admin User** | All instances |
+**Instance Visibility Rules:**
+
+| User Type | Config Instances | Own Dynamic Instances | Others' Dynamic |
+|:----------|:----------------:|:---------------------:|:---------------:|
+| Regular User | ✅ See | ✅ See / Delete | ❌ Hidden |
+| Admin (`is_admin: true`) | ✅ See | ✅ See / Delete | ✅ See / Delete |
+
+**Admin Privileges (`is_admin: true`):**
+- View all instances (including dynamic instances created by other users)
+- Remove any user's dynamic instances
+- Set any instance as default
+- Access all MCP tools without owner restrictions
+
+### Dynamic Instance Creation
+
+**`security.allow_dynamic_instances` Logic:**
+
+```
+Permission Check Flow:
+┌─────────────────────────────────────────────────────┐
+│ AI calls add_jadx_instance(host, port, name?)      │
+└─────────────────────┬───────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│ User is admin (is_admin: true)?                    │
+│   → YES: ALLOW (admin bypass)                      │
+│   → NO: Continue...                                │
+└─────────────────────┬───────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│ User has can_add_instances: true?                  │
+│   → YES: ALLOW                                     │
+│   → NO: Continue...                                │
+└─────────────────────┬───────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│ Global allow_dynamic_instances: true?              │
+│   → YES: ALLOW                                     │
+│   → NO: DENY (PERMISSION_DENIED error)             │
+└─────────────────────────────────────────────────────┘
+```
+
+**Enable Dynamic Instances:**
+
+```toml
+# Option 1: Enable for all users
+[security]
+allow_dynamic_instances = true
+
+# Option 2: Grant to specific user
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+can_add_instances = true  # Override global setting
+```
+
+### AI Instance Management Commands
+
+**Add Instance:**
+```
+Connect to JADX at 192.168.1.100:8650
+# → add_jadx_instance(host="192.168.1.100", port=8650)
+
+Connect to JADX at 10.0.0.5:8650 and name it "payment-module"
+# → add_jadx_instance(host="10.0.0.5", port=8650, name="payment-module")
+```
+
+**List Instances:**
+```
+List all JADX instances
+# → list_jadx_instances() — returns visible instances based on user permissions
+```
+
+**Remove Instance:**
+```
+Remove the payment-module instance
+# → remove_jadx_instance(name="payment-module")
+# Owner or admin required
+```
+
+**Set Default:**
+```
+Set xhs-v9 as the default instance
+# → set_default_jadx_instance(name="xhs-v9")
+```
 
 ### Connect with Authentication
 
