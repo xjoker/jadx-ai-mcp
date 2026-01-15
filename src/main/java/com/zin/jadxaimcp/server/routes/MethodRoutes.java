@@ -21,6 +21,7 @@ import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
+import com.zin.jadxaimcp.utils.ClassCacheManager;
 
 public class MethodRoutes {
     private static final Logger logger = LoggerFactory.getLogger(MethodRoutes.class);
@@ -159,11 +160,33 @@ public class MethodRoutes {
                 return;
             }
 
-            // Build class map for O(1) lookup
-            Map<String, JavaClass> classMap = new HashMap<>();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                classMap.put(cls.getFullName(), cls);
+            // Initialize cache if not already done
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
             }
+            
+            // Check cache status
+            ClassCacheManager.CacheStatus status = ClassCacheManager.getStatus();
+            if (status == ClassCacheManager.CacheStatus.LOADING) {
+                Map<String, Object> health = ClassCacheManager.getHealthInfo();
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "loading");
+                response.put("type", "batch-method-by-name");
+                response.put("message", "Class cache is being loaded in background. First load takes ~30-60 seconds for large APKs.");
+                response.put("retry_after", 10);
+                response.put("health", health);
+                
+                long elapsed = health.containsKey("elapsed_seconds") ? ((Number) health.get("elapsed_seconds")).longValue() : 0;
+                if (elapsed > 0) {
+                    response.put("estimated_remaining", "~" + Math.max(0, 40 - elapsed) + " seconds");
+                }
+                
+                ctx.json(response);
+                return;
+            }
+            
+            // Get the cached class map
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
 
             List<Map<String, Object>> results = new ArrayList<>();
             int foundCount = 0;

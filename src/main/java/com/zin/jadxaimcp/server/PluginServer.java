@@ -2,12 +2,14 @@ package com.zin.jadxaimcp.server;
 
 import io.javalin.Javalin;
 import jadx.gui.ui.MainWindow;
+import jadx.api.plugins.events.types.NodeRenamedByUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.zin.jadxaimcp.JadxAIMCP;
 import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
 import com.zin.jadxaimcp.utils.PaginationUtils;
+import com.zin.jadxaimcp.utils.ClassCacheManager;
 import com.zin.jadxaimcp.server.routes.*; // MCP tool call's request handlers
 
 public class PluginServer {
@@ -124,6 +126,9 @@ public class PluginServer {
 
             // Register all route handlers
             registerRoutes();
+            
+            // Register event listener for cache invalidation
+            setupCacheInvalidation();
 
             isRunning = true;
 
@@ -334,7 +339,37 @@ public class PluginServer {
         // --- Debugging ---
         app.get("/debug/stack-frames", debugRoutes::handleGetStackFrames);
         app.get("/debug/variables", debugRoutes::handleGetVariables);
-        app.get("/debug/threads", debugRoutes::handleGetThreads);        
+        app.get("/debug/threads", debugRoutes::handleGetThreads);
+        
+        // --- Cache Management ---
+        app.post("/cache/clear", ctx -> {
+            try {
+                ClassCacheManager.clearCache();
+                logger.info("[JAI] Class cache cleared manually via API");
+                ctx.json(java.util.Map.of(
+                    "success", true,
+                    "message", "Class cache cleared successfully"
+                ));
+            } catch (Exception e) {
+                logger.error("[JAI] Failed to clear cache", e);
+                ctx.status(500).json(java.util.Map.of(
+                    "success", false,
+                    "error", "Failed to clear cache: " + e.getMessage()
+                ));
+            }
+        });
+    }
+    
+    /**
+     * Setup cache invalidation listener for rename operations.
+     * Automatically clears ClassCacheManager when any rename event occurs.
+     */
+    private void setupCacheInvalidation() {
+        mainWindow.events().addListener(jadx.api.plugins.events.JadxEvents.NODE_RENAMED_BY_USER, event -> {
+            logger.info("[JAI] Rename detected, clearing class cache");
+            ClassCacheManager.clearCache();
+        });
+        logger.info("[JAI] Cache invalidation listener registered");
     }
 
 }
