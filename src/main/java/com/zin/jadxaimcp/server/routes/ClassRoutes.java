@@ -274,11 +274,21 @@ public class ClassRoutes {
             // Check cache status
             ClassCacheManager.CacheStatus status = ClassCacheManager.getStatus();
             if (status == ClassCacheManager.CacheStatus.LOADING) {
-                // Return loading status with health info
+                // Return loading status with comprehensive health info
+                Map<String, Object> health = ClassCacheManager.getHealthInfo();
                 Map<String, Object> response = new HashMap<>();
                 response.put("status", "loading");
-                response.put("message", "Class cache is being loaded. Please retry in a few seconds.");
-                response.put("health", ClassCacheManager.getHealthInfo());
+                response.put("type", "batch-class-source");
+                response.put("message", "Class cache is being loaded in background. First load takes ~30-60 seconds for large APKs.");
+                response.put("retry_after", 10); // Suggest retry after 10 seconds
+                response.put("health", health);
+                
+                // Add user-friendly guidance
+                long elapsed = health.containsKey("elapsed_seconds") ? ((Number) health.get("elapsed_seconds")).longValue() : 0;
+                if (elapsed > 0) {
+                    response.put("estimated_remaining", "~" + Math.max(0, 40 - elapsed) + " seconds");
+                }
+                
                 ctx.json(response);
                 return;
             }
