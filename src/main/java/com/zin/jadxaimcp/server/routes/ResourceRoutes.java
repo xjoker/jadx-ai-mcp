@@ -34,6 +34,7 @@ import java.io.InputStream;
 import java.util.concurrent.CompletableFuture;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.awt.Container;
 
@@ -111,11 +112,9 @@ public class ResourceRoutes {
             Map<String, Object> result = new HashMap<>();
             result.put("type", "resource/strings-xml");
             
-            // Check all tabs for any strings.xml content
+            // 1. Try reading from GUI tabs first (instant, non-blocking)
             List<Map<String, String>> openedStringsFiles = getOpenedResourceTabs("strings.xml");
-            
             if (!openedStringsFiles.isEmpty()) {
-                // Content found in open tabs - return it
                 result.put("status", "success");
                 result.put("source", "gui_tabs");
                 result.put("opened_files", openedStringsFiles);
@@ -125,35 +124,35 @@ public class ResourceRoutes {
                     result.put("loaded_variant", openedStringsFiles.get(0).get("name"));
                     result.put("content", openedStringsFiles.get(0).get("content"));
                 }
-            } else {
-                // No tabs open - check if any resource tabs exist at all
-                List<Map<String, String>> anyResourceTabs = getOpenedResourceTabs(".xml");
-                
-                if (!anyResourceTabs.isEmpty()) {
-                    // Some tabs open but not strings.xml
-                    result.put("status", "wrong_file_open");
-                    result.put("message", "Found " + anyResourceTabs.size() + " XML tab(s) but none contain strings.xml");
-                    result.put("open_tabs", anyResourceTabs.stream()
-                        .map(m -> m.get("name"))
-                        .collect(Collectors.toList()));
-                    result.put("suggestion", "Open res/values/strings.xml in JADX GUI, or use fetch_current_class for the current tab");
-                } else {
-                    // No resource tabs open at all
-                    result.put("status", "no_tabs_open");
-                    result.put("message", "No resource files are currently open in JADX GUI");
-                    result.put("how_to_access", new String[]{
-                        "Option A (Recommended for large APKs):",
-                        "  1. In JADX GUI tree: Resources > res/values/strings.xml",
-                        "  2. Double-click to open",
-                        "  3. Call get_strings again",
-                        "",
-                        "Option B (For Docker/noVNC users):",
-                        "  1. Access JADX GUI via noVNC",
-                        "  2. Navigate and open resource file",
-                        "  3. Call get_strings or fetch_current_class"
-                    });
-                }
+                ctx.json(result);
+                return;
             }
+            
+            // 2. Fallback to JADX EDT-based loading
+            logger.info("No strings.xml tabs found. Falling back to EDT-based loading...");
+            Map<String, Object> edtResult = loadResourceViaEDT("res/values/strings.xml");
+            
+            // If EDT load succeeded, return results
+            if ("success".equals(edtResult.get("status"))) {
+                edtResult.put("type", "resource/strings-xml"); // Ensure correct type
+                ctx.json(edtResult);
+                return;
+            }
+            
+            // 3. If everything fails, return helpful instructions
+            result.put("status", "no_tabs_open");
+            result.put("edt_status", edtResult.get("status"));
+            result.put("message", "Could not satisfy strings.xml request via tabs or EDT loading.");
+            result.put("how_to_access", new String[]{
+                "Option A (Manual):",
+                "  1. In JADX GUI tree: Resources > res/values/strings.xml",
+                "  2. Double-click to open and wait for 'Loading' to finish",
+                "  3. Call get_strings again",
+                "",
+                "Option B (Diagnostic):",
+                "  - Check if JADX GUI is still 'Loading' the resources.arsc",
+                "  - Loading large resources can take 1-5 minutes for some APKs"
+            });
             
             ctx.json(result);
             
@@ -215,6 +214,80 @@ public class ResourceRoutes {
     }
     
     /**
+     * Load a specific resource file content using Swing EDT thread.
+     * 
+     * JADX GUI uses EDT for all UI operations including resource loading.
+     * By running loadContent in EDT, we match JADX's internal threading model.
+     * 
+     * @param targetFileName Name of the file to load (e.g. "res/values/strings.xml" or "AndroidManifest.xml")
+     * @return Map with loaded content, or error information
+     */
+    private Map<String, Object> loadResourceViaEDT(String targetFileName) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("requested_file", targetFileName);
+        
+        final java.util.concurrent.atomic.AtomicReference<String> contentRef = 
+            new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.atomic.AtomicReference<Exception> errorRef = 
+            new java.util.concurrent.atomic.AtomicReference<>();
+        
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                    for (ResourceFile resFile : resourceFiles) {
+                        if (resFile == null || resFile.getDeobfName() == null) continue;
+                        
+                        // Check for standalone resource files
+                        if (resFile.getDeobfName().equals(targetFileName)) {
+                            contentRef.set(resFile.loadContent().getText().getCodeStr());
+                            break;
+                        }
+                        
+                        // Check inside resources.arsc
+                        if ("resources.arsc".equals(resFile.getDeobfName())) {
+                            ResContainer container = resFile.loadContent();
+                            if (container != null) {
+                                for (ResContainer file : container.getSubFiles()) {
+                                    if (targetFileName.equals(file.getFileName()) || 
+                                        (targetFileName.contains("strings.xml") && file.getFileName().contains(targetFileName))) {
+                                        contentRef.set(file.getText().getCodeStr());
+                                        break;
+                                    }
+                                }
+                            }
+                            if (contentRef.get() != null) break;
+                        }
+                    }
+                } catch (Exception e) {
+                    errorRef.set(e);
+                }
+            });
+            
+            if (errorRef.get() != null) {
+                result.put("status", "error");
+                result.put("error", "EDT loading failed: " + errorRef.get().getMessage());
+            } else if (contentRef.get() != null) {
+                result.put("status", "success");
+                result.put("source", "edt_loading");
+                result.put("content", contentRef.get());
+            } else {
+                result.put("status", "not_found");
+            }
+            
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            result.put("status", "error");
+            result.put("error", "EDT invocation failed: " + e.getCause().getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            result.put("status", "error");
+            result.put("error", "EDT loading interrupted");
+        }
+        
+        return result;
+    }
+    
+    /**
      * Helper class to hold string file reference without loading content.
      */
     private static class StringFileRef {
@@ -256,60 +329,39 @@ public class ResourceRoutes {
         }
 
         try {
-            java.util.concurrent.Future<Map<String, Object>> future = resourceExecutor.submit(() -> {
-                try {
-                    List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
-                    Map<String, String> resFileContent = new HashMap<>();
-                    
-                    for (ResourceFile resFile : resourceFiles) {
-                        if (resFile == null || resFile.getDeobfName() == null) continue;
-                        
-                        if (resFile.getDeobfName().equals(fileName)) {
-                            resFileContent.put("file_name", resFile.getDeobfName());
-                            resFileContent.put("content", resFile.loadContent().getText().getCodeStr());
-                            break;
-                        } else if ("resources.arsc".equals(resFile.getDeobfName())) {
-                            ResContainer container = resFile.loadContent();
-                            if (container != null) {
-                                for (ResContainer file : container.getSubFiles()) {
-                                    if (fileName.equals(file.getFileName())) {
-                                        resFileContent.put("file_name", file.getFileName());
-                                        resFileContent.put("content", file.getText().getCodeStr());
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!resFileContent.isEmpty()) break;
-                        }
-                    }
-                    
-                    if (!resFileContent.isEmpty()) {
-                        return Map.of("type", "resource/text", "file", resFileContent);
-                    }
-                    
-                    Map<String, Object> notFound = new HashMap<>();
-                    notFound.put("type", "resource/text");
-                    notFound.put("error", "No resource file found: " + fileName);
-                    return notFound;
-                    
-                } catch (Exception e) {
-                    Map<String, Object> error = new HashMap<>();
-                    error.put("type", "resource/text");
-                    error.put("error", "Internal error: " + e.getMessage());
-                    return error;
-                }
-            });
+            // 1. Try reading from GUI tabs first (instant, non-blocking)
+            List<Map<String, String>> openedFiles = getOpenedResourceTabs(fileName);
+            if (!openedFiles.isEmpty()) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/text");
+                result.put("status", "success");
+                result.put("source", "gui_tabs");
+                result.put("file", Map.of("file_name", openedFiles.get(0).get("name"), "content", openedFiles.get(0).get("content")));
+                ctx.json(result);
+                return;
+            }
+
+            // 2. Fallback to EDT-based loading
+            logger.info("Resource file '{}' not in tabs. Falling back to EDT-based loading...", fileName);
+            Map<String, Object> edtResult = loadResourceViaEDT(fileName);
             
-            Map<String, Object> result = future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            if ("success".equals(edtResult.get("status"))) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("type", "resource/text");
+                result.put("status", "success");
+                result.put("source", "edt_loading");
+                result.put("file", Map.of("file_name", fileName, "content", edtResult.get("content")));
+                ctx.json(result);
+                return;
+            }
+
+            // 3. Fallback to Error/Not Found
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "resource/text");
+            result.put("status", edtResult.get("status"));
+            result.put("error", edtResult.getOrDefault("error", "Resource not found: " + fileName));
             ctx.json(result);
             
-        } catch (java.util.concurrent.TimeoutException e) {
-            Map<String, Object> timeout = new HashMap<>();
-            timeout.put("type", "resource/text");
-            timeout.put("error", "Resource loading timed out after 60 seconds");
-            timeout.put("reason", "The APK's resources.arsc is too large");
-            timeout.put("workaround", "Navigate to Resources > " + fileName + " in JADX GUI, then use fetch_current_class");
-            ctx.status(504).json(timeout);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Error in handleGetResourceFile: " + e.getMessage(), e, logger);
         }
