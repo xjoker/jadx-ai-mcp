@@ -61,6 +61,10 @@ async def get_class_source(class_name: str, instance_id: Optional[str] = None) -
     """
     Fetch the Java source of a specific class.
 
+    WARNING: Very large classes (e.g., R.class with 10000+ fields) may cause timeout.
+    For large classes, consider using get_method_by_name to fetch specific methods,
+    or get_class_info to get class structure first.
+
     Args:
         class_name: Fully qualified class name (e.g., com.example.MainActivity)
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
@@ -80,6 +84,9 @@ async def batch_get_class_source(class_names: list[str], instance_id: Optional[s
     
     This reduces MCP interaction overhead when analyzing multiple related classes.
     Maximum 20 classes per request.
+
+    WARNING: Avoid including very large classes (e.g., R.class) which may cause timeout.
+    Use get_class_info first to check class size (methods_count, fields_count).
 
     Args:
         class_names: List of fully qualified class names to fetch
@@ -214,9 +221,13 @@ async def get_main_application_classes_code(offset: int = 0, count: int = 0, ins
     """
     Fetch main application classes' code with pagination.
 
+    WARNING: Large responses may cause timeout. Use small count values (1-5) to avoid timeout.
+    For exploring, use get_main_application_classes_names first to identify target classes,
+    then use get_class_source for specific classes.
+
     Args:
         offset: Starting index for pagination (default: 0)
-        count: Number of classes to return (0 = all, default: 0)
+        count: Number of classes to return (0 = all, default: 0). Recommended: 1-5 to avoid timeout.
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:

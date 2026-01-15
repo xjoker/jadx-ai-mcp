@@ -101,6 +101,10 @@ async def get_resource_file(resource_name: str, instance_id: Optional[str] = Non
     """
     Retrieve resource file content.
 
+    NOTE: Some APKs use resource obfuscation (e.g., ResourceGuard), which may remove or rename
+    resource files like res/layout/*.xml. Use get_all_resource_file_names first to check
+    which resources exist. Very large files (e.g., strings.xml with 15000+ entries) may timeout.
+
     Args:
         resource_name: Path to the resource file (e.g., res/layout/activity_main.xml)
         instance_id: Optional. Target JADX instance name. Uses default if not specified.

@@ -247,7 +247,7 @@ docker run -d --name mcp-server \
 | 场景 | 响应 | AI 动作 |
 |------|------|---------|
 | 搜索可用 | `200 OK` + 结果 | 正常处理 |
-| 搜索忙碌 | `503` + `{"busy": true, "retry_after": 10}` | 等待 10 秒后重试 |
+| 搜索忙碌 | `200 OK` + `{"error": "INSTANCE_BUSY", ...}` | 等待后重试（默认超时 300 秒）|
 
 **为什么串行化？**
 - JADX 反编译不是线程安全的
@@ -609,7 +609,7 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:
 ### 代码分析工具
 - `fetch_current_class(instance_id?)` — 获取当前选中类的源码
 - `get_selected_text(instance_id?)` — 获取当前选中的文本
-- `get_all_classes(offset, count, instance_id?)` — 列出项目中所有类
+- `get_all_classes(offset=0, count=0, instance_id?)` — 列出项目中所有类（分页）
 - `get_class_source(class_name, instance_id?)` — 获取指定类的完整源码
 - `batch_get_class_source(class_names, instance_id?)` — **批量获取多个类的源码（最多 20 个）**
 - `get_class_info(class_name, instance_id?)` — **获取类结构（继承、接口、成员数量）**
@@ -617,19 +617,19 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:
 - `batch_get_method_by_name(methods, instance_id?)` — **批量获取多个方法（格式：class:method，最多 20 个）**
 - `get_method_signature(class_name, method_name, instance_id?)` — **获取方法签名（返回类型、参数）**
 - `get_method_callees(class_name, method_name, instance_id?)` — **获取该方法调用的其他方法**
-- `search_method_by_name(method_name, instance_id?)` — 跨类搜索方法
-- `search_classes_by_keyword(search_term, package?, exclude?, search_in?, offset?, count?, instance_id?)` — 按关键字搜索（支持排除过滤）
+- `search_method_by_name(method_name, offset=0, count=50, instance_id?)` — 跨类搜索方法（分页）
+- `search_classes_by_keyword(search_term, package="", exclude="", search_in="code", offset=0, count=20, instance_id?)` — 按关键字搜索（支持排除过滤）
 - `get_methods_of_class(class_name, instance_id?)` — 列出类中的方法
 - `get_fields_of_class(class_name, instance_id?)` — 列出类中的字段
 - `get_smali_of_class(class_name, instance_id?)` — 获取类的 smali 代码
 - `get_main_activity_class(instance_id?)` — 从 AndroidManifest.xml 获取主 Activity
-- `get_main_application_classes_code(offset?, count?, instance_id?)` — 获取主应用类的代码
+- `get_main_application_classes_code(offset=0, count=0, instance_id?)` — 获取主应用类的代码
 - `get_main_application_classes_names(instance_id?)` — 获取主应用类的名称
 
 ### 资源工具
 - `get_android_manifest(instance_id?)` — 获取 AndroidManifest.xml
-- `get_strings(mode?, query?, key?, locale?, offset?, limit?, instance_id?)` — **AI 友好的字符串分析**，4 种模式：`summary`（默认）、`list`、`search`、`get`
-- `get_all_resource_file_names(offset?, count?, instance_id?)` — 列出所有资源文件名
+- `get_strings(mode="summary", query?, key?, locale="values", offset=0, limit=50, instance_id?)` — **AI 友好的字符串分析**（模式：summary, list, search, get）
+- `get_all_resource_file_names(offset=0, count=0, instance_id?)` — 列出所有资源文件名
 - `get_resource_file(resource_name, instance_id?)` — 获取资源文件内容
 
 ### 重构工具
@@ -644,14 +644,14 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:
 - `debug_get_variables(instance_id?)` — 获取调试器的变量
 
 ### 交叉引用工具
-- `get_xrefs_to_class(class_name, offset?, count?, instance_id?)` — 查找类的所有引用
-- `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — 查找方法的所有引用
-- `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — 查找字段的所有引用
-- `batch_get_xrefs(targets, instance_id?)` — **批量查询交叉引用（最多 10 个）**
+- `get_xrefs_to_class(class_name, offset=0, count=20, instance_id?)` — 查找类的所有引用
+- `get_xrefs_to_method(class_name, method_name, offset=0, count=20, instance_id?)` — 查找方法的所有引用
+- `get_xrefs_to_field(class_name, field_name, offset=0, count=20, instance_id?)` — 查找字段的所有引用
+- `batch_get_xrefs(targets, instance_id?)` — **批量查询交叉引用（最多 10 个）**（targets: "type:class:member" 格式列表）
 
 ### 多实例管理工具
 - `list_jadx_instances()` — 列出所有已连接的实例
-- `add_jadx_instance(host, port, name?)` — 动态添加新实例
+- `add_jadx_instance(host, port, name?, token?)` — 动态添加新实例
 - `remove_jadx_instance(name)` — 移除实例
 - `set_default_jadx_instance(name)` — 设置默认实例
 - `get_jadx_instance_info(name)` — 获取实例详细信息

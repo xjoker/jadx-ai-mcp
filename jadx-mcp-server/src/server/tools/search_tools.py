@@ -127,6 +127,11 @@ async def search_classes_by_keyword(
     """
     Search for classes containing a specific keyword with flexible filtering options.
 
+    BEST PRACTICE:
+    - Use search_in='class' for finding class names (fastest, most reliable).
+    - Use search_in='method' or 'field' for specific member searches.
+    - AVOID search_in='code' on large APKs as full-text search may timeout or crash.
+
     Args:
         search_term: The keyword or string to search for.
         package (optional): Package name to limit the search scope.

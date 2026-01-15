@@ -456,15 +456,12 @@ public class ResourceRoutes {
                         if ("resources.arsc".equals(resFile.getDeobfName())) {
                             ResContainer container = resFile.loadContent();
                             if (container != null) {
-                                for (ResContainer file : container.getSubFiles()) {
-                                    if (targetFileName.equals(file.getFileName()) || 
-                                        (targetFileName.contains("strings.xml") && file.getFileName().contains(targetFileName))) {
-                                        contentRef.set(file.getText().getCodeStr());
-                                        break;
-                                    }
+                                String foundContent = findResourceRecursively(container, targetFileName);
+                                if (foundContent != null) {
+                                    contentRef.set(foundContent);
+                                    break;
                                 }
                             }
-                            if (contentRef.get() != null) break;
                         }
                     }
                 } catch (Exception e) {
@@ -493,6 +490,34 @@ public class ResourceRoutes {
         }
         
         return result;
+    }
+
+    /**
+     * Recursively search for a resource file in a ResContainer tree.
+     */
+    private String findResourceRecursively(ResContainer container, String targetFileName) {
+        if (container == null) return null;
+
+        // Check if current container matches the target file name
+        String containerName = container.getName();
+        String containerFileName = container.getFileName();
+        
+        if (targetFileName.equals(containerFileName) || targetFileName.equals(containerName)) {
+             return container.getText().getCodeStr();
+        }
+        
+        // Also check if targetFileName contains the container name (for partial matches)
+        if (targetFileName.contains("strings.xml") && containerFileName != null && containerFileName.contains(targetFileName)) {
+             return container.getText().getCodeStr();
+        }
+
+        // Check sub-files
+        for (ResContainer sub : container.getSubFiles()) {
+            // Check direct match or recursive search
+            String result = findResourceRecursively(sub, targetFileName);
+            if (result != null) return result;
+        }
+        return null;
     }
     
     /**

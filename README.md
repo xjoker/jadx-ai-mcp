@@ -149,7 +149,7 @@ The following MCP tools are available. **All tools support an optional `instance
 ### Code Analysis Tools
 - `fetch_current_class(instance_id?)` — Get the class name and full source of selected class
 - `get_selected_text(instance_id?)` — Get currently selected text
-- `get_all_classes(offset, count, instance_id?)` — List all classes in the project
+- `get_all_classes(offset=0, count=0, instance_id?)` — List all classes in the project (paginated)
 - `get_class_source(class_name, instance_id?)` — Get full source of a given class
 - `batch_get_class_source(class_names, instance_id?)` — **Batch retrieve multiple class sources (max 20)**
 - `get_class_info(class_name, instance_id?)` — **Get class structure (inheritance, interfaces, member counts)**
@@ -157,19 +157,19 @@ The following MCP tools are available. **All tools support an optional `instance
 - `batch_get_method_by_name(methods, instance_id?)` — **Batch retrieve multiple methods (format: class:method, max 20)**
 - `get_method_signature(class_name, method_name, instance_id?)` — **Get structured method signature (return type, params)**
 - `get_method_callees(class_name, method_name, instance_id?)` — **Get methods called by this method**
-- `search_method_by_name(method_name, instance_id?)` — Search method across classes
-- `search_classes_by_keyword(search_term, package?, exclude?, search_in?, offset?, count?, instance_id?)` — Search with optional exclusion filter
+- `search_method_by_name(method_name, offset=0, count=50, instance_id?)` — Search method across classes (paginated)
+- `search_classes_by_keyword(search_term, package="", exclude="", search_in="code", offset=0, count=20, instance_id?)` — Search with optional exclusion filter
 - `get_methods_of_class(class_name, instance_id?)` — List methods in a class
 - `get_fields_of_class(class_name, instance_id?)` — List fields in a class
 - `get_smali_of_class(class_name, instance_id?)` — Fetch smali of class
 - `get_main_activity_class(instance_id?)` — Fetch main activity from AndroidManifest.xml
-- `get_main_application_classes_code(offset?, count?, instance_id?)` — Fetch main application classes' code
+- `get_main_application_classes_code(offset=0, count=0, instance_id?)` — Fetch main application classes' code
 - `get_main_application_classes_names(instance_id?)` — Fetch main application classes' names
 
 ### Resource Tools
 - `get_android_manifest(instance_id?)` — Retrieve AndroidManifest.xml content
-- `get_strings(mode?, query?, key?, locale?, offset?, limit?, instance_id?)` — **AI-friendly string analysis** with 4 modes: `summary` (default), `list`, `search`, `get`
-- `get_all_resource_file_names(offset?, count?, instance_id?)` — List all resource file names
+- `get_strings(mode="summary", query?, key?, locale="values", offset=0, limit=50, instance_id?)` — **AI-friendly string analysis** (modes: summary, list, search, get)
+- `get_all_resource_file_names(offset=0, count=0, instance_id?)` — List all resource file names
 - `get_resource_file(resource_name, instance_id?)` — Retrieve resource file content
 
 ### Refactoring Tools
@@ -184,14 +184,14 @@ The following MCP tools are available. **All tools support an optional `instance
 - `debug_get_variables(instance_id?)` — Get variables from debugger
 
 ### Cross-Reference Tools
-- `get_xrefs_to_class(class_name, offset?, count?, instance_id?)` — Find all references to a class
-- `get_xrefs_to_method(class_name, method_name, offset?, count?, instance_id?)` — Find all references to a method
-- `get_xrefs_to_field(class_name, field_name, offset?, count?, instance_id?)` — Find all references to a field
-- `batch_get_xrefs(targets, instance_id?)` — **Batch query xrefs for multiple targets (max 10)**
+- `get_xrefs_to_class(class_name, offset=0, count=20, instance_id?)` — Find all references to a class
+- `get_xrefs_to_method(class_name, method_name, offset=0, count=20, instance_id?)` — Find all references to a method
+- `get_xrefs_to_field(class_name, field_name, offset=0, count=20, instance_id?)` — Find all references to a field
+- `batch_get_xrefs(targets, instance_id?)` — **Batch query xrefs for multiple targets (max 10)** (targets: list of "type:class:member")
 
 ### Multi-Instance Management Tools
 - `list_jadx_instances()` — List all connected JADX instances
-- `add_jadx_instance(host, port, name?)` — Add a new JADX instance dynamically
+- `add_jadx_instance(host, port, name?, token?)` — Add a new JADX instance dynamically
 - `remove_jadx_instance(name)` — Remove a JADX instance
 - `set_default_jadx_instance(name)` — Set the default instance for tool calls
 - `get_jadx_instance_info(name)` — Get detailed info about an instance
@@ -505,7 +505,7 @@ Search operations use a **serialized lock** to prevent JADX internal state confl
 | Scenario | Response | AI Action |
 |----------|----------|-----------|
 | Search available | `200 OK` + results | Process normally |
-| Search busy | `503` + `{"busy": true, "retry_after": 10}` | Wait 10s and retry |
+| Search busy | `200 OK` + `{"error": "INSTANCE_BUSY", ...}` | Wait and retry (default timeout 300s) |
 
 **Why serialization?**
 - JADX decompilation is not thread-safe
