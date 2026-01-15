@@ -229,9 +229,10 @@ public class ResourceCacheManager {
     }
     
     /**
-     * Get comprehensive health information for monitoring.
+     * Get health information for monitoring.
+     * Only includes accurate, known information - no estimates.
      * 
-     * @return Map with detailed status including phase, progress, timing
+     * @return Map with status, phase, timing, and stuck detection
      */
     public static Map<String, Object> getHealthInfo() {
         Map<String, Object> info = new HashMap<>();
@@ -244,30 +245,22 @@ public class ResourceCacheManager {
         long endTime = loadEndTime.get();
         long now = System.currentTimeMillis();
         
-        if (startTime > 0) {
-            info.put("started_at", startTime);
+        if (status == CacheStatus.LOADING && startTime > 0) {
+            long elapsed = now - startTime;
+            info.put("elapsed_seconds", elapsed / 1000);
             
-            if (status == CacheStatus.LOADING) {
-                long elapsed = now - startTime;
-                info.put("elapsed_ms", elapsed);
-                info.put("elapsed_seconds", elapsed / 1000);
-            } else if (endTime > 0) {
-                info.put("completed_at", endTime);
-                info.put("duration_ms", endTime - startTime);
-                info.put("duration_seconds", (endTime - startTime) / 1000);
+            // Stuck detection: if parsing takes > 300 seconds, might be stuck
+            if (elapsed > 300_000) {
+                info.put("warning", "Loading is taking unusually long (>" + (elapsed / 1000) + "s). May be stuck.");
+                info.put("possibly_stuck", true);
+            } else {
+                info.put("alive", true);
             }
         }
         
-        int processed = processedFiles.get();
-        int total = totalFiles.get();
-        info.put("processed", processed);
-        info.put("total", total);
-        
-        if (total > 0) {
-            info.put("progress_percent", Math.min(100, (processed * 100) / total));
-        }
-        
-        if (status == CacheStatus.READY) {
+        if (status == CacheStatus.READY && endTime > 0 && startTime > 0) {
+            info.put("duration_seconds", (endTime - startTime) / 1000);
+            
             List<ResContainer> cached = cachedSubFiles.get();
             List<ResContainer> strings = cachedStringsFiles.get();
             info.put("cached_files", cached != null ? cached.size() : 0);
