@@ -25,6 +25,7 @@ services:
   mcp-server:
     image: xjoker/jadx-mcp-server:latest
     container_name: jadx-mcp-server
+    command: [ "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--config", "/app/data/config/jadx-config.toml" ]
     ports:
       - "8651:8651"
     volumes:
@@ -37,7 +38,7 @@ services:
       - jadx-3
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8651/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8651/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -51,8 +52,8 @@ services:
     image: xjoker/jadx-ai-mcp:latest
     container_name: jadx-instance-1
     ports:
-      - "6080:6080"   # noVNC Web Desktop
-      - "8650:8650"   # Plugin API
+      - "6080:6080" # noVNC Web Desktop
+      - "8650:8650" # Plugin API
     volumes:
       - ./apks:/apks:ro
       - jadx-1-cache:/root/.cache
@@ -72,8 +73,8 @@ services:
     image: xjoker/jadx-ai-mcp:latest
     container_name: jadx-instance-2
     ports:
-      - "6081:6080"   # noVNC Web Desktop
-      - "8660:8650"   # Plugin API (mapped to 8660 on host)
+      - "6081:6080" # noVNC Web Desktop
+      - "8660:8650" # Plugin API (mapped to 8660 on host)
     volumes:
       - ./apks:/apks:ro
       - jadx-2-cache:/root/.cache
@@ -93,8 +94,8 @@ services:
     image: xjoker/jadx-ai-mcp:latest
     container_name: jadx-instance-3
     ports:
-      - "6082:6080"   # noVNC Web Desktop
-      - "8670:8650"   # Plugin API (mapped to 8670 on host)
+      - "6082:6080" # noVNC Web Desktop
+      - "8670:8650" # Plugin API (mapped to 8670 on host)
     volumes:
       - ./apks:/apks:ro
       - jadx-3-cache:/root/.cache
