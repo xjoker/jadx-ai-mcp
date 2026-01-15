@@ -128,25 +128,26 @@ public class ResourceRoutes {
                         return;
                     }
                     
-                    // Build list of available strings files
+                    // Build list of available strings files (without loading content)
                     List<Map<String, Object>> fileList = new ArrayList<>();
-                    String defaultContent = null;
-                    String defaultVariant = null;
+                    ResContainer defaultFile = null;
                     
                     for (ResContainer strFile : stringsFiles) {
                         String fileName = strFile.getFileName();
-                        String content = ResourceCacheManager.getContent(strFile);
                         
                         Map<String, Object> fileInfo = new HashMap<>();
                         fileInfo.put("name", fileName);
-                        fileInfo.put("size", content != null ? content.length() : 0);
                         fileList.add(fileInfo);
                         
-                        // Default to res/values/strings.xml
-                        if ("res/values/strings.xml".equals(fileName) && content != null) {
-                            defaultContent = content;
-                            defaultVariant = fileName;
+                        // Find default file
+                        if ("res/values/strings.xml".equals(fileName)) {
+                            defaultFile = strFile;
                         }
+                    }
+                    
+                    // Fallback to first file if default not found
+                    if (defaultFile == null && !stringsFiles.isEmpty()) {
+                        defaultFile = stringsFiles.get(0);
                     }
                     
                     result.put("status", "success");
@@ -154,15 +155,23 @@ public class ResourceRoutes {
                     result.put("available_files", fileList);
                     result.put("count", stringsFiles.size());
                     
-                    // Return default strings.xml content
-                    if (defaultContent != null) {
-                        result.put("loaded_variant", defaultVariant);
-                        result.put("content", defaultContent);
-                    } else if (!stringsFiles.isEmpty()) {
-                        // Fallback to first file if default not found
-                        ResContainer first = stringsFiles.get(0);
-                        result.put("loaded_variant", first.getFileName());
-                        result.put("content", ResourceCacheManager.getContent(first));
+                    // Load only the default file's content (with size limit)
+                    if (defaultFile != null) {
+                        result.put("loaded_variant", defaultFile.getFileName());
+                        String content = ResourceCacheManager.getContent(defaultFile);
+                        
+                        if (content != null) {
+                            // Truncate if too large (> 500KB)
+                            final int MAX_SIZE = 500_000;
+                            if (content.length() > MAX_SIZE) {
+                                result.put("content", content.substring(0, MAX_SIZE));
+                                result.put("truncated", true);
+                                result.put("full_size", content.length());
+                                result.put("message", "Content truncated. Use offset/limit params for pagination.");
+                            } else {
+                                result.put("content", content);
+                            }
+                        }
                     }
                     
                     ctx.json(result);
