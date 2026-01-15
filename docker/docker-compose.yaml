@@ -55,13 +55,13 @@ services:
       - "6080:6080" # noVNC Web Desktop
       - "8650:8650" # Plugin API
     volumes:
-      - ./apks:/apks:ro
+      - ./apks/jadx-1:/apks:ro
       - jadx-1-cache:/root/.cache
       - jadx-1-gui:/root/.jadx-gui
     environment:
       - TZ=Asia/Shanghai
       - JADX_PLUGIN_PORT=8650
-      - JADX_PLUGIN_BIND_ADDRESS=0.0.0.0
+      - JADX_MCP_BIND_ADDRESS=0.0.0.0
     restart: unless-stopped
     networks:
       - jadx-network
@@ -76,13 +76,13 @@ services:
       - "6081:6080" # noVNC Web Desktop
       - "8660:8650" # Plugin API (mapped to 8660 on host)
     volumes:
-      - ./apks:/apks:ro
+      - ./apks/jadx-2:/apks:ro
       - jadx-2-cache:/root/.cache
       - jadx-2-gui:/root/.jadx-gui
     environment:
       - TZ=Asia/Shanghai
       - JADX_PLUGIN_PORT=8650
-      - JADX_PLUGIN_BIND_ADDRESS=0.0.0.0
+      - JADX_MCP_BIND_ADDRESS=0.0.0.0
     restart: unless-stopped
     networks:
       - jadx-network
@@ -97,13 +97,13 @@ services:
       - "6082:6080" # noVNC Web Desktop
       - "8670:8650" # Plugin API (mapped to 8670 on host)
     volumes:
-      - ./apks:/apks:ro
+      - ./apks/jadx-3:/apks:ro
       - jadx-3-cache:/root/.cache
       - jadx-3-gui:/root/.jadx-gui
     environment:
       - TZ=Asia/Shanghai
       - JADX_PLUGIN_PORT=8650
-      - JADX_PLUGIN_BIND_ADDRESS=0.0.0.0
+      - JADX_MCP_BIND_ADDRESS=0.0.0.0
     restart: unless-stopped
     networks:
       - jadx-network
