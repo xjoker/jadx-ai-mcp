@@ -124,14 +124,53 @@ public class ClassCacheManager {
         return health;
     }
     
+    // Debounce for cache clearing (prevent rapid successive clears)
+    // All cache clear operations share this global 30-second cooldown
+    private static final long CLEAR_DEBOUNCE_MS = 30000; // 30 seconds cooldown
+    private static final AtomicLong lastClearTime = new AtomicLong(0);
+    
     /**
-     * Clear the cache (for testing or APK reload)
+     * Clear the cache with global 30-second cooldown (shared across all cache clear triggers).
+     * Returns true if cache was cleared, false if debounced.
      */
-    public static void clearCache() {
-        classCache.set(null);
-        isInitialized.set(false);
-        initFuture.set(null);
-        currentPhase.set("NOT_INITIALIZED");
-        logger.info("[JAI] Class cache cleared");
+    public static boolean clearCache() {
+        long now = System.currentTimeMillis();
+        long lastClear = lastClearTime.get();
+        
+        // Debounce: skip if cleared within cooldown period
+        if (now - lastClear < CLEAR_DEBOUNCE_MS) {
+            long remainingSecs = (CLEAR_DEBOUNCE_MS - (now - lastClear)) / 1000;
+            logger.info("[JAI] Cache clear debounced (cooldown: {}s remaining)", remainingSecs);
+            return false;
+        }
+        
+        // Only clear if we can set the timestamp (atomic)
+        if (lastClearTime.compareAndSet(lastClear, now)) {
+            classCache.set(null);
+            isInitialized.set(false);
+            initFuture.set(null);
+            currentPhase.set("NOT_INITIALIZED");
+            logger.info("[JAI] Class cache cleared");
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Get remaining cooldown time in seconds.
+     */
+    public static long getRemainingCooldown() {
+        long now = System.currentTimeMillis();
+        long lastClear = lastClearTime.get();
+        long remaining = CLEAR_DEBOUNCE_MS - (now - lastClear);
+        return remaining > 0 ? remaining / 1000 : 0;
+    }
+    
+    /**
+     * Get the cooldown duration in seconds.
+     */
+    public static long getCooldownDuration() {
+        return CLEAR_DEBOUNCE_MS / 1000;
     }
 }

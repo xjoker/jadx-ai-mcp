@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
+import com.zin.jadxaimcp.utils.ClassCacheManager;
 
 public class RefactoringRoutes {
     private static final Logger logger = LoggerFactory.getLogger(RefactoringRoutes.class);
@@ -45,19 +46,28 @@ public class RefactoringRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    ICodeNodeRef nodeRef = cls.getCodeNodeRef();
-                    NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, cls.getName(), newName);
-                    event.setRenameNode(cls.getClassNode());
-                    event.setResetName(newName.isEmpty());
-                    mainWindow.events().send(event);
-
-                    logger.info("Renaming Class {} to {}", cls.getName(), newName);
-                    ctx.json(Map.of("result", "Renamed Class " + cls.getName() + " to " + newName));
-                    return;
-                }
+            
+            // Initialize cache if needed
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
             }
+            
+            // Use cache for fast lookup
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
+            JavaClass cls = classMap.get(className);
+            
+            if (cls != null) {
+                ICodeNodeRef nodeRef = cls.getCodeNodeRef();
+                NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, cls.getName(), newName);
+                event.setRenameNode(cls.getClassNode());
+                event.setResetName(newName.isEmpty());
+                mainWindow.events().send(event);
+
+                logger.info("Renaming Class {} to {}", cls.getName(), newName);
+                ctx.json(Map.of("result", "Renamed Class " + cls.getName() + " to " + newName));
+                return;
+            }
+            
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error while trying to rename the class: " + e.getMessage(), e, logger);
@@ -87,13 +97,38 @@ public class RefactoringRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                // Fix: removed the .replace('$', '.'); from below line to
-                // prevent bug where innerclasses are discoverable
-                String clsName = cls.getFullName();
+            
+            // Initialize cache if needed
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+            
+            // Extract class name from method_name (format: com.example.Class:methodName or com.example.Class.methodName)
+            String className = null;
+            String simpleMethodName = methodName;
+            
+            if (methodName.contains(":")) {
+                int colonIdx = methodName.lastIndexOf(':');
+                className = methodName.substring(0, colonIdx);
+                simpleMethodName = methodName.substring(colonIdx + 1);
+            } else if (methodName.contains(".")) {
+                int lastDot = methodName.lastIndexOf('.');
+                className = methodName.substring(0, lastDot);
+                simpleMethodName = methodName.substring(lastDot + 1);
+            }
+            
+            if (className == null) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Invalid method_name format. Expected: class.method or class:method", logger);
+                return;
+            }
+            
+            // Use cache for fast lookup
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
+            JavaClass cls = classMap.get(className);
+            
+            if (cls != null) {
                 for (JavaMethod method : cls.getMethods()) {
-                    String fullMethodName = clsName + "." + method.getName();
-                    if (fullMethodName.equalsIgnoreCase(methodName)) {
+                    if (method.getName().equalsIgnoreCase(simpleMethodName)) {
                         ICodeNodeRef nodeRef = method.getCodeNodeRef();
                         NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, method.getName(), newName);
                         event.setRenameNode(method.getMethodNode());
@@ -105,8 +140,11 @@ public class RefactoringRoutes {
                         return;
                     }
                 }
+                JadxAIMCPPluginError.handleError(ctx, 404, "Method " + simpleMethodName + " not found in class " + className, logger);
+                return;
             }
-            JadxAIMCPPluginError.handleError(ctx, 404, "Either Class not found or the Method " + methodName + " not found.", logger);
+            
+            JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error while trying to rename the method: " + e.getMessage(), e, logger);
         }
@@ -131,24 +169,35 @@ public class RefactoringRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    for (JavaField field : cls.getFields()) {
-                        if (field.getName().equals(oldFieldName)) {
-                            ICodeNodeRef nodeRef = field.getCodeNodeRef();
-                            NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, field.getName(), newFieldName);
-                            event.setRenameNode(field.getFieldNode());
-                            event.setResetName(newFieldName.isEmpty());
-                            mainWindow.events().send(event);
+            
+            // Initialize cache if needed
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+            
+            // Use cache for fast lookup
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
+            JavaClass cls = classMap.get(className);
+            
+            if (cls != null) {
+                for (JavaField field : cls.getFields()) {
+                    if (field.getName().equals(oldFieldName)) {
+                        ICodeNodeRef nodeRef = field.getCodeNodeRef();
+                        NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, field.getName(), newFieldName);
+                        event.setRenameNode(field.getFieldNode());
+                        event.setResetName(newFieldName.isEmpty());
+                        mainWindow.events().send(event);
 
-                            logger.info("Renaming field {} to {}", field.getName(), newFieldName);
-                            ctx.json(Map.of("result", "Renamed field " + field.getName() + " to " + newFieldName));
-                            return;
-                        }
+                        logger.info("Renaming field {} to {}", field.getName(), newFieldName);
+                        ctx.json(Map.of("result", "Renamed field " + field.getName() + " to " + newFieldName));
+                        return;
                     }
                 }
+                JadxAIMCPPluginError.handleError(ctx, 404, "Field " + oldFieldName + " not found in class " + className, logger);
+                return;
             }
-            JadxAIMCPPluginError.handleError(ctx, 404, "Either Class " + className + " not found or the Field not found.", logger);
+            
+            JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error while trying to rename the field: " + e.getMessage(), e, logger);
         }

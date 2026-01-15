@@ -344,12 +344,23 @@ public class PluginServer {
         // --- Cache Management ---
         app.post("/cache/clear", ctx -> {
             try {
-                ClassCacheManager.clearCache();
-                logger.info("[JAI] Class cache cleared manually via API");
-                ctx.json(java.util.Map.of(
-                    "success", true,
-                    "message", "Class cache cleared successfully"
-                ));
+                boolean cleared = ClassCacheManager.clearCache();
+                if (cleared) {
+                    logger.info("[JAI] Class cache cleared manually via API");
+                    ctx.json(java.util.Map.of(
+                        "success", true,
+                        "message", "Class cache cleared successfully",
+                        "cooldown_seconds", ClassCacheManager.getCooldownDuration()
+                    ));
+                } else {
+                    long remaining = ClassCacheManager.getRemainingCooldown();
+                    logger.info("[JAI] Cache clear debounced, {}s remaining", remaining);
+                    ctx.json(java.util.Map.of(
+                        "success", false,
+                        "message", "Cache clear debounced (30s global cooldown)",
+                        "cooldown_remaining_seconds", remaining
+                    ));
+                }
             } catch (Exception e) {
                 logger.error("[JAI] Failed to clear cache", e);
                 ctx.status(500).json(java.util.Map.of(
