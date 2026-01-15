@@ -25,7 +25,7 @@ services:
   mcp-server:
     image: xjoker/jadx-mcp-server:latest
     container_name: jadx-mcp-server
-    command: [ "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--config", "/app/data/config/jadx-config.toml" ]
+    command: [ "uv", "run", "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--config", "/app/data/config/jadx-config.toml" ]
     ports:
       - "8651:8651"
     volumes:
