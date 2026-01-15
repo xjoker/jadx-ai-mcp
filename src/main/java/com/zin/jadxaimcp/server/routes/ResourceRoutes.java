@@ -168,28 +168,53 @@ public class ResourceRoutes {
     private List<Map<String, String>> getOpenedResourceTabs(String filenamePattern) {
         List<Map<String, String>> results = new ArrayList<>();
         
-        if (mainWindow == null) return results;
+        if (mainWindow == null) {
+            logger.debug("getOpenedResourceTabs: mainWindow is null");
+            return results;
+        }
         
         try {
             JTabbedPane tabbedPane = mainWindow.getTabbedPane();
-            if (tabbedPane == null) return results;
+            if (tabbedPane == null) {
+                logger.debug("getOpenedResourceTabs: tabbedPane is null");
+                return results;
+            }
             
             int tabCount = tabbedPane.getTabCount();
+            logger.info("getOpenedResourceTabs: Found {} tabs, searching for pattern '{}'", tabCount, filenamePattern);
+            
             for (int i = 0; i < tabCount; i++) {
                 String tabTitle = tabbedPane.getTitleAt(i);
-                if (tabTitle != null && tabTitle.contains(filenamePattern)) {
+                logger.debug("  Tab {}: '{}'", i, tabTitle);
+                
+                // More flexible matching: check for "strings" in title for strings.xml
+                boolean matches = false;
+                if (filenamePattern.equals("strings.xml")) {
+                    matches = tabTitle != null && (tabTitle.contains("strings.xml") || 
+                              tabTitle.toLowerCase().startsWith("strings"));
+                } else {
+                    matches = tabTitle != null && tabTitle.contains(filenamePattern);
+                }
+                
+                if (matches) {
+                    logger.info("  Tab {} matches! Title: '{}'", i, tabTitle);
                     Component component = tabbedPane.getComponentAt(i);
                     String content = extractTextFromComponent(component);
                     if (content != null && !content.isEmpty()) {
+                        logger.info("  Extracted {} characters from tab '{}'", content.length(), tabTitle);
                         Map<String, String> entry = new HashMap<>();
                         entry.put("name", tabTitle);
                         entry.put("content", content);
                         results.add(entry);
+                    } else {
+                        logger.warn("  Tab '{}' matched but content is empty/null", tabTitle);
                     }
                 }
             }
+            
+            logger.info("getOpenedResourceTabs: Returning {} results", results.size());
         } catch (Exception e) {
-            logger.warn("Error reading tabs: " + e.getMessage());
+            logger.warn("Error reading tabs: " + e.getMessage(), e);
         }
         
         return results;
