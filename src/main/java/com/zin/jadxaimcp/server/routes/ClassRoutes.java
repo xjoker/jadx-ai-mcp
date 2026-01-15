@@ -5,14 +5,21 @@ import io.javalin.http.Context;
 import jadx.api.JavaClass;
 import jadx.api.JavaField;
 import jadx.api.JavaMethod;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
 import jadx.api.ResourceFile;
+import jadx.api.data.impl.JadxCodeData;
+import jadx.api.metadata.ICodeNodeRef;
 import jadx.api.security.IJadxSecurity;
+import jadx.core.dex.info.AccessInfo;
+import jadx.core.dex.instructions.args.ArgType;
+import jadx.core.dex.nodes.ClassNode;
+import jadx.core.dex.nodes.FieldNode;
+import jadx.core.dex.nodes.MethodNode;
 import jadx.core.utils.android.AndroidManifestParser;
 import jadx.core.utils.android.AppAttribute;
 import jadx.core.utils.android.ApplicationParams;
 import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.gui.JadxWrapper;
+import jadx.gui.ui.MainWindow;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -35,11 +42,19 @@ import java.util.Set;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.regex.Pattern;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
+import com.zin.jadxaimcp.utils.ClassCacheManager;
 
 public class ClassRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ClassRoutes.class);
@@ -250,13 +265,26 @@ public class ClassRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
             
-            // Build a map for O(1) lookup - unavoidable for now
-            Map<String, JavaClass> classMap = new HashMap<>();
-            for (JavaClass cls : allClasses) {
-                classMap.put(cls.getFullName(), cls);
+            // Initialize cache if not already done
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
             }
+            
+            // Check cache status
+            ClassCacheManager.CacheStatus status = ClassCacheManager.getStatus();
+            if (status == ClassCacheManager.CacheStatus.LOADING) {
+                // Return loading status with health info
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "loading");
+                response.put("message", "Class cache is being loaded. Please retry in a few seconds.");
+                response.put("health", ClassCacheManager.getHealthInfo());
+                ctx.json(response);
+                return;
+            }
+            
+            // Get the cached class map
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
 
             List<Map<String, Object>> results = new ArrayList<>();
             int foundCount = 0;
@@ -284,6 +312,7 @@ public class ClassRoutes {
             }
 
             Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
             response.put("classes", results);
             response.put("total", classNames.length);
             response.put("found", foundCount);
