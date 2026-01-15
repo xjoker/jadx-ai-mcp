@@ -25,6 +25,7 @@ import java.util.HashSet;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
+import com.zin.jadxaimcp.utils.ClassCacheManager;
 
 public class XrefsRoutes {
     private static final Logger logger = LoggerFactory.getLogger(XrefsRoutes.class);
@@ -252,10 +253,24 @@ public class XrefsRoutes {
      * return null.
      */
     private JavaClass findClassByName(Context ctx, String className) {
-        JadxWrapper wrapper = mainWindow.getWrapper();
-        for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-            if (cls.getFullName().equals(className)) return cls;
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            
+            // Initialize cache if not already done
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+            
+            // Get from cache
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
+            JavaClass cls = classMap.get(className);
+            if (cls != null) {
+                return cls;
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to use class cache: " + e.getMessage());
         }
+        
         JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         return null;
     }
@@ -456,6 +471,34 @@ public class XrefsRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
+            
+            // Initialize cache if not already done
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+            
+            // Check cache status
+            ClassCacheManager.CacheStatus status = ClassCacheManager.getStatus();
+            if (status == ClassCacheManager.CacheStatus.LOADING) {
+                Map<String, Object> health = ClassCacheManager.getHealthInfo();
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "loading");
+                response.put("type", "batch-xrefs");
+                response.put("message", "Class cache is being loaded in background. First load takes ~30-60 seconds for large APKs.");
+                response.put("retry_after", 10);
+                response.put("health", health);
+                
+                long elapsed = health.containsKey("elapsed_seconds") ? ((Number) health.get("elapsed_seconds")).longValue() : 0;
+                if (elapsed > 0) {
+                    response.put("estimated_remaining", "~" + Math.max(0, 40 - elapsed) + " seconds");
+                }
+                
+                ctx.json(response);
+                return;
+            }
+            
+            // Get cached class map
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
             List<Map<String, Object>> results = new ArrayList<>();
 
             for (String target : targets) {
@@ -475,13 +518,7 @@ public class XrefsRoutes {
                 String type = parts[0].toLowerCase();
                 String className = parts[1];
                 
-                JavaClass targetClass = null;
-                for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                    if (cls.getFullName().equals(className)) {
-                        targetClass = cls;
-                        break;
-                    }
-                }
+                JavaClass targetClass = classMap.get(className);
                 
                 if (targetClass == null) {
                     result.put("found", false);
