@@ -1,13 +1,14 @@
 """
 JADX Instance Management MCP Tools
 
-Provides 6 tools for managing multiple JADX instances:
+Provides 7 tools for managing multiple JADX instances:
 - list_jadx_instances: List all instances (filtered by user access)
 - add_jadx_instance: Add new instance (with user ownership)
 - remove_jadx_instance: Remove instance
 - set_default_jadx_instance: Set default instance
 - get_jadx_instance_info: Get instance details
 - health_check_jadx_instances: Check health of all instances
+- clear_class_cache: Clear ClassCacheManager cache (30s global cooldown)
 """
 
 from ..instance_registry import InstanceRegistry
@@ -270,4 +271,49 @@ def register_instance_tools(mcp):
             }
         """
         return await InstanceRegistry.health_check_all()
+
+    @mcp.tool()
+    async def clear_class_cache(instance_id: str = None) -> dict:
+        """
+        Manually clear the ClassCacheManager cache on the JADX plugin.
+        
+        IMPORTANT: All cache clear operations share a global 30-second cooldown.
+        This includes:
+        - rename_class, rename_method, rename_field, rename_package (automatic)
+        - This manual clear_class_cache tool
+        
+        If called within 30 seconds of the last cache clear, the request will be
+        debounced and return the remaining cooldown time.
+        
+        Use this tool when:
+        - You suspect stale cache data
+        - After manually modifying the APK in JADX
+        - After bulk operations that may have affected class data
+        
+        Args:
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            
+        Returns:
+            Success:
+                {"success": true, "message": "Class cache cleared successfully", "cooldown_seconds": 30}
+            Debounced:
+                {"success": false, "message": "Cache clear debounced (30s global cooldown)", "cooldown_remaining_seconds": 25}
+        """
+        instance = InstanceRegistry.resolve_instance(instance_id)
+        if not instance:
+            return {"error": f"Instance '{instance_id}' not found or not connected"}
+        
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{instance.url}/cache/clear",
+                    headers=instance.get_auth_headers()
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"HTTP error {e.response.status_code}: {e.response.text}"}
+        except Exception as e:
+            return {"error": f"Failed to clear cache: {str(e)}"}
 
