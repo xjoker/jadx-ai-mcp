@@ -88,3 +88,7 @@ htmlcov/
 ### AI Memory ###
 .AIINFO/
 
+### APK Files ###
+*.apk
+docker/apks/*/
+!docker/apks/.gitkeep
