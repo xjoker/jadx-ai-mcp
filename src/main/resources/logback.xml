@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender with [JAI] prefix and timestamps -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [JAI] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+    
+    <!-- Plugin-specific loggers -->
+    <logger name="com.zin.jadxaimcp" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+    
+    <!-- Suppress overly verbose libraries -->
+    <logger name="io.javalin" level="WARN" />
+    <logger name="org.eclipse.jetty" level="WARN" />
+</configuration>
