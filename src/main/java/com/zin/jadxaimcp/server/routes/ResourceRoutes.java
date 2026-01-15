@@ -169,11 +169,11 @@ public class ResourceRoutes {
                     break;
                     
                 case LOADING:
-                    // Cache is loading in background
+                    // Cache is loading in background - show progress
                     result.put("status", "loading");
-                    result.put("message", "Resource cache is loading in background, please retry");
-                    result.put("retry_after", 5);
-                    result.put("cache_stats", ResourceCacheManager.getStats());
+                    result.put("message", "Resource cache is loading in background");
+                    result.put("health", ResourceCacheManager.getHealthInfo());
+                    result.put("retry_after", 3);
                     ctx.status(202).json(result);
                     break;
                     
@@ -182,9 +182,10 @@ public class ResourceRoutes {
                     boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
                     result.put("status", "loading_started");
                     result.put("message", started 
-                        ? "Resource cache loading started, please retry in a few seconds" 
+                        ? "Resource cache loading started" 
                         : "Cache initialization pending");
-                    result.put("retry_after", 10);
+                    result.put("health", ResourceCacheManager.getHealthInfo());
+                    result.put("retry_after", 5);
                     ctx.status(202).json(result);
                     break;
                     

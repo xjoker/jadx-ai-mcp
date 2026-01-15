@@ -8,9 +8,13 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -20,10 +24,12 @@ import java.util.concurrent.atomic.AtomicReference;
  * 1. Background loading resources.arsc once
  * 2. Sharing the parsed result across multiple endpoints
  * 3. Thread-safe access with proper synchronization
+ * 4. Health monitoring with progress and timing info
  * 
  * Usage:
  * - Call initCache(wrapper) to start background loading
  * - Use getSubFiles() to access cached subfiles
+ * - Use getHealthInfo() to monitor loading progress
  * - Call clearCache() when APK changes
  */
 public class ResourceCacheManager {
@@ -36,6 +42,13 @@ public class ResourceCacheManager {
     private static final AtomicBoolean isLoading = new AtomicBoolean(false);
     private static final AtomicReference<String> loadError = new AtomicReference<>(null);
     private static final Object cacheLock = new Object();
+    
+    // Health monitoring
+    private static final AtomicLong loadStartTime = new AtomicLong(0);
+    private static final AtomicLong loadEndTime = new AtomicLong(0);
+    private static final AtomicReference<String> currentPhase = new AtomicReference<>("idle");
+    private static final AtomicInteger processedFiles = new AtomicInteger(0);
+    private static final AtomicInteger totalFiles = new AtomicInteger(0);
     
     // Prevent instantiation
     private ResourceCacheManager() {}
@@ -121,15 +134,24 @@ public class ResourceCacheManager {
     }
     
     /**
-     * Load resources.arsc in background thread.
+     * Load resources.arsc in background thread with progress tracking.
      * 
      * @param resources List of resource files from JADX
      */
     private static void loadResourcesArsc(List<ResourceFile> resources) {
+        loadStartTime.set(System.currentTimeMillis());
+        currentPhase.set("finding_resources");
+        processedFiles.set(0);
+        totalFiles.set(resources.size());
+        
         try {
             List<ResContainer> allSubFiles = new ArrayList<>();
+            int fileIndex = 0;
             
             for (ResourceFile resFile : resources) {
+                fileIndex++;
+                processedFiles.set(fileIndex);
+                
                 if (resFile == null) continue;
                 
                 String name = resFile.getDeobfName();
@@ -137,19 +159,29 @@ public class ResourceCacheManager {
                 
                 try {
                     if ("resources.arsc".equals(name)) {
+                        currentPhase.set("parsing_resources_arsc");
+                        logger.info("Found resources.arsc, starting parse...");
+                        
                         ResContainer content = resFile.loadContent();
+                        
                         if (content != null) {
+                            currentPhase.set("indexing_subfiles");
                             List<ResContainer> subFiles = content.getSubFiles();
+                            
                             if (subFiles != null) {
-                                // Filter out null entries
+                                totalFiles.set(subFiles.size());
+                                int subIndex = 0;
+                                
                                 for (ResContainer sub : subFiles) {
+                                    subIndex++;
+                                    processedFiles.set(subIndex);
+                                    
                                     if (sub != null && sub.getFileName() != null) {
                                         allSubFiles.add(sub);
                                     }
                                 }
                             }
                         }
-                        // Only process first resources.arsc found
                         break;
                     }
                 } catch (Exception e) {
@@ -158,15 +190,16 @@ public class ResourceCacheManager {
             }
             
             // Atomically update cache
+            currentPhase.set("finalizing");
             synchronized (cacheLock) {
                 if (allSubFiles.isEmpty()) {
                     loadError.set("resources.arsc contains no subfiles");
+                    currentPhase.set("error");
                     logger.warn("resources.arsc parsed but contains no subfiles");
                 } else {
-                    // Make immutable for thread safety
                     cachedSubFiles.set(Collections.unmodifiableList(allSubFiles));
                     
-                    // Pre-compute strings.xml cache for fast access
+                    // Pre-compute strings.xml cache
                     List<ResContainer> stringsFiles = new ArrayList<>();
                     for (ResContainer sub : allSubFiles) {
                         String fileName = sub.getFileName();
@@ -176,19 +209,76 @@ public class ResourceCacheManager {
                     }
                     cachedStringsFiles.set(Collections.unmodifiableList(stringsFiles));
                     
+                    currentPhase.set("ready");
                     logger.info("Resource cache loaded: {} subfiles, {} strings.xml files", 
                         allSubFiles.size(), stringsFiles.size());
                 }
+                loadEndTime.set(System.currentTimeMillis());
                 isLoading.set(false);
             }
             
         } catch (Exception e) {
             synchronized (cacheLock) {
                 loadError.set("Failed to parse resources.arsc: " + e.getMessage());
+                currentPhase.set("error");
+                loadEndTime.set(System.currentTimeMillis());
                 isLoading.set(false);
             }
             logger.error("Error loading resource cache", e);
         }
+    }
+    
+    /**
+     * Get comprehensive health information for monitoring.
+     * 
+     * @return Map with detailed status including phase, progress, timing
+     */
+    public static Map<String, Object> getHealthInfo() {
+        Map<String, Object> info = new HashMap<>();
+        
+        CacheStatus status = getStatus();
+        info.put("status", status.name());
+        info.put("phase", currentPhase.get());
+        
+        long startTime = loadStartTime.get();
+        long endTime = loadEndTime.get();
+        long now = System.currentTimeMillis();
+        
+        if (startTime > 0) {
+            info.put("started_at", startTime);
+            
+            if (status == CacheStatus.LOADING) {
+                long elapsed = now - startTime;
+                info.put("elapsed_ms", elapsed);
+                info.put("elapsed_seconds", elapsed / 1000);
+            } else if (endTime > 0) {
+                info.put("completed_at", endTime);
+                info.put("duration_ms", endTime - startTime);
+                info.put("duration_seconds", (endTime - startTime) / 1000);
+            }
+        }
+        
+        int processed = processedFiles.get();
+        int total = totalFiles.get();
+        info.put("processed", processed);
+        info.put("total", total);
+        
+        if (total > 0) {
+            info.put("progress_percent", Math.min(100, (processed * 100) / total));
+        }
+        
+        if (status == CacheStatus.READY) {
+            List<ResContainer> cached = cachedSubFiles.get();
+            List<ResContainer> strings = cachedStringsFiles.get();
+            info.put("cached_files", cached != null ? cached.size() : 0);
+            info.put("strings_files", strings != null ? strings.size() : 0);
+        }
+        
+        if (status == CacheStatus.ERROR) {
+            info.put("error", loadError.get());
+        }
+        
+        return info;
     }
     
     /**
