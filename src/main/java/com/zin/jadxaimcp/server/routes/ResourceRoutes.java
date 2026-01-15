@@ -97,63 +97,95 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call using GUI tab access.
+     * Handle the /strings MCP tool call using GUI tab access ONLY.
      * 
-     * Strategy:
-     * 1. First check if strings.xml is already open in a tab
-     * 2. If open, read content from JTextArea (instant, no blocking)
-     * 3. If not open, return instructions since forcing open may block
+     * This method is PURELY non-blocking:
+     * - Reads content directly from opened GUI tabs
+     * - If no matching tabs found, returns instructions (no slow fallback)
      * 
-     * For Docker/noVNC users: content is only available after opening 
-     * the file manually in JADX GUI.
+     * For strings.xml to work, user must open the file in JADX GUI first.
      */
     public void handleStrings(Context ctx) {
         try {
             Map<String, Object> result = new HashMap<>();
             result.put("type", "resource/strings-xml");
             
-            // 1. Try reading from GUI tabs first (instant, non-blocking)
-            List<Map<String, String>> openedStringsFiles = getOpenedResourceTabs("strings.xml");
-            if (!openedStringsFiles.isEmpty()) {
+            if (mainWindow == null) {
+                result.put("status", "error");
+                result.put("error", "mainWindow is null - JADX GUI not initialized");
+                ctx.json(result);
+                return;
+            }
+            
+            JTabbedPane tabbedPane = mainWindow.getTabbedPane();
+            if (tabbedPane == null) {
+                result.put("status", "error");
+                result.put("error", "tabbedPane is null");
+                ctx.json(result);
+                return;
+            }
+            
+            // Log all open tabs for debugging
+            int tabCount = tabbedPane.getTabCount();
+            List<String> allTabTitles = new ArrayList<>();
+            for (int i = 0; i < tabCount; i++) {
+                allTabTitles.add(tabbedPane.getTitleAt(i));
+            }
+            logger.info("handleStrings: {} tabs open: {}", tabCount, allTabTitles);
+            
+            // Try to find and read strings.xml from any open tab
+            List<Map<String, String>> matchedTabs = new ArrayList<>();
+            for (int i = 0; i < tabCount; i++) {
+                String tabTitle = tabbedPane.getTitleAt(i);
+                
+                // Flexible matching for strings.xml
+                boolean isStringsTab = tabTitle != null && (
+                    tabTitle.contains("strings.xml") ||
+                    tabTitle.toLowerCase().contains("strings") ||
+                    tabTitle.contains("res/values")
+                );
+                
+                if (isStringsTab) {
+                    logger.info("Found potential strings tab at index {}: '{}'", i, tabTitle);
+                    Component component = tabbedPane.getComponentAt(i);
+                    String content = extractTextFromComponent(component);
+                    
+                    if (content != null && !content.isEmpty()) {
+                        logger.info("Extracted {} chars from tab '{}'", content.length(), tabTitle);
+                        Map<String, String> entry = new HashMap<>();
+                        entry.put("name", tabTitle);
+                        entry.put("content", content);
+                        matchedTabs.add(entry);
+                    } else {
+                        logger.warn("Tab '{}' matched but content is empty", tabTitle);
+                    }
+                }
+            }
+            
+            if (!matchedTabs.isEmpty()) {
                 result.put("status", "success");
                 result.put("source", "gui_tabs");
-                result.put("opened_files", openedStringsFiles);
-                result.put("count", openedStringsFiles.size());
+                result.put("count", matchedTabs.size());
+                result.put("opened_files", matchedTabs);
                 
-                if (openedStringsFiles.size() == 1) {
-                    result.put("loaded_variant", openedStringsFiles.get(0).get("name"));
-                    result.put("content", openedStringsFiles.get(0).get("content"));
+                if (matchedTabs.size() == 1) {
+                    result.put("loaded_variant", matchedTabs.get(0).get("name"));
+                    result.put("content", matchedTabs.get(0).get("content"));
                 }
                 ctx.json(result);
                 return;
             }
             
-            // 2. Fallback to JADX EDT-based loading
-            logger.info("No strings.xml tabs found. Falling back to EDT-based loading...");
-            Map<String, Object> edtResult = loadResourceViaEDT("res/values/strings.xml");
-            
-            // If EDT load succeeded, return results
-            if ("success".equals(edtResult.get("status"))) {
-                edtResult.put("type", "resource/strings-xml"); // Ensure correct type
-                ctx.json(edtResult);
-                return;
-            }
-            
-            // 3. If everything fails, return helpful instructions
+            // No matching tabs found - return helpful info (NO slow fallback!)
             result.put("status", "no_tabs_open");
-            result.put("edt_status", edtResult.get("status"));
-            result.put("message", "Could not satisfy strings.xml request via tabs or EDT loading.");
-            result.put("how_to_access", new String[]{
-                "Option A (Manual):",
-                "  1. In JADX GUI tree: Resources > res/values/strings.xml",
-                "  2. Double-click to open and wait for 'Loading' to finish",
-                "  3. Call get_strings again",
-                "",
-                "Option B (Diagnostic):",
-                "  - Check if JADX GUI is still 'Loading' the resources.arsc",
-                "  - Loading large resources can take 1-5 minutes for some APKs"
+            result.put("open_tabs", allTabTitles);
+            result.put("message", "No strings.xml tab found. Please open it in JADX GUI first.");
+            result.put("instructions", new String[]{
+                "1. In JADX GUI: expand Resources > resources.arsc > res > values",
+                "2. Double-click strings.xml to open it",
+                "3. Wait for content to appear in the tab",
+                "4. Call get_strings again"
             });
-            
             ctx.json(result);
             
         } catch (Exception e) {
