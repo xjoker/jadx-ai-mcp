@@ -252,7 +252,7 @@ public class ClassRoutes {
             JadxWrapper wrapper = mainWindow.getWrapper();
             List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
             
-            // Build a map for O(1) lookup
+            // Build a map for O(1) lookup - unavoidable for now
             Map<String, JavaClass> classMap = new HashMap<>();
             for (JavaClass cls : allClasses) {
                 classMap.put(cls.getFullName(), cls);
