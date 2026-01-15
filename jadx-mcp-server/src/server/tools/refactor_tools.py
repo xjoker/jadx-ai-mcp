@@ -16,6 +16,9 @@ from src.server.config import get_from_jadx
 async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a specific class.
+    
+    NOTE: This operation triggers ClassCacheManager reload with 30s global cooldown.
+    Rapid successive renames will be debounced.
 
     Args:
         class_name: Fully qualified current class name
@@ -34,6 +37,9 @@ async def rename_class(class_name: str, new_name: str, instance_id: Optional[str
 async def rename_method(method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a specific method.
+    
+    NOTE: This operation triggers ClassCacheManager reload with 30s global cooldown.
+    Rapid successive renames will be debounced.
 
     Args:
         method_name: Current method name (can include signature)
@@ -52,6 +58,9 @@ async def rename_method(method_name: str, new_name: str, instance_id: Optional[s
 async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a specific field.
+    
+    NOTE: This operation triggers ClassCacheManager reload with 30s global cooldown.
+    Rapid successive renames will be debounced.
 
     Args:
         class_name: Fully qualified class name containing the field
@@ -75,6 +84,9 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
 async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a package and all its classes.
+    
+    NOTE: This operation triggers ClassCacheManager reload with 30s global cooldown.
+    Rapid successive renames will be debounced.
 
     Args:
         old_package_name: Current package name (e.g., com.example.old)
