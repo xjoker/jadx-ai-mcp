@@ -1,22 +1,57 @@
-# JADX MCP Server Configuration
+# JADX MCP Server Configuration / JADX MCP 服务器配置
+# ====================================================
 # Copy this file to jadx-config.toml and customize as needed
+# 复制此文件到 jadx-config.toml 并按需自定义
 
+# =============================================================================
+# Server Configuration / 服务器配置
+# =============================================================================
 [server]
 # MCP server bind address (use 0.0.0.0 to allow external connections)
+# MCP 服务器绑定地址（使用 0.0.0.0 允许外部连接）
 host = "0.0.0.0"
 # MCP server port (HTTP streamable transport)
+# MCP 服务器端口（HTTP 流式传输）
 port = 8651
 
-# ============================================================================
-# Multi-User Authentication
+# =============================================================================
+# Default Settings / 默认设置
+# =============================================================================
+[defaults]
+# HTTP request timeout for JADX plugin requests (seconds)
+# JADX 插件请求的 HTTP 超时时间（秒）
+request_timeout = 120
+# Maximum time an instance can be busy before auto-release (seconds)
+# 实例忙碌状态最大等待时间（秒）
+busy_timeout = 300
+# Default JADX plugin token (or use JADX_MCP_AUTH_TOKEN env var)
+# 默认 JADX 插件 Token（或使用 JADX_MCP_AUTH_TOKEN 环境变量）
+jadx_token = ""
+# Background health check interval (seconds)
+# 后台健康检查间隔（秒）
+health_check_interval = 30
+
+# =============================================================================
+# Security Settings / 安全设置
+# =============================================================================
+[security]
+# Allow users to dynamically add JADX instances via AI commands
+# 允许用户通过 AI 命令动态添加 JADX 实例
+# Default: false (more secure) / 默认：false（更安全）
+allow_dynamic_instances = false
+
+# =============================================================================
+# Multi-User Authentication / 多用户认证 (Optional / 可选)
+# =============================================================================
 # Each user has a unique token for accessing MCP Server
+# 每个用户拥有唯一 Token 用于访问 MCP 服务器
 # Token is passed via Authorization: Bearer <token> header
-# ============================================================================
+# Token 通过 Authorization: Bearer <token> 请求头传递
 
 [[users]]
 name = "alice"
 token = "token-alice-xxxxx"
-# is_admin = false  # Default: regular user
+# is_admin = false  # Default: regular user / 默认：普通用户
 
 [[users]]
 name = "bob"
@@ -25,33 +60,23 @@ token = "token-bob-yyyyy"
 [[users]]
 name = "admin"
 token = "token-admin-zzzzz"
-is_admin = true  # Admin can see ALL dynamic instances from all users
+is_admin = true  # Admin can see ALL dynamic instances / 管理员可查看所有动态实例
+# can_add_instances = true  # Explicit permission / 显式授权添加实例
 
-# ============================================================================
-# Default Settings
-# ============================================================================
-
-[defaults]
-# HTTP request timeout for JADX plugin requests (seconds)
-request_timeout = 120
-# Maximum time an instance can be busy before auto-release (seconds)
-busy_timeout = 300
-# Default JADX plugin token (used when user doesn't provide one)
-jadx_token = ""
-
-# ============================================================================
-# Shared JADX Instances (visible to ALL users)
-# Pre-configured instances loaded on server startup
-# ============================================================================
+# =============================================================================
+# Shared JADX Instances / 共享 JADX 实例
+# =============================================================================
+# Pre-configured instances are visible to ALL users
+# 预配置的实例对所有用户可见
 
 [[jadx_instances]]
 name = "local"
 host = "127.0.0.1"
 port = 8650
-token = ""  # Uses defaults.jadx_token if empty
+token = ""  # Uses defaults.jadx_token if empty / 为空时使用 defaults.jadx_token
 enabled = true
 
-# Example: Remote JADX instance
+# Example: Remote JADX instance / 示例：远程 JADX 实例
 # [[jadx_instances]]
 # name = "remote-app"
 # host = "192.168.1.100"
@@ -59,3 +84,16 @@ enabled = true
 # token = "custom-token-for-this-instance"
 # enabled = true
 
+# Example: Multiple instances for version comparison
+# 示例：用于版本比较的多实例配置
+# [[jadx_instances]]
+# name = "app-v1"
+# host = "192.168.1.10"
+# port = 8650
+# enabled = true
+
+# [[jadx_instances]]
+# name = "app-v2"
+# host = "192.168.1.11"
+# port = 8650
+# enabled = true

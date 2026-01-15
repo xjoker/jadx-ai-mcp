@@ -989,6 +989,22 @@ If you encounter issues:
 
 ---
 
+## 📋 Compatibility
+
+| Component | Required Version | Notes |
+|:----------|:-----------------|:------|
+| JADX GUI  | 1.5.0+ | Plugin uses JADX API |
+| Java      | 11+ (17 recommended) | For JADX GUI |
+| Python    | 3.10+ | For MCP Server |
+| Docker    | 20.10+ | For containerized deployment |
+
+> **Version Matching**: Plugin version and MCP Server version share the same number (e.g., both v6.0.46). 
+> Always use matching versions for best compatibility.
+
+**Configuration Example**: See [`jadx-mcp-server/data/config/jadx-config.example.toml`](jadx-mcp-server/data/config/jadx-config.example.toml) for a complete configuration template.
+
+---
+
 ## 🙏 Credits
 
 This project is a plugin for JADX, an amazing open-source Android decompiler created and maintained by [@skylot](https://github.com/skylot). This project is a fork of [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) created by [zinja-coder](https://github.com/zinja-coder). Huge thanks for their original work!

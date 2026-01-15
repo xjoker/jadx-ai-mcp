@@ -805,6 +805,22 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:
 
 ---
 
+## 📋 兼容性
+
+| 组件 | 所需版本 | 备注 |
+|:-----|:---------|:-----|
+| JADX GUI | 1.5.0+ | 插件使用 JADX API |
+| Java | 11+（推荐 17）| 运行 JADX GUI |
+| Python | 3.10+ | 运行 MCP Server |
+| Docker | 20.10+ | 容器化部署 |
+
+> **版本匹配**：插件版本和 MCP Server 版本共享相同编号（如都是 v6.0.46）。
+> 建议始终使用相同版本以确保最佳兼容性。
+
+**配置示例**：参见 [`jadx-mcp-server/data/config/jadx-config.example.toml`](../jadx-mcp-server/data/config/jadx-config.example.toml) 获取完整配置模板。
+
+---
+
 ## 🙏 致谢
 
 本项目是 JADX 的插件，JADX 是由 [@skylot](https://github.com/skylot) 创建的开源 Android 反编译器。本项目是 [jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) 的 Fork 版本，原作者是 [zinja-coder](https://github.com/zinja-coder)。
