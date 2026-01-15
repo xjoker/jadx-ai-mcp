@@ -29,24 +29,47 @@ async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
     return await get_from_jadx("manifest", instance_id=instance_id)
 
 
-async def get_strings(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
+async def get_strings(
+    mode: str = "summary",
+    query: Optional[str] = None,
+    key: Optional[str] = None,
+    locale: str = "values",
+    offset: int = 0,
+    limit: int = 50,
+    instance_id: Optional[str] = None
+) -> dict:
     """
-    Retrieve strings.xml content and available locale variants.
+    Get strings from APK with AI-friendly modes.
 
     Args:
-        offset: (Deprecated) Was used for pagination, now returns single file
-        count: (Deprecated) Was used for pagination, now returns single file
+        mode: Operation mode (summary|list|search|get). Default: summary
+        query: Search keyword (required for mode=search)
+        key: String key name (required for mode=get)
+        locale: Locale variant like "values", "values-en". Default: values
+        offset: Pagination offset for list mode. Default: 0
+        limit: Results per page (max: 200). Default: 50
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Contains 'content' (strings.xml content), 'loaded_variant', 
-              'available_variants' (list of all locale files)
+        dict: Response from Java API with mode-specific structure
 
     MCP Tool: get_strings
-    Description: Extracts default strings.xml and lists available locale variants
+    Description: AI-friendly strings API with summary, list, search, get modes
     """
-    # New format: directly return Java response (no pagination extraction)
-    response = await get_from_jadx("strings", {}, instance_id=instance_id)
+    params = {
+        "mode": mode,
+        "locale": locale,
+        "offset": offset,
+        "limit": limit
+    }
+    
+    # Add optional parameters only if provided
+    if query is not None:
+        params["query"] = query
+    if key is not None:
+        params["key"] = key
+    
+    response = await get_from_jadx("strings", params, instance_id=instance_id)
     return response
 
 

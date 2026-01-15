@@ -248,18 +248,48 @@ async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
 
 @mcp.tool()
 @with_busy_check
-async def get_strings(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Retrieve contents of strings.xml files.
+async def get_strings(
+    mode: str = "summary",
+    query: Optional[str] = None,
+    key: Optional[str] = None,
+    locale: str = "values",
+    offset: int = 0,
+    limit: int = 50,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Get strings from APK with AI-friendly modes.
     
-    WARNING: Large APKs may have thousands of strings. Always use pagination (count parameter)
-    to avoid timeouts. Start with count=50 and paginate as needed.
+    Modes:
+    - summary (default): Returns total count, sample keys, and usage hints
+    - list: Paginated list of all string keys
+    - search: Search strings by keyword (requires query parameter)
+    - get: Get specific string value (requires key parameter)
+    
+    Examples:
+    - Summary: get_strings() → {total_strings: 15673, sample_keys: [...]}
+    - Search: get_strings(mode="search", query="login") → {matches: [{key, value}, ...]}
+    - Get: get_strings(mode="get", key="app_name") → {value: "小红书"}
+    - List: get_strings(mode="list", offset=0, limit=50) → {keys: [...]}
+    - Change locale: get_strings(locale="values-en")
     
     Args:
-        offset: Starting index for pagination. Default: 0
-        count: Number of strings to return. Default: 0 (all - NOT recommended for large APKs)
+        mode: Operation mode (summary|list|search|get). Default: summary
+        query: Search keyword (required for mode=search)
+        key: String key name (required for mode=get)
+        locale: Locale variant like "values", "values-en", "values-zh". Default: values
+        offset: Pagination offset for list mode. Default: 0
+        limit: Results per page (max: 200). Default: 50
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.resource_tools.get_strings(offset, count, instance_id=instance_id)
+    return await tools.resource_tools.get_strings(
+        mode=mode,
+        query=query,
+        key=key,
+        locale=locale,
+        offset=offset,
+        limit=limit,
+        instance_id=instance_id
+    )
 
 
 @mcp.tool()
