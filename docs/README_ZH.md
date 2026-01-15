@@ -9,7 +9,7 @@
 
 **👉 原始项目**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
-[English](README.md) | 简体中文
+[English](../README.md) | 简体中文
 
 ![GitHub contributors](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
 ![GitHub all releases](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/total)
@@ -36,7 +36,7 @@
 - ❌ 生产级安全服务（无审计日志、无细粒度 RBAC）
 - ❌ 完整的自动化逆向框架
 
-> 📖 安全相关说明请参阅 [SECURITY.md](SECURITY.md)
+> 📖 安全相关说明请参阅 [SECURITY_ZH.md](SECURITY_ZH.md)
 
 ---
 
@@ -190,7 +190,7 @@ docker/apks/jadx-2/target.apk  → JADX #2 自动打开
 docker/apks/jadx-3/target.apk  → JADX #3 自动打开
 ```
 
-> 📖 详细使用说明见 [docker/QUICK_START.md](docker/QUICK_START.md)
+> 📖 详细使用说明见 [QUICK_START_ZH.md](QUICK_START_ZH.md)
 
 ### All-in-One 容器
 

@@ -9,7 +9,7 @@
 
 **👉 Original Project**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
-English | [简体中文](README_ZH.md)
+English | [简体中文](docs/README_ZH.md)
 
 ![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
 ![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
@@ -118,7 +118,7 @@ Thanks to these wonderful people for their contributions ⭐
 - ❌ A production-grade security service (no audit logs, no fine-grained RBAC)
 - ❌ A complete automated reverse engineering framework
 
-> 📖 For security considerations, see [SECURITY.md](SECURITY.md)
+> 📖 For security considerations, see [SECURITY.md](docs/SECURITY.md)
 
 ---
 

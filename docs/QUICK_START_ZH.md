@@ -1,6 +1,6 @@
-# JADX-AI-MCP Docker Compose Quick Start
+# JADX-AI-MCP Docker Compose 快速部署
 
-English | [简体中文](../docs/QUICK_START_ZH.md)
+[English](../docker/QUICK_START.md) | 简体中文
 
 ## 📦 一键启动
 
@@ -124,3 +124,7 @@ docker compose down -v
 - 添加用户认证
 - 修改超时时间
 - 添加更多 JADX 实例
+
+---
+
+📖 详细 Docker 部署指南：[DOCKER_ZH.md](DOCKER_ZH.md)

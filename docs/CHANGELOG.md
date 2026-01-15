@@ -8,7 +8,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.46] - 2026-01-15
+## [6.0.46] - 2026-01-15 18:55
 
 ### Added
 - Performance warnings in tool docstrings for large classes/resources
@@ -19,7 +19,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.45] - 2026-01-15
+## [6.0.45] - 2026-01-15 18:24
 
 ### Fixed
 - `clear_class_cache` correct InstanceRegistry usage
@@ -27,14 +27,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.44] - 2026-01-15
+## [6.0.44] - 2026-01-15 18:14
 
 ### Changed
 - Version bump for release
 
 ---
 
-## [6.0.43] - 2026-01-15
+## [6.0.43] - 2026-01-15 18:05
 
 ### Added
 - 30-second global cooldown for cache clear operations
@@ -42,7 +42,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.42] - 2026-01-15
+## [6.0.42] - 2026-01-15 17:22
 
 ### Added
 - Complete ClassCacheManager rollout to all 5 batch tools:
@@ -54,14 +54,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.41] - 2026-01-15
+## [6.0.41] - 2026-01-15 17:02
 
 ### Added
 - ClassCacheManager integration for batch tools
 
 ---
 
-## [6.0.40] - 2026-01-15
+## [6.0.40] - 2026-01-15 16:56
 
 ### Added
 - Automatic cache invalidation on rename operations
@@ -69,7 +69,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.39] - 2026-01-15
+## [6.0.39] - 2026-01-15 16:38
 
 ### Added
 - **ClassCacheManager** for optimized batch class source retrieval
@@ -78,21 +78,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.38] - 2026-01-15
+## [6.0.38] - 2026-01-15 16:21
 
 ### Added
 - Initial ClassCacheManager implementation for `batch_get_class_source`
 
 ---
 
-## [6.0.37] - 2026-01-15
+## [6.0.37] - 2026-01-15 15:17
 
 ### Changed
 - Updated Python MCP tool definitions for AI-friendly strings API
 
 ---
 
-## [6.0.36] - 2026-01-15
+## [6.0.36] - 2026-01-15 15:13
 
 ### Added
 - `[JAI]` prefix and timestamps to all log messages
@@ -100,7 +100,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.35] - 2026-01-15
+## [6.0.35] - 2026-01-15 15:05
 
 ### Added
 - **AI-friendly strings API with 4 modes**:
@@ -111,14 +111,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.34] - 2026-01-15
+## [6.0.34] - 2026-01-15 15:00
 
 ### Fixed
 - `get_strings` performance optimization - avoid loading all file contents
 
 ---
 
-## [6.0.33] - 2026-01-15
+## [6.0.33] - 2026-01-15 14:38
 
 ### Fixed
 - Removed misleading `progress_percent` from responses
@@ -126,7 +126,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.32] - 2026-01-15
+## [6.0.32] - 2026-01-15 14:35
 
 ### Added
 - Comprehensive health monitoring for ResourceCacheManager
@@ -134,7 +134,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.31] - 2026-01-15
+## [6.0.31] - 2026-01-15 14:31
 
 ### Added
 - 100% automated `get_strings` using ResourceCacheManager
@@ -142,7 +142,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.30] - 2026-01-15
+## [6.0.30] - 2026-01-15 14:28
 
 ### Fixed
 - Rewrote `handleStrings` to be purely non-blocking
@@ -150,70 +150,70 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.29] - 2026-01-15
+## [6.0.29] - 2026-01-15 14:24
 
 ### Added
 - Detailed logging for `getOpenedResourceTabs` diagnosis
 
 ---
 
-## [6.0.28] - 2026-01-15
+## [6.0.28] - 2026-01-15 14:11
 
 ### Added
 - Hybrid resource loading (GUI tabs + non-blocking EDT fallback)
 
 ---
 
-## [6.0.27] - 2026-01-15
+## [6.0.27] - 2026-01-15 01:49
 
 ### Changed
 - Improved status messages for `get_strings` TAB access
 
 ---
 
-## [6.0.26] - 2026-01-15
+## [6.0.26] - 2026-01-15 01:46
 
 ### Added
 - GUI tab-based resource access (eliminates `loadContent` blocking)
 
 ---
 
-## [6.0.25] - 2026-01-15
+## [6.0.25] - 2026-01-15 01:32
 
 ### Fixed
 - Replaced `ctx.future()` async with synchronous `Future.get(timeout)`
 
 ---
 
-## [6.0.24] - 2026-01-15
+## [6.0.24] - 2026-01-15 01:12
 
 ### Fixed
 - Python `get_strings` handler for new response format
 
 ---
 
-## [6.0.23] - 2026-01-15
+## [6.0.23] - 2026-01-15 01:02
 
 ### Fixed
 - Dedicated single-thread executor for async resource loading
 
 ---
 
-## [6.0.22] - 2026-01-15
+## [6.0.22] - 2026-01-15 00:52
 
 ### Added
 - Async HTTP resource loading with 60-second timeout
 
 ---
 
-## [6.0.21] - 2026-01-15
+## [6.0.21] - 2026-01-15 00:47
 
 ### Fixed
 - Skip `resources.arsc` parsing in `get_strings` to prevent server hang
 
 ---
 
-## [6.0.20] - 2026-01-15
+## [6.0.20] - 2026-01-15 00:32
 
 ### Changed
 - Reverted to original synchronous loading
@@ -221,28 +221,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.19] - 2026-01-15
+## [6.0.19] - 2026-01-15 00:23
 
 ### Changed
 - Reverted `get_strings` to original behavior with variants support
 
 ---
 
-## [6.0.18] - 2026-01-15
+## [6.0.18] - 2026-01-15 00:12
 
 ### Fixed
 - Added 5-second per-file timeout for `get_strings` content loading
 
 ---
 
-## [6.0.17] - 2026-01-14
+## [6.0.17] - 2026-01-14 23:54
 
 ### Added
 - O(1) pre-computed `strings.xml` cache
 
 ---
 
-## [6.0.16] - 2026-01-14
+## [6.0.16] - 2026-01-14 23:38
 
 ### Added
 - **ResourceCacheManager** for unified resource caching
@@ -250,21 +250,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.15] - 2026-01-14
+## [6.0.15] - 2026-01-14 23:24
 
 ### Added
 - Background caching for `get_strings` on large APKs
 
 ---
 
-## [6.0.14] - 2026-01-14
+## [6.0.14] - 2026-01-14 23:04
 
 ### Fixed
 - `get_strings` timeout with streaming pagination
 
 ---
 
-## [6.0.13] - 2026-01-14
+## [6.0.13] - 2026-01-14 21:22
 
 ### Added
 - Complete Docker and local deployment documentation
@@ -272,7 +272,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.12] - 2026-01-14
+## [6.0.12] - 2026-01-14 20:45
 
 ### Added
 - Fast-fail search lock with retry hint
@@ -280,7 +280,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.11] - 2026-01-14
+## [6.0.11] - 2026-01-14 20:37
 
 ### Added
 - **Global JadxSearchLock** for thread-safe search operations
@@ -288,7 +288,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.10] - 2026-01-14
+## [6.0.10] - 2026-01-14 20:15
 
 ### Fixed
 - Removed MAX_SCAN limit from `searchByCode`
@@ -298,14 +298,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.9] - 2026-01-14
+## [6.0.9] - 2026-01-14 19:51
 
 ### Changed
 - Use 'dev' placeholder for versions (replaced by CI at build time)
 
 ---
 
-## [6.0.7] - 2026-01-14
+## [6.0.7] - 2026-01-14 17:09
 
 ### Changed
 - Split Docker base image for faster CI builds
@@ -313,7 +313,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.6] - 2026-01-13
+## [6.0.6] - 2026-01-13 18:03
 
 ### Fixed
 - Maven shade plugin warnings suppression
@@ -322,7 +322,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.5] - 2026-01-13
+## [6.0.5] - 2026-01-13 17:40
 
 ### Added
 - **Batch retrieval tools**:
@@ -331,7 +331,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.4] - 2026-01-13
+## [6.0.4] - 2026-01-13 16:28
 
 ### Added
 - Environment variable support for Docker deployment
@@ -339,7 +339,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.3] - 2026-01-13
+## [6.0.3] - 2026-01-13 11:15
 
 ### Changed
 - Documentation cleanup and consolidation
@@ -348,7 +348,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.2] - 2026-01-12
+## [6.0.2] - 2026-01-12 21:45
 
 ### Added
 - **Multi-instance JADX support** - connect multiple JADX instances
@@ -358,7 +358,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.1] - 2026-01-12
+## [6.0.1] - 2026-01-12 16:59
 
 ### Fixed
 - CI sync version from git tag to `pom.xml`
