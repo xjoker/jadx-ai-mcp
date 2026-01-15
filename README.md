@@ -402,6 +402,32 @@ Two Docker images are available:
 | `xjoker/jadx-ai-mcp` | JADX GUI + noVNC + MCP Server | ~800MB | Quick start, single APK |
 | `xjoker/jadx-mcp-server` | MCP Server only | ~100MB | Production, multi-instance |
 
+### 🚀 Docker Compose (推荐)
+
+**一键启动 1 MCP + 3 JADX 多实例环境：**
+
+```bash
+cd docker
+docker compose up -d
+```
+
+**访问地址：**
+
+| 服务 | 地址 | 说明 |
+|:-----|:-----|:-----|
+| MCP Server | http://localhost:8651/mcp | 连接 Claude/LLM |
+| JADX #1 | http://localhost:6080 | noVNC 桌面 |
+| JADX #2 | http://localhost:6081 | noVNC 桌面 |
+| JADX #3 | http://localhost:6082 | noVNC 桌面 |
+
+**加载 APK：** 将文件放入 `docker/apks/` 目录，在 noVNC 中打开 `/apks/your-app.apk`
+
+**使用场景：**
+- 比较 APP 不同版本：在 JADX #1 和 #2 分别打开 v1 和 v2，让 AI 比较差异
+- 团队协作分析：不同成员使用不同实例分析不同模块
+
+> 📖 详细使用说明见 [docker/QUICK_START.md](docker/QUICK_START.md)
+
 ### All-in-One Container
 
 **Basic Usage:**

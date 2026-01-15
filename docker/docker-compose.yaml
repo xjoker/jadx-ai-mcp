@@ -1,0 +1,126 @@
+# JADX-AI-MCP Multi-Instance Docker Compose
+#
+# 这个配置包含:
+# - 1 个 MCP 服务器 (端口 8651)
+# - 3 个 JADX 实例 (端口 6080-6082 用于 noVNC，8650-8652 用于 API)
+#
+# 快速启动:
+#   docker compose up -d
+#
+# 访问:
+#   - MCP Server: http://localhost:8651/mcp (连接 LLM)
+#   - JADX #1: http://localhost:6080 (noVNC)
+#   - JADX #2: http://localhost:6081 (noVNC)
+#   - JADX #3: http://localhost:6082 (noVNC)
+#
+# 加载 APK:
+#   1. 将 APK 放入 ./apks/ 目录
+#   2. 访问对应的 noVNC 页面
+#   3. 在 JADX GUI 中打开 /apks/your-app.apk
+
+services:
+  # ============================================
+  # MCP Server - 核心服务
+  # ============================================
+  mcp-server:
+    image: xjoker/jadx-mcp-server:latest
+    container_name: jadx-mcp-server
+    ports:
+      - "8651:8651"
+    volumes:
+      - ./config:/app/data/config:ro
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - jadx-1
+      - jadx-2
+      - jadx-3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8651/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - jadx-network
+
+  # ============================================
+  # JADX Instance #1
+  # ============================================
+  jadx-1:
+    image: xjoker/jadx-ai-mcp:latest
+    container_name: jadx-instance-1
+    ports:
+      - "6080:6080"   # noVNC Web Desktop
+      - "8650:8650"   # Plugin API
+    volumes:
+      - ./apks:/apks:ro
+      - jadx-1-cache:/root/.cache
+      - jadx-1-gui:/root/.jadx-gui
+    environment:
+      - TZ=Asia/Shanghai
+      - JADX_PLUGIN_PORT=8650
+      - JADX_PLUGIN_BIND_ADDRESS=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - jadx-network
+
+  # ============================================
+  # JADX Instance #2
+  # ============================================
+  jadx-2:
+    image: xjoker/jadx-ai-mcp:latest
+    container_name: jadx-instance-2
+    ports:
+      - "6081:6080"   # noVNC Web Desktop
+      - "8660:8650"   # Plugin API (mapped to 8660 on host)
+    volumes:
+      - ./apks:/apks:ro
+      - jadx-2-cache:/root/.cache
+      - jadx-2-gui:/root/.jadx-gui
+    environment:
+      - TZ=Asia/Shanghai
+      - JADX_PLUGIN_PORT=8650
+      - JADX_PLUGIN_BIND_ADDRESS=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - jadx-network
+
+  # ============================================
+  # JADX Instance #3
+  # ============================================
+  jadx-3:
+    image: xjoker/jadx-ai-mcp:latest
+    container_name: jadx-instance-3
+    ports:
+      - "6082:6080"   # noVNC Web Desktop
+      - "8670:8650"   # Plugin API (mapped to 8670 on host)
+    volumes:
+      - ./apks:/apks:ro
+      - jadx-3-cache:/root/.cache
+      - jadx-3-gui:/root/.jadx-gui
+    environment:
+      - TZ=Asia/Shanghai
+      - JADX_PLUGIN_PORT=8650
+      - JADX_PLUGIN_BIND_ADDRESS=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - jadx-network
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  jadx-network:
+    driver: bridge
+
+# ============================================
+# Volumes (持久化缓存，加速后续分析)
+# ============================================
+volumes:
+  jadx-1-cache:
+  jadx-1-gui:
+  jadx-2-cache:
+  jadx-2-gui:
+  jadx-3-cache:
+  jadx-3-gui:
