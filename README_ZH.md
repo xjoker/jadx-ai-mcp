@@ -144,6 +144,36 @@ claude mcp add --transport http jadx http://localhost:8651/mcp
 | `xjoker/jadx-ai-mcp` | JADX GUI + noVNC + MCP Server | ~800MB | 快速上手、单 APK |
 | `xjoker/jadx-mcp-server` | 仅 MCP Server | ~100MB | 生产环境、多实例 |
 
+### 🚀 Docker Compose（推荐）
+
+**一键启动 1 MCP + 3 JADX 多实例环境：**
+
+```bash
+cd docker
+docker compose up -d
+```
+
+**访问地址：**
+
+| 服务 | 地址 | 说明 |
+|:-----|:-----|:-----|
+| MCP Server | http://localhost:8651/mcp | 连接 Claude/LLM |
+| JADX #1 | http://localhost:6080 | noVNC 桌面 |
+| JADX #2 | http://localhost:6081 | noVNC 桌面 |
+| JADX #3 | http://localhost:6082 | noVNC 桌面 |
+
+**自动加载 APK：**
+
+将 APK 文件命名为 `target.apk` 放入对应目录，JADX 启动时会自动加载：
+
+```bash
+docker/apks/jadx-1/target.apk  → JADX #1 自动打开
+docker/apks/jadx-2/target.apk  → JADX #2 自动打开
+docker/apks/jadx-3/target.apk  → JADX #3 自动打开
+```
+
+> 📖 详细使用说明见 [docker/QUICK_START.md](docker/QUICK_START.md)
+
 ### All-in-One 容器
 
 **基本用法：**
@@ -278,6 +308,20 @@ docker run -d --name mcp-server \
 | **30秒全局冷却** | 缓存清除操作有 30 秒的防抖冷却期，以防止过度重新加载。|
 
 > **注意**：如果怀疑 JADX 端修改后数据过期，可使用 `clear_class_cache()` 手动清除。
+
+---
+
+## ⚡ 工具性能提示
+
+部分工具在大型 APK 上可能超时，请使用以下最佳实践：
+
+| 工具 | 警告 | 建议 |
+|:-----|:-----|:-----|
+| `get_class_source` | 超大类（如含 10000+ 字段的 R.class）可能超时 | 使用 `get_method_by_name` 获取特定方法 |
+| `batch_get_class_source` | 包含大类可能导致超时 | 先用 `get_class_info` 检查大小 |
+| `get_main_application_classes_code` | `count=0`（全部）可能超时 | 使用 `count=1-5` 分页获取 |
+| `get_resource_file` | 混淆 APK 可能重命名资源 | 先用 `get_all_resource_file_names` 检查 |
+| `search_classes_by_keyword` | `search_in="code"` 速度慢 | 优先使用 `search_in="class"` 或 `"method"` |
 
 ---
 

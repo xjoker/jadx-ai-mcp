@@ -24,9 +24,20 @@ docker compose ps
 
 ## 📱 加载 APK
 
-1. 将 APK 文件放入 `apks/` 目录
-2. 访问任意 JADX 的 noVNC 页面
-3. 在 JADX GUI 中: File → Open → `/apks/your-app.apk`
+### 方式 1: 自动加载（推荐）
+
+将 APK 命名为 `target.apk` 放入对应目录，JADX 启动时自动加载：
+
+```bash
+apks/jadx-1/target.apk  → JADX #1 自动打开
+apks/jadx-2/target.apk  → JADX #2 自动打开
+apks/jadx-3/target.apk  → JADX #3 自动打开
+```
+
+### 方式 2: 手动加载
+
+1. 访问 JADX 的 noVNC 页面
+2. 在 JADX GUI 中: File → Open → `/apks/your-app.apk`
 
 ## 🤖 连接 Claude
 

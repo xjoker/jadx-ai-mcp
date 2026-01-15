@@ -370,6 +370,7 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8
 | `JADX_PORT` | JADX plugin port (default: 8650) |
 | `JADX_MCP_AUTH_TOKEN` | Authentication token for JADX plugin |
 | `JADX_MCP_SERVER_PORT` | MCP server port (default: 8651) |
+| `JADX_MCP_BIND_ADDRESS` | Plugin bind address (default: 127.0.0.1, use 0.0.0.0 for Docker) |
 
 ### Step 3: Connect LLM Client
 
@@ -420,7 +421,15 @@ docker compose up -d
 | JADX #2 | http://localhost:6081 | noVNC 桌面 |
 | JADX #3 | http://localhost:6082 | noVNC 桌面 |
 
-**加载 APK：** 将文件放入 `docker/apks/` 目录，在 noVNC 中打开 `/apks/your-app.apk`
+**自动加载 APK：**
+
+将 APK 文件命名为 `target.apk` 放入对应目录，JADX 启动时会自动加载：
+
+```bash
+docker/apks/jadx-1/target.apk  → JADX #1 自动打开
+docker/apks/jadx-2/target.apk  → JADX #2 自动打开
+docker/apks/jadx-3/target.apk  → JADX #3 自动打开
+```
 
 **使用场景：**
 - 比较 APP 不同版本：在 JADX #1 和 #2 分别打开 v1 和 v2，让 AI 比较差异
@@ -562,6 +571,20 @@ For performance, batch operations (`batch_get_class_source`, `batch_get_method_b
 | **30s Global Cooldown** | Cache clear operations are debounced with a 30-second cooldown to prevent excessive reloading. |
 
 > **Note**: Use `clear_class_cache()` to manually clear if you suspect stale data after JADX-side modifications.
+
+---
+
+## ⚡ Tool Performance Tips
+
+Some tools may timeout on large APKs. Use these best practices:
+
+| Tool | Warning | Recommendation |
+|:-----|:--------|:---------------|
+| `get_class_source` | Very large classes (R.class with 10000+ fields) may timeout | Use `get_method_by_name` for specific methods |
+| `batch_get_class_source` | Include large classes may cause timeout | Use `get_class_info` first to check size |
+| `get_main_application_classes_code` | `count=0` (all) may timeout | Use `count=1-5` for pagination |
+| `get_resource_file` | Obfuscated APKs may have renamed resources | Use `get_all_resource_file_names` first |
+| `search_classes_by_keyword` | `search_in="code"` is slow | Prefer `search_in="class"` or `"method"` |
 
 ---
 
