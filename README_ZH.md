@@ -61,6 +61,12 @@ JADX 的反编译引擎计算密集型且对所有操作并非完全线程安全
 *   **动态实例**：通过 `add_jadx_instance` 在运行时添加。**仅**对创建者可见（默认私有）。
 *   **管理员访问**：管理员用户对所有实例拥有可见性和控制权。
 
+### 类缓存与自动失效
+为提升性能，批量操作（`batch_get_class_source`、`batch_get_method_by_name`、`batch_get_xrefs`）使用 **ClassCacheManager**：
+*   **懒加载**：缓存在首次批量调用时填充。初始可能返回 `LOADING` 状态。
+*   **自动失效**：任何重命名操作（`rename_class`、`rename_method`、`rename_field`、`rename_package`）都会自动清除缓存。
+*   **30秒全局冷却**：缓存清除操作有 30 秒的防抖冷却期，以防止过度重新加载。
+
 ---
 
 ## 📚 MCP 工具参考
@@ -113,6 +119,7 @@ JADX 的反编译引擎计算密集型且对所有操作并非完全线程安全
 | `set_default_jadx_instance`| 设置活动实例上下文 | `name` |
 | `check_instance_status` | 检查特定实例是否繁忙 | `instance_name` |
 | `health_check_jadx_instances`| 对所有实例运行健康检查 | 无 |
+| `clear_class_cache` | 清除 ClassCacheManager 缓存（30秒冷却） | `instance_id` |
 
 ---
 
@@ -126,7 +133,7 @@ host = "0.0.0.0"
 port = 8651
 
 [security]
-allow_dynamic_instances = true  # 允许 AI 添加新实例
+allow_dynamic_instances = false  # 默认禁用。设为 true 允许 AI 添加实例
 
 [[users]]
 name = "admin"
@@ -151,10 +158,34 @@ enabled = true
 
 ## 🚀 快速开始
 
-### Docker（推荐）
+### Docker 部署
+
+提供两个 Docker 镜像：
+
+| 镜像 | 描述 | 使用场景 |
+|------|------|----------|
+| `xjoker/jadx-ai-mcp` | JADX GUI + noVNC + MCP 服务器（一体化） | 快速开始，单个 APK |
+| `xjoker/jadx-mcp-server` | 仅 MCP 服务器 | 生产环境，多实例 |
+
+**一体化容器（推荐快速开始）：**
 
 ```bash
-# 运行 MCP 服务器
+docker run -d --name jadx \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  xjoker/jadx-ai-mcp:latest
+```
+
+**访问：**
+- 🌐 **noVNC 桌面**: http://localhost:6080
+- 🔌 **插件 API**: http://localhost:8650
+- 🤖 **MCP 服务器**: http://localhost:8651
+
+**独立 MCP 服务器：**
+
+```bash
 docker run -d -p 8651:8651 \
   -v $(pwd)/config:/app/data/config \
   xjoker/jadx-mcp-server:latest

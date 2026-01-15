@@ -299,16 +299,27 @@ def register_instance_tools(mcp):
             Debounced:
                 {"success": false, "message": "Cache clear debounced (30s global cooldown)", "cooldown_remaining_seconds": 25}
         """
-        instance = InstanceRegistry.resolve_instance(instance_id)
+        if instance_id:
+            instance = InstanceRegistry.get_instance(instance_id)
+        else:
+            instance = InstanceRegistry.get_default()
+            
         if not instance:
-            return {"error": f"Instance '{instance_id}' not found or not connected"}
+            return {"error": f"Instance '{instance_id or 'default'}' not found or not connected"}
+        
+        if instance.status != "connected":
+            return {"error": f"Instance '{instance.name}' is not connected (status: {instance.status})"}
         
         try:
             import httpx
+            # Get auth token - use instance token or global token
+            auth_token = instance.token or InstanceRegistry.get_auth_token()
+            headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+            
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{instance.url}/cache/clear",
-                    headers=instance.get_auth_headers()
+                    headers=headers
                 )
                 response.raise_for_status()
                 return response.json()

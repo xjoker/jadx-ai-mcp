@@ -61,6 +61,12 @@ Designed for shared environments:
 *   **Dynamic Instances**: Added at runtime via `add_jadx_instance`. Visible **only** to the user who created them (Private by Default).
 *   **Admin Access**: Admin users have visibility and control over all instances.
 
+### Class Cache & Auto-Invalidation
+For performance, batch operations (`batch_get_class_source`, `batch_get_method_by_name`, `batch_get_xrefs`) use **ClassCacheManager**:
+*   **Lazy Loading**: Cache is populated on first batch call. May return `LOADING` status initially.
+*   **Auto-Invalidation**: Any rename operation (`rename_class`, `rename_method`, `rename_field`, `rename_package`) automatically clears the cache.
+*   **30s Global Cooldown**: Cache clear operations are debounced with a 30-second cooldown to prevent excessive reloading.
+
 ---
 
 ## 📚 MCP Tools Reference
@@ -113,6 +119,7 @@ All tools support an optional `instance_id` parameter to target a specific JADX 
 | `set_default_jadx_instance`| Set active instance context | `name` |
 | `check_instance_status` | Check if specific instance is busy | `instance_name` |
 | `health_check_jadx_instances`| Run health checks on all instances | None |
+| `clear_class_cache` | Clear ClassCacheManager cache (30s cooldown) | `instance_id` |
 
 ---
 
@@ -126,7 +133,7 @@ host = "0.0.0.0"
 port = 8651
 
 [security]
-allow_dynamic_instances = true  # Allow AI to add new instances
+allow_dynamic_instances = false  # Default: disabled. Set true to allow AI to add instances
 
 [[users]]
 name = "admin"
@@ -151,10 +158,34 @@ enabled = true
 
 ## 🚀 Quick Start
 
-### Docker (Recommended)
+### Docker Deployment
+
+Two Docker images are available:
+
+| Image | Description | Use Case |
+|-------|-------------|----------|
+| `xjoker/jadx-ai-mcp` | JADX GUI + noVNC + MCP Server (All-in-One) | Quick start, single APK |
+| `xjoker/jadx-mcp-server` | MCP Server only | Production, multi-instance |
+
+**All-in-One Container (Recommended for Quick Start):**
 
 ```bash
-# Run MCP Server
+docker run -d --name jadx \
+  -p 6080:6080 \
+  -p 8650:8650 \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  xjoker/jadx-ai-mcp:latest
+```
+
+**Access:**
+- 🌐 **noVNC Desktop**: http://localhost:6080
+- 🔌 **Plugin API**: http://localhost:8650
+- 🤖 **MCP Server**: http://localhost:8651
+
+**Standalone MCP Server:**
+
+```bash
 docker run -d -p 8651:8651 \
   -v $(pwd)/config:/app/data/config \
   xjoker/jadx-mcp-server:latest
