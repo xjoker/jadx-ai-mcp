@@ -97,96 +97,109 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call using GUI tab access ONLY.
+     * Handle the /strings MCP tool call using ResourceCacheManager.
      * 
-     * This method is PURELY non-blocking:
-     * - Reads content directly from opened GUI tabs
-     * - If no matching tabs found, returns instructions (no slow fallback)
+     * This method is 100% automated - NO user interaction required:
+     * 1. If cache ready: returns strings.xml content instantly
+     * 2. If cache loading: returns "loading" status with retry hint
+     * 3. If cache not initialized: triggers background loading
      * 
-     * For strings.xml to work, user must open the file in JADX GUI first.
+     * The cache loads resources.arsc once in background, then all
+     * subsequent calls are instant.
      */
     public void handleStrings(Context ctx) {
         try {
             Map<String, Object> result = new HashMap<>();
             result.put("type", "resource/strings-xml");
             
-            if (mainWindow == null) {
-                result.put("status", "error");
-                result.put("error", "mainWindow is null - JADX GUI not initialized");
-                ctx.json(result);
-                return;
-            }
+            // Check cache status
+            ResourceCacheManager.CacheStatus status = ResourceCacheManager.getStatus();
+            logger.info("handleStrings: cache status = {}", status);
             
-            JTabbedPane tabbedPane = mainWindow.getTabbedPane();
-            if (tabbedPane == null) {
-                result.put("status", "error");
-                result.put("error", "tabbedPane is null");
-                ctx.json(result);
-                return;
-            }
-            
-            // Log all open tabs for debugging
-            int tabCount = tabbedPane.getTabCount();
-            List<String> allTabTitles = new ArrayList<>();
-            for (int i = 0; i < tabCount; i++) {
-                allTabTitles.add(tabbedPane.getTitleAt(i));
-            }
-            logger.info("handleStrings: {} tabs open: {}", tabCount, allTabTitles);
-            
-            // Try to find and read strings.xml from any open tab
-            List<Map<String, String>> matchedTabs = new ArrayList<>();
-            for (int i = 0; i < tabCount; i++) {
-                String tabTitle = tabbedPane.getTitleAt(i);
-                
-                // Flexible matching for strings.xml
-                boolean isStringsTab = tabTitle != null && (
-                    tabTitle.contains("strings.xml") ||
-                    tabTitle.toLowerCase().contains("strings") ||
-                    tabTitle.contains("res/values")
-                );
-                
-                if (isStringsTab) {
-                    logger.info("Found potential strings tab at index {}: '{}'", i, tabTitle);
-                    Component component = tabbedPane.getComponentAt(i);
-                    String content = extractTextFromComponent(component);
+            switch (status) {
+                case READY:
+                    // Cache is ready - return strings.xml content instantly
+                    List<ResContainer> stringsFiles = ResourceCacheManager.getStringsFiles();
                     
-                    if (content != null && !content.isEmpty()) {
-                        logger.info("Extracted {} chars from tab '{}'", content.length(), tabTitle);
-                        Map<String, String> entry = new HashMap<>();
-                        entry.put("name", tabTitle);
-                        entry.put("content", content);
-                        matchedTabs.add(entry);
-                    } else {
-                        logger.warn("Tab '{}' matched but content is empty", tabTitle);
+                    if (stringsFiles.isEmpty()) {
+                        result.put("status", "not_found");
+                        result.put("message", "No strings.xml files found in APK");
+                        ctx.json(result);
+                        return;
                     }
-                }
+                    
+                    // Build list of available strings files
+                    List<Map<String, Object>> fileList = new ArrayList<>();
+                    String defaultContent = null;
+                    String defaultVariant = null;
+                    
+                    for (ResContainer strFile : stringsFiles) {
+                        String fileName = strFile.getFileName();
+                        String content = ResourceCacheManager.getContent(strFile);
+                        
+                        Map<String, Object> fileInfo = new HashMap<>();
+                        fileInfo.put("name", fileName);
+                        fileInfo.put("size", content != null ? content.length() : 0);
+                        fileList.add(fileInfo);
+                        
+                        // Default to res/values/strings.xml
+                        if ("res/values/strings.xml".equals(fileName) && content != null) {
+                            defaultContent = content;
+                            defaultVariant = fileName;
+                        }
+                    }
+                    
+                    result.put("status", "success");
+                    result.put("source", "cache");
+                    result.put("available_files", fileList);
+                    result.put("count", stringsFiles.size());
+                    
+                    // Return default strings.xml content
+                    if (defaultContent != null) {
+                        result.put("loaded_variant", defaultVariant);
+                        result.put("content", defaultContent);
+                    } else if (!stringsFiles.isEmpty()) {
+                        // Fallback to first file if default not found
+                        ResContainer first = stringsFiles.get(0);
+                        result.put("loaded_variant", first.getFileName());
+                        result.put("content", ResourceCacheManager.getContent(first));
+                    }
+                    
+                    ctx.json(result);
+                    break;
+                    
+                case LOADING:
+                    // Cache is loading in background
+                    result.put("status", "loading");
+                    result.put("message", "Resource cache is loading in background, please retry");
+                    result.put("retry_after", 5);
+                    result.put("cache_stats", ResourceCacheManager.getStats());
+                    ctx.status(202).json(result);
+                    break;
+                    
+                case NOT_INITIALIZED:
+                    // Trigger background loading
+                    boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
+                    result.put("status", "loading_started");
+                    result.put("message", started 
+                        ? "Resource cache loading started, please retry in a few seconds" 
+                        : "Cache initialization pending");
+                    result.put("retry_after", 10);
+                    ctx.status(202).json(result);
+                    break;
+                    
+                case ERROR:
+                    result.put("status", "error");
+                    result.put("error", ResourceCacheManager.getErrorMessage());
+                    result.put("message", "Resource loading failed. Try restarting JADX.");
+                    ctx.status(500).json(result);
+                    break;
+                    
+                default:
+                    result.put("status", "error");
+                    result.put("error", "Unknown cache status: " + status);
+                    ctx.status(500).json(result);
             }
-            
-            if (!matchedTabs.isEmpty()) {
-                result.put("status", "success");
-                result.put("source", "gui_tabs");
-                result.put("count", matchedTabs.size());
-                result.put("opened_files", matchedTabs);
-                
-                if (matchedTabs.size() == 1) {
-                    result.put("loaded_variant", matchedTabs.get(0).get("name"));
-                    result.put("content", matchedTabs.get(0).get("content"));
-                }
-                ctx.json(result);
-                return;
-            }
-            
-            // No matching tabs found - return helpful info (NO slow fallback!)
-            result.put("status", "no_tabs_open");
-            result.put("open_tabs", allTabTitles);
-            result.put("message", "No strings.xml tab found. Please open it in JADX GUI first.");
-            result.put("instructions", new String[]{
-                "1. In JADX GUI: expand Resources > resources.arsc > res > values",
-                "2. Double-click strings.xml to open it",
-                "3. Wait for content to appear in the tab",
-                "4. Call get_strings again"
-            });
-            ctx.json(result);
             
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Error in handleStrings: " + e.getMessage(), e, logger);
