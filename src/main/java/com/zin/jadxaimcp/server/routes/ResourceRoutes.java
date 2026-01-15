@@ -97,123 +97,251 @@ public class ResourceRoutes {
     }
 
     /**
-     * Handle the /strings MCP tool call using ResourceCacheManager.
+     * Handle the /strings MCP tool call with AI-friendly modes.
      * 
-     * This method is 100% automated - NO user interaction required:
-     * 1. If cache ready: returns strings.xml content instantly
-     * 2. If cache loading: returns "loading" status with retry hint
-     * 3. If cache not initialized: triggers background loading
+     * Modes:
+     * - summary (default): Returns stats and sample keys
+     * - list: Paginated list of all string keys
+     * - search: Search for strings containing a keyword
+     * - get: Get a specific string by key name
      * 
-     * The cache loads resources.arsc once in background, then all
-     * subsequent calls are instant.
+     * Parameters:
+     * - mode: summary|list|search|get (default: summary)
+     * - query: Search keyword (for mode=search)
+     * - key: String key name (for mode=get)
+     * - locale: Locale variant like "values", "values-en" (default: values)
+     * - offset: Pagination offset (default: 0)
+     * - limit: Results per page (default: 50, max: 200)
      */
     public void handleStrings(Context ctx) {
         try {
             Map<String, Object> result = new HashMap<>();
-            result.put("type", "resource/strings-xml");
+            result.put("type", "resource/strings");
             
-            // Check cache status
-            ResourceCacheManager.CacheStatus status = ResourceCacheManager.getStatus();
-            logger.info("handleStrings: cache status = {}", status);
+            // Check cache status first
+            ResourceCacheManager.CacheStatus cacheStatus = ResourceCacheManager.getStatus();
+            logger.info("handleStrings: cache status = {}", cacheStatus);
             
-            switch (status) {
-                case READY:
-                    // Cache is ready - return strings.xml content instantly
-                    List<ResContainer> stringsFiles = ResourceCacheManager.getStringsFiles();
+            if (cacheStatus != ResourceCacheManager.CacheStatus.READY) {
+                handleStringsCacheNotReady(ctx, result, cacheStatus);
+                return;
+            }
+            
+            // Get parameters
+            String mode = ctx.queryParam("mode") != null ? ctx.queryParam("mode") : "summary";
+            String locale = ctx.queryParam("locale") != null ? ctx.queryParam("locale") : "values";
+            int offset = ctx.queryParam("offset") != null ? Integer.parseInt(ctx.queryParam("offset")) : 0;
+            int limit = ctx.queryParam("limit") != null ? Math.min(200, Integer.parseInt(ctx.queryParam("limit"))) : 50;
+            
+            // Find the target strings file
+            String targetFile = "res/" + locale + "/strings.xml";
+            ResContainer stringsFile = null;
+            List<String> availableLocales = new ArrayList<>();
+            
+            for (ResContainer file : ResourceCacheManager.getStringsFiles()) {
+                String fileName = file.getFileName();
+                // Extract locale from path like "res/values-en/strings.xml"
+                if (fileName.contains("/strings.xml")) {
+                    String loc = fileName.replace("res/", "").replace("/strings.xml", "");
+                    availableLocales.add(loc);
+                    if (fileName.equals(targetFile)) {
+                        stringsFile = file;
+                    }
+                }
+            }
+            
+            if (stringsFile == null) {
+                result.put("status", "not_found");
+                result.put("message", "Locale '" + locale + "' not found");
+                result.put("available_locales", availableLocales);
+                ctx.json(result);
+                return;
+            }
+            
+            // Parse strings.xml into key-value map
+            Map<String, String> strings = parseStringsXml(ResourceCacheManager.getContent(stringsFile));
+            List<String> allKeys = new ArrayList<>(strings.keySet());
+            java.util.Collections.sort(allKeys);
+            
+            result.put("locale", locale);
+            result.put("available_locales", availableLocales);
+            
+            switch (mode) {
+                case "summary":
+                    // Return summary with sample keys
+                    result.put("status", "success");
+                    result.put("mode", "summary");
+                    result.put("total_strings", strings.size());
+                    result.put("sample_keys", allKeys.subList(0, Math.min(10, allKeys.size())));
+                    result.put("usage", Map.of(
+                        "list_keys", "?mode=list&offset=0&limit=50",
+                        "search", "?mode=search&query=login",
+                        "get_specific", "?mode=get&key=app_name",
+                        "change_locale", "?locale=values-en"
+                    ));
+                    break;
                     
-                    if (stringsFiles.isEmpty()) {
-                        result.put("status", "not_found");
-                        result.put("message", "No strings.xml files found in APK");
-                        ctx.json(result);
+                case "list":
+                    // Paginated list of keys
+                    int endIndex = Math.min(offset + limit, allKeys.size());
+                    List<String> pageKeys = allKeys.subList(offset, endIndex);
+                    
+                    result.put("status", "success");
+                    result.put("mode", "list");
+                    result.put("total", allKeys.size());
+                    result.put("offset", offset);
+                    result.put("limit", limit);
+                    result.put("keys", pageKeys);
+                    result.put("has_more", endIndex < allKeys.size());
+                    break;
+                    
+                case "search":
+                    // Search for strings containing keyword
+                    String query = ctx.queryParam("query");
+                    if (query == null || query.isEmpty()) {
+                        result.put("status", "error");
+                        result.put("error", "Missing 'query' parameter for search mode");
+                        ctx.status(400).json(result);
                         return;
                     }
                     
-                    // Build list of available strings files (without loading content)
-                    List<Map<String, Object>> fileList = new ArrayList<>();
-                    ResContainer defaultFile = null;
+                    String queryLower = query.toLowerCase();
+                    List<Map<String, String>> matches = new ArrayList<>();
                     
-                    for (ResContainer strFile : stringsFiles) {
-                        String fileName = strFile.getFileName();
-                        
-                        Map<String, Object> fileInfo = new HashMap<>();
-                        fileInfo.put("name", fileName);
-                        fileList.add(fileInfo);
-                        
-                        // Find default file
-                        if ("res/values/strings.xml".equals(fileName)) {
-                            defaultFile = strFile;
+                    for (Map.Entry<String, String> entry : strings.entrySet()) {
+                        if (entry.getKey().toLowerCase().contains(queryLower) || 
+                            entry.getValue().toLowerCase().contains(queryLower)) {
+                            if (matches.size() >= limit) break;
+                            matches.add(Map.of("key", entry.getKey(), "value", entry.getValue()));
                         }
-                    }
-                    
-                    // Fallback to first file if default not found
-                    if (defaultFile == null && !stringsFiles.isEmpty()) {
-                        defaultFile = stringsFiles.get(0);
                     }
                     
                     result.put("status", "success");
-                    result.put("source", "cache");
-                    result.put("available_files", fileList);
-                    result.put("count", stringsFiles.size());
+                    result.put("mode", "search");
+                    result.put("query", query);
+                    result.put("matches", matches);
+                    result.put("count", matches.size());
+                    break;
                     
-                    // Load only the default file's content (with size limit)
-                    if (defaultFile != null) {
-                        result.put("loaded_variant", defaultFile.getFileName());
-                        String content = ResourceCacheManager.getContent(defaultFile);
-                        
-                        if (content != null) {
-                            // Truncate if too large (> 500KB)
-                            final int MAX_SIZE = 500_000;
-                            if (content.length() > MAX_SIZE) {
-                                result.put("content", content.substring(0, MAX_SIZE));
-                                result.put("truncated", true);
-                                result.put("full_size", content.length());
-                                result.put("message", "Content truncated. Use offset/limit params for pagination.");
-                            } else {
-                                result.put("content", content);
-                            }
-                        }
+                case "get":
+                    // Get specific string by key
+                    String key = ctx.queryParam("key");
+                    if (key == null || key.isEmpty()) {
+                        result.put("status", "error");
+                        result.put("error", "Missing 'key' parameter for get mode");
+                        ctx.status(400).json(result);
+                        return;
                     }
                     
-                    ctx.json(result);
-                    break;
-                    
-                case LOADING:
-                    // Cache is loading in background - show progress
-                    result.put("status", "loading");
-                    result.put("message", "Resource cache is loading in background");
-                    result.put("health", ResourceCacheManager.getHealthInfo());
-                    result.put("retry_after", 3);
-                    ctx.status(202).json(result);
-                    break;
-                    
-                case NOT_INITIALIZED:
-                    // Trigger background loading
-                    boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
-                    result.put("status", "loading_started");
-                    result.put("message", started 
-                        ? "Resource cache loading started" 
-                        : "Cache initialization pending");
-                    result.put("health", ResourceCacheManager.getHealthInfo());
-                    result.put("retry_after", 5);
-                    ctx.status(202).json(result);
-                    break;
-                    
-                case ERROR:
-                    result.put("status", "error");
-                    result.put("error", ResourceCacheManager.getErrorMessage());
-                    result.put("message", "Resource loading failed. Try restarting JADX.");
-                    ctx.status(500).json(result);
+                    String value = strings.get(key);
+                    if (value != null) {
+                        result.put("status", "success");
+                        result.put("mode", "get");
+                        result.put("key", key);
+                        result.put("value", value);
+                    } else {
+                        result.put("status", "not_found");
+                        result.put("mode", "get");
+                        result.put("key", key);
+                        result.put("message", "String key not found");
+                        
+                        // Suggest similar keys
+                        String keyLower = key.toLowerCase();
+                        List<String> suggestions = allKeys.stream()
+                            .filter(k -> k.toLowerCase().contains(keyLower))
+                            .limit(5)
+                            .collect(Collectors.toList());
+                        if (!suggestions.isEmpty()) {
+                            result.put("suggestions", suggestions);
+                        }
+                    }
                     break;
                     
                 default:
                     result.put("status", "error");
-                    result.put("error", "Unknown cache status: " + status);
-                    ctx.status(500).json(result);
+                    result.put("error", "Unknown mode: " + mode);
+                    result.put("valid_modes", List.of("summary", "list", "search", "get"));
+                    ctx.status(400).json(result);
+                    return;
             }
+            
+            ctx.json(result);
             
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Error in handleStrings: " + e.getMessage(), e, logger);
         }
+    }
+    
+    /**
+     * Handle cache not ready states.
+     */
+    private void handleStringsCacheNotReady(Context ctx, Map<String, Object> result, 
+                                            ResourceCacheManager.CacheStatus status) {
+        switch (status) {
+            case LOADING:
+                result.put("status", "loading");
+                result.put("message", "Resource cache is loading in background");
+                result.put("health", ResourceCacheManager.getHealthInfo());
+                result.put("retry_after", 3);
+                ctx.status(202).json(result);
+                break;
+                
+            case NOT_INITIALIZED:
+                boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
+                result.put("status", "loading_started");
+                result.put("message", started ? "Resource cache loading started" : "Cache initialization pending");
+                result.put("health", ResourceCacheManager.getHealthInfo());
+                result.put("retry_after", 5);
+                ctx.status(202).json(result);
+                break;
+                
+            case ERROR:
+                result.put("status", "error");
+                result.put("error", ResourceCacheManager.getErrorMessage());
+                result.put("message", "Resource loading failed. Try restarting JADX.");
+                ctx.status(500).json(result);
+                break;
+                
+            default:
+                result.put("status", "error");
+                result.put("error", "Unknown cache status: " + status);
+                ctx.status(500).json(result);
+        }
+    }
+    
+    /**
+     * Parse strings.xml content into a key-value map.
+     * 
+     * @param xmlContent The XML content of strings.xml
+     * @return Map of string name to value
+     */
+    private Map<String, String> parseStringsXml(String xmlContent) {
+        Map<String, String> strings = new HashMap<>();
+        
+        if (xmlContent == null || xmlContent.isEmpty()) {
+            return strings;
+        }
+        
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            Document doc = builder.parse(new InputSource(new StringReader(xmlContent)));
+            
+            var stringNodes = doc.getElementsByTagName("string");
+            for (int i = 0; i < stringNodes.getLength(); i++) {
+                Element elem = (Element) stringNodes.item(i);
+                String name = elem.getAttribute("name");
+                String value = elem.getTextContent();
+                if (name != null && !name.isEmpty()) {
+                    strings.put(name, value);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Error parsing strings.xml: {}", e.getMessage());
+        }
+        
+        return strings;
     }
     
     /**
