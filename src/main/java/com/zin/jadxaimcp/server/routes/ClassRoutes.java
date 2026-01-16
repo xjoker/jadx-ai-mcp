@@ -360,7 +360,7 @@ public class ClassRoutes {
      * 
      *         After gathering the details it returns the methods details.
      */
-    public void handleMethodsOfClass(Context ctx) {
+     public void handleMethodsOfClass(Context ctx) {
         String className = checkClassParam(ctx);
         if (className == null)
             return;
@@ -375,17 +375,64 @@ public class ClassRoutes {
             JadxWrapper wrapper = mainWindow.getWrapper();
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
-                    List<String> methods = new ArrayList<>();
+                    // First pass: count overloads for each method name
+                    Map<String, Integer> overloadCounts = new HashMap<>();
                     for (JavaMethod method : cls.getMethods()) {
-                        String fullMethodName = cls.getFullName() + "." + method.getName();
-                        String methodData = method.getAccessFlags() +
-                                " " + method.getReturnType() +
-                                " " + method.getName() +
-                                " " + method.getMethodNode() +
-                                " " + fullMethodName;
-                        methods.add(methodData);
+                        String name = method.getName();
+                        overloadCounts.put(name, overloadCounts.getOrDefault(name, 0) + 1);
                     }
-                    ctx.result(String.join("\n", methods));
+                    
+                    // Second pass: build method info list
+                    List<Map<String, Object>> methodsList = new ArrayList<>();
+                    for (JavaMethod method : cls.getMethods()) {
+                        Map<String, Object> methodInfo = new HashMap<>();
+                        methodInfo.put("name", method.getName());
+                        
+                        // Access flags from MethodNode for accurate information
+                        MethodNode methodNode = method.getMethodNode();
+                        if (methodNode != null) {
+                            AccessInfo accessFlags = methodNode.getAccessFlags();
+                            methodInfo.put("is_static", accessFlags.isStatic());
+                            methodInfo.put("is_native", accessFlags.isNative());
+                            methodInfo.put("is_abstract", accessFlags.isAbstract());
+                            methodInfo.put("is_synchronized", accessFlags.isSynchronized());
+                            
+                            // Access modifiers list
+                            List<String> modifiers = new ArrayList<>();
+                            if (accessFlags.isPublic()) modifiers.add("public");
+                            if (accessFlags.isPrivate()) modifiers.add("private");
+                            if (accessFlags.isProtected()) modifiers.add("protected");
+                            if (accessFlags.isStatic()) modifiers.add("static");
+                            if (accessFlags.isNative()) modifiers.add("native");
+                            if (accessFlags.isAbstract()) modifiers.add("abstract");
+                            if (accessFlags.isSynchronized()) modifiers.add("synchronized");
+                            if (accessFlags.isFinal()) modifiers.add("final");
+                            methodInfo.put("modifiers", modifiers);
+                        } else {
+                            methodInfo.put("is_static", false);
+                            methodInfo.put("is_native", false);
+                            methodInfo.put("is_abstract", false);
+                            methodInfo.put("is_synchronized", false);
+                            methodInfo.put("modifiers", new ArrayList<>());
+                        }
+                        
+                        methodInfo.put("is_constructor", method.isConstructor());
+                        methodInfo.put("overload_count", overloadCounts.get(method.getName()));
+                        
+                        // Return type
+                        String returnType = method.getReturnType() != null ? 
+                            method.getReturnType().toString() : "void";
+                        methodInfo.put("return_type", returnType);
+                        
+                        methodsList.add(methodInfo);
+                    }
+                    
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("class_name", className);
+                    response.put("methods", methodsList);
+                    response.put("count", methodsList.size());
+                    
+                    ctx.json(response);
                     return;
                 }
             }
@@ -394,6 +441,7 @@ public class ClassRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving methods: " + e.getMessage(), e, logger);
         }
     }
+
 
     /**
      * @param Context
@@ -417,14 +465,48 @@ public class ClassRoutes {
             JadxWrapper wrapper = mainWindow.getWrapper();
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
-                    List<String> fields = new ArrayList<>();
+                    List<Map<String, Object>> fieldsList = new ArrayList<>();
+                    
                     for (JavaField field : cls.getFields()) {
-                        String fieldData = field.getAccessFlags() +
-                                " " + field.getType() +
-                                " " + field.getName();
-                        fields.add(fieldData);
+                        Map<String, Object> fieldInfo = new HashMap<>();
+                        fieldInfo.put("name", field.getName());
+                        
+                        // Type information
+                        String typeStr = field.getType() != null ? field.getType().toString() : "unknown";
+                        fieldInfo.put("type", typeStr);
+                        
+                        // Frida-compatible type
+                        if (field.getFieldNode() != null && field.getFieldNode().getType() != null) {
+                            fieldInfo.put("type_frida", 
+                                com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(field.getFieldNode().getType()));
+                        } else {
+                            fieldInfo.put("type_frida", typeStr);
+                        }
+                        
+                        // Access modifiers
+                        AccessInfo accessFlags = field.getAccessFlags();
+                        List<String> modifiers = new ArrayList<>();
+                        if (accessFlags.isPublic()) modifiers.add("public");
+                        if (accessFlags.isPrivate()) modifiers.add("private");
+                        if (accessFlags.isProtected()) modifiers.add("protected");
+                        if (accessFlags.isStatic()) modifiers.add("static");
+                        if (accessFlags.isFinal()) modifiers.add("final");
+                        if (accessFlags.isVolatile()) modifiers.add("volatile");
+                        if (accessFlags.isTransient()) modifiers.add("transient");
+                        
+                        fieldInfo.put("modifiers", modifiers);
+                        fieldInfo.put("is_static", accessFlags.isStatic());
+                        fieldInfo.put("is_final", accessFlags.isFinal());
+                        
+                        fieldsList.add(fieldInfo);
                     }
-                    ctx.result(String.join("\n", fields));
+                    
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("class_name", className);
+                    response.put("fields", fieldsList);
+                    response.put("count", fieldsList.size());
+                    
+                    ctx.json(response);
                     return;
                 }
             }
@@ -433,6 +515,7 @@ public class ClassRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving fields: " + e.getMessage(), e, logger);
         }
     }
+
 
     /**
      * @param Context

@@ -203,7 +203,9 @@ async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str
 @mcp.tool()
 @with_busy_check
 async def get_methods_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
-    """List all method names in a class (useful for seeing overloaded methods).
+    """List all method names in a class with Frida-friendly metadata.
+    
+    Returns structured JSON with is_static, is_native, overload_count for each method.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
@@ -257,7 +259,9 @@ async def search_classes_by_keyword(
 @mcp.tool()
 @with_busy_check
 async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
-    """List all field names in a class.
+    """List all field names in a class with Frida-compatible type information.
+    
+    Returns structured JSON with type_frida field for each field.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
@@ -472,7 +476,9 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
 @mcp.tool()
 @with_busy_check
 async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
-    """Get structured signature information for a method including return type and parameters.
+    """Get structured method signature with Frida overload strings and hook templates.
+    
+    Returns frida_overload and frida_hook_template for each method overload.
     
     Args:
         class_name: Fully qualified class name (e.g., com.example.MainActivity)

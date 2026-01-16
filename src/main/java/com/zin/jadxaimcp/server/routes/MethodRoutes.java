@@ -433,7 +433,8 @@ public class MethodRoutes {
      * - Return type
      * - Parameter types and names
      * - Access modifiers
-     * - Throws declarations
+     * - Frida-compatible overload string
+     * - Frida hook template
      */
     public void handleMethodSignature(Context ctx) {
         String className = ctx.queryParam("class_name");
@@ -462,14 +463,17 @@ public class MethodRoutes {
                             
                             // Parameters - iterate through argument types from MethodNode
                             List<Map<String, String>> params = new ArrayList<>();
+                            List<jadx.core.dex.instructions.args.ArgType> argTypes = new ArrayList<>();
+                            
                             try {
-                                List<jadx.core.dex.instructions.args.ArgType> argTypes = 
-                                    method.getMethodNode().getMethodInfo().getArgumentsTypes();
+                                argTypes = method.getMethodNode().getMethodInfo().getArgumentsTypes();
                                 int idx = 0;
                                 for (jadx.core.dex.instructions.args.ArgType argType : argTypes) {
                                     Map<String, String> param = new HashMap<>();
                                     param.put("name", "arg" + idx);
                                     param.put("type", argType.toString());
+                                    param.put("type_frida", 
+                                        com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(argType));
                                     params.add(param);
                                     idx++;
                                 }
@@ -477,6 +481,16 @@ public class MethodRoutes {
                                 logger.warn("Failed to get arguments for {}: {}", methodName, e.getMessage());
                             }
                             sig.put("parameters", params);
+                            
+                            // Frida-compatible overload string
+                            String fridaOverload = com.zin.jadxaimcp.utils.FridaTypeConverter
+                                .toFridaOverloadString(argTypes);
+                            sig.put("frida_overload", fridaOverload);
+                            
+                            // Frida hook template
+                            String hookTemplate = com.zin.jadxaimcp.utils.FridaTypeConverter
+                                .generateHookTemplate(className, method.getName(), argTypes, method.isConstructor());
+                            sig.put("frida_hook_template", hookTemplate);
                             
                             // Full declaration
                             sig.put("declaration", String.valueOf(method.getCodeNodeRef()));
@@ -505,6 +519,7 @@ public class MethodRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving method signature: " + e.getMessage(), e, logger);
         }
     }
+
 
     /**
      * @return void

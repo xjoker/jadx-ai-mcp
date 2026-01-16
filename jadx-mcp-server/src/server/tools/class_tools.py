@@ -145,17 +145,31 @@ async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional
 
 async def get_methods_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
     """
-    List all method names in a class.
+    List all method names in a class (useful for seeing overloaded methods).
+
+    Returns structured JSON with Frida-friendly metadata for each method.
 
     Args:
-        class_name: Fully qualified class name
+        class_name: Fully qualified class name (e.g., 'com.example.MainActivity')
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: List of all method signatures in the specified class
+        dict: Structured method information containing:
+            - class_name: Full class name
+            - methods: List of method objects, each with:
+                - name: Method name
+                - is_static: Boolean indicating static method
+                - is_native: Boolean indicating native method
+                - is_constructor: Boolean indicating constructor
+                - is_abstract: Boolean indicating abstract method
+                - is_synchronized: Boolean indicating synchronized method
+                - modifiers: List of modifier strings (e.g., ['public', 'static'])
+                - overload_count: Number of overloads for this method name
+                - return_type: Return type as string
+            - count: Total number of methods
 
     MCP Tool: get_methods_of_class
-    Description: Extracts all method declarations from a class
+    Description: Extracts all method declarations with Frida-friendly metadata
     """
     return await get_from_jadx("methods-of-class", {"class_name": class_name}, instance_id=instance_id)
 
@@ -164,15 +178,26 @@ async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None
     """
     List all field names in a class.
 
+    Returns structured JSON with Frida-friendly metadata for each field.
+
     Args:
-        class_name: Fully qualified class name
+        class_name: Fully qualified class name (e.g., 'com.example.MainActivity')
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: List of all field declarations in the specified class
+        dict: Structured field information containing:
+            - class_name: Full class name
+            - fields: List of field objects, each with:
+                - name: Field name
+                - type: Java type as string
+                - type_frida: Frida-compatible type string for hooks
+                - modifiers: List of modifier strings (e.g., ['public', 'static', 'final'])
+                - is_static: Boolean indicating static field
+                - is_final: Boolean indicating final field
+            - count: Total number of fields
 
     MCP Tool: get_fields_of_class
-    Description: Extracts all field variables from a class
+    Description: Extracts all field variables with Frida-compatible type information
     """
     return await get_from_jadx("fields-of-class", {"class_name": class_name}, instance_id=instance_id)
 

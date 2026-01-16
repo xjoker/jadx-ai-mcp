@@ -163,6 +163,8 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
     """
     Get structured signature information for a method including return type and parameters.
 
+    Returns Frida-friendly output with overload strings and hook templates for each method overload.
+
     Args:
         class_name: Fully qualified class name (e.g., com.example.MainActivity)
         method_name: Method name to get signature for
@@ -174,13 +176,19 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
             - method_name: Method name
             - overloads: Number of overloaded versions
             - signatures: List of signature objects with:
-                - return_type: Return type
-                - parameters: List of {name, type} objects
-                - access_flags: Access modifiers
+                - method_name: Method name
+                - return_type: Return type as string
+                - access_flags: Access modifiers string
                 - is_constructor: Whether this is a constructor
+                - parameters: List of parameter objects with:
+                    - name: Parameter name (arg0, arg1, ...)
+                    - type: Java type as string
+                    - type_frida: Frida-compatible type string
+                - frida_overload: Frida .overload() string (e.g., "'java.lang.String', 'int'")
+                - frida_hook_template: Complete Frida hook JavaScript code template
 
     MCP Tool: get_method_signature
-    Description: Retrieves structured method signature for hook code generation
+    Description: Retrieves structured method signature with Frida hook templates
     """
     logger.info(f"get_method_signature: class={class_name}, method={method_name}, instance={instance_id}")
     result = await get_from_jadx(
@@ -189,6 +197,7 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
     if "error" in result:
         logger.warning(f"get_method_signature error: {result.get('error')}")
     return result
+
 
 
 async def get_method_callees(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
