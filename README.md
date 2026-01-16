@@ -606,6 +606,26 @@ Some tools may timeout on large APKs. Use these best practices:
 
 ---
 
+## 🎣 Xposed Hook Development
+
+**v6.0.50+**: JADX auto-rename is disabled by default for accurate Hook development.
+
+| Before (v6.0.49) | After (v6.0.50) |
+|-----------------|-----------------|
+| `public static final c f439360a` | `public static final c a` |
+| Hook fails: field renamed | Hook works: field matches runtime |
+
+**Benefits:**
+- Field/method names match actual runtime names
+- No need to manually check smali for original names
+- `get_fields_of_class` returns exact runtime field names
+
+**For Docker users**: `--rename-flags none` is automatically applied.
+
+**For local users**: Plugin calls `JadxArgs.getRenameFlags().clear()` on startup.
+
+---
+
 ## ⚙️ Configuration File
 
 Create `jadx-config.toml` for advanced configuration:

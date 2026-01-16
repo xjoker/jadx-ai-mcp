@@ -8,6 +8,47 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.0.50] - 2026-01-16 15:32
+
+### Added
+- **Disable auto-rename for accurate Hook development**
+  - Docker: Added `--rename-flags none` to `jadx-gui-wrapper.sh`
+  - Plugin: Clears `renameFlags` on startup via `JadxArgs` API
+  - Field/method names now match actual runtime names (e.g., `a` instead of `f439360a`)
+
+### Changed
+- This makes Xposed Hook development more reliable by ensuring field names are consistent
+
+---
+
+## [6.0.49] - 2026-01-16 11:36
+
+### Added
+- **MCP Resources** for AI-guided decision making:
+  - `usage-guide`: Complete tool usage reference
+  - `decision-matrix`: Performance-aware tool selection guide
+  - `performance-benchmarks`: Expected timing for all operations
+- MCP Instructions for proactive guidance
+- Enhanced tool docstrings with performance characteristics
+
+---
+
+## [6.0.48] - 2026-01-16 11:27
+
+### Added
+- **Smart batch parallel search optimization**
+- Removed deprecated `class_offset`/`class_limit` from tool registration
+
+---
+
+## [6.0.47] - 2026-01-16 10:37
+
+### Added
+- Compatibility table documentation
+- Enhanced example configuration files
+
+---
+
 ## [6.0.46] - 2026-01-15 18:55
 
 ### Added

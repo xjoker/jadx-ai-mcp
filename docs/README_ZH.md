@@ -343,6 +343,26 @@ docker run -d --name mcp-server \
 
 ---
 
+## 🎣 Xposed Hook 开发
+
+**v6.0.50+**：默认禁用 JADX 自动重命名，确保 Hook 开发准确性。
+
+| 之前 (v6.0.49) | 之后 (v6.0.50) |
+|---------------|---------------|
+| `public static final c f439360a` | `public static final c a` |
+| Hook 失败：字段被重命名 | Hook 成功：字段与运行时一致 |
+
+**优势：**
+- 字段/方法名与实际运行时名称一致
+- 无需手动查看 smali 确认原始名称
+- `get_fields_of_class` 返回准确的运行时字段名
+
+**Docker 用户**：自动应用 `--rename-flags none`。
+
+**本地用户**：插件启动时调用 `JadxArgs.getRenameFlags().clear()`。
+
+---
+
 ## ⚙️ 配置文件
 
 创建 `jadx-config.toml` 进行高级配置：
