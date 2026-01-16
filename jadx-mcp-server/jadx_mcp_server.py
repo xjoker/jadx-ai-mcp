@@ -476,9 +476,9 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
 @mcp.tool()
 @with_busy_check
 async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
-    """Get structured method signature with Frida overload strings and hook templates.
+    """Get structured method signature with Frida-compatible type information.
     
-    Returns frida_overload and frida_hook_template for each method overload.
+    Returns frida_overload string for each method overload.
     
     Args:
         class_name: Fully qualified class name (e.g., com.example.MainActivity)
@@ -486,6 +486,7 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.get_method_signature(class_name, method_name, instance_id=instance_id)
+
 
 
 @mcp.tool()

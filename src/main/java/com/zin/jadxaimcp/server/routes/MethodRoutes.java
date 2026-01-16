@@ -487,20 +487,9 @@ public class MethodRoutes {
                                 .toFridaOverloadString(argTypes);
                             sig.put("frida_overload", fridaOverload);
                             
-                            // Frida hook template - pass return type for void handling
-                            jadx.core.dex.instructions.args.ArgType returnType = null;
-                            try {
-                                returnType = method.getMethodNode().getMethodInfo().getReturnType();
-                            } catch (Exception e) {
-                                // Ignore, will be treated as void
-                            }
-                            String hookTemplate = com.zin.jadxaimcp.utils.FridaTypeConverter
-                                .generateHookTemplate(className, method.getName(), argTypes, method.isConstructor(), returnType);
-                            sig.put("frida_hook_template", hookTemplate);
-
-                            
                             // Full declaration
                             sig.put("declaration", String.valueOf(method.getCodeNodeRef()));
+
                             
                             signatures.add(sig);
                         }

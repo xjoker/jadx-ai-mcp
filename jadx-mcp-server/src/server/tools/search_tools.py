@@ -161,9 +161,7 @@ async def search_classes_by_keyword(
 
 async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
     """
-    Get structured signature information for a method including return type and parameters.
-
-    Returns Frida-friendly output with overload strings and hook templates for each method overload.
+    Get structured method signature with Frida-compatible type information.
 
     Args:
         class_name: Fully qualified class name (e.g., com.example.MainActivity)
@@ -183,13 +181,13 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
                 - parameters: List of parameter objects with:
                     - name: Parameter name (arg0, arg1, ...)
                     - type: Java type as string
-                    - type_frida: Frida-compatible type string
-                - frida_overload: Frida .overload() string (e.g., "'java.lang.String', 'int'")
-                - frida_hook_template: Complete Frida hook JavaScript code template
+                    - type_frida: Frida-compatible type string (e.g., '[B' for byte[])
+                - frida_overload: Frida .overload() string (e.g., "'[B', 'int'")
 
     MCP Tool: get_method_signature
-    Description: Retrieves structured method signature with Frida hook templates
+    Description: Retrieves structured method signature with Frida-compatible types
     """
+
     logger.info(f"get_method_signature: class={class_name}, method={method_name}, instance={instance_id}")
     result = await get_from_jadx(
         "method-signature", {"class_name": class_name, "method_name": method_name}, instance_id=instance_id
