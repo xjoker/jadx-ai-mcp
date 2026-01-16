@@ -22,13 +22,15 @@ import java.util.List;
 import java.util.Map;
 
 import com.zin.jadxaimcp.JadxAIMCP;
+import com.zin.jadxaimcp.utils.FileTypeDetector;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 
 /**
- * APK Info API Routes
+ * APK/JAR Info API Routes
  * 
- * Provides /apk-info endpoint that returns current loaded APK metadata.
- * Used for multi-instance management to identify which app each JADX instance has opened.
+ * Provides /apk-info endpoint that returns current loaded file metadata.
+ * Supports APK, JAR, DEX, AAR, and class files.
+ * Used for multi-instance management and AI guidance on available features.
  *
  * @author JADX AI MCP Team
  */
@@ -45,11 +47,14 @@ public class ApkInfoRoutes {
     /**
      * GET /apk-info
      * 
-     * Returns current loaded APK information:
+     * Returns current loaded file information:
      * - instance_name: Instance name (user configured or auto-generated)
-     * - apk_package: Package name
-     * - version_name: Version name
-     * - version_code: Version code
+     * - file_type: Detected file type (apk/jar/dex/aar/class/unknown)
+     * - android_features: Boolean indicating if Android-specific features are available
+     * - smali_available: Boolean indicating if Smali generation is possible
+     * - apk_package: Package name (only for APK/AAR)
+     * - version_name: Version name (only for APK/AAR)
+     * - version_code: Version code (only for APK/AAR)
      */
     public void handleApkInfo(Context ctx) {
         try {
@@ -66,31 +71,71 @@ public class ApkInfoRoutes {
             JadxWrapper wrapper = mainWindow.getWrapper();
             if (wrapper == null) {
                 result.put("loaded", false);
-                result.put("error", "No APK loaded");
+                result.put("error", "No file loaded");
                 ctx.json(result);
                 return;
             }
             
-            // Get Manifest
-            List<ResourceFile> resources = wrapper.getResources();
-            if (resources == null || resources.isEmpty()) {
-                result.put("loaded", false);
-                result.put("error", "No resources available");
-                ctx.json(result);
-                return;
+            // Detect file type
+            FileTypeDetector.DetectionResult detection = FileTypeDetector.detect(wrapper);
+            result.putAll(detection.toMap());
+            
+            // Add unavailable tools for AI guidance
+            List<String> unavailableTools = detection.getUnavailableTools();
+            if (!unavailableTools.isEmpty()) {
+                result.put("unavailable_tools", unavailableTools);
             }
             
-            ResourceFile manifestFile = AndroidManifestParser.getAndroidManifest(resources);
-            if (manifestFile == null) {
+            // Check if we have classes loaded
+            List<?> classes = wrapper.getIncludedClassesWithInners();
+            if (classes == null || classes.isEmpty()) {
                 result.put("loaded", false);
-                result.put("error", "AndroidManifest.xml not found");
+                result.put("error", "No classes available");
                 ctx.json(result);
                 return;
             }
             
             result.put("loaded", true);
+            result.put("class_count", classes.size());
             
-            // Load manifest content
+            // Try to get Android manifest info (only for APK/AAR)
+            if (detection.hasAndroidFeatures()) {
+                parseAndroidManifest(wrapper, result);
+            }
+            
+            // Server info
+            result.put("server_bind_address", plugin.getCurrentBindAddress());
+            result.put("server_port", plugin.getCurrentPort());
+            
+            // Plugin version info
+            result.put("plugin_version", com.zin.jadxaimcp.utils.JadxAIMCPBanner.VERSION);
+            result.put("build_commit", com.zin.jadxaimcp.utils.JadxAIMCPBanner.BUILD_COMMIT);
+            
+            logger.debug("JADX AI MCP Plugin: File info requested, type={}", detection.getPrimaryType().getName());
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, 
+                "Failed to get file info: " + e.getMessage(), e, logger);
+        }
+    }
+    
+    /**
+     * Parses AndroidManifest.xml to extract package and version info.
+     * Only called when android_features is true.
+     */
+    private void parseAndroidManifest(JadxWrapper wrapper, Map<String, Object> result) {
+        try {
+            List<ResourceFile> resources = wrapper.getResources();
+            if (resources == null || resources.isEmpty()) {
+                return;
+            }
+            
+            ResourceFile manifestFile = AndroidManifestParser.getAndroidManifest(resources);
+            if (manifestFile == null) {
+                return;
+            }
+            
             ResContainer container = manifestFile.loadContent();
             String manifestXml = container.getText().getCodeStr();
             
@@ -123,21 +168,8 @@ public class ApkInfoRoutes {
                     }
                 }
             }
-            
-            // Server info
-            result.put("server_bind_address", plugin.getCurrentBindAddress());
-            result.put("server_port", plugin.getCurrentPort());
-            
-            // Plugin version info
-            result.put("plugin_version", com.zin.jadxaimcp.utils.JadxAIMCPBanner.VERSION);
-            result.put("build_commit", com.zin.jadxaimcp.utils.JadxAIMCPBanner.BUILD_COMMIT);
-            
-            logger.debug("JADX AI MCP Plugin: APK info requested");
-            ctx.json(result);
-            
         } catch (Exception e) {
-            JadxAIMCPPluginError.handleError(ctx, 
-                "Failed to get APK info: " + e.getMessage(), e, logger);
+            logger.debug("Failed to parse AndroidManifest: {}", e.getMessage());
         }
     }
 }

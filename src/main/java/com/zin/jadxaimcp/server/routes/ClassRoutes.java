@@ -525,6 +525,8 @@ public class ClassRoutes {
      *         After checking for availability of 'class' parameter in request, it
      *         finds that class,
      *         After finding that class it fetch smali of that class and returns it.
+     *         
+     *         Note: Smali is only available for APK/DEX files, not JAR files.
      */
     public void handleSmaliOfClass(Context ctx) {
         String className = checkClassParam(ctx);
@@ -533,9 +535,27 @@ public class ClassRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
+            
+            // Check file type - Smali only available for DEX-based files
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            if (!fileType.isSmaliAvailable()) {
+                com.zin.jadxaimcp.utils.NotApplicableResponse.sendSmaliNotAvailable(
+                    ctx, fileType.getPrimaryType().getName());
+                return;
+            }
+            
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
-                    ctx.result(cls.getSmali());
+                    String smali = cls.getSmali();
+                    if (smali == null || smali.isEmpty()) {
+                        // Smali generation failed even though file type says it should work
+                        JadxAIMCPPluginError.handleError(ctx, 404, 
+                            "Smali generation returned empty for class " + className + 
+                            ". This may indicate the class was loaded from a non-DEX source.", logger);
+                        return;
+                    }
+                    ctx.result(smali);
                     return;
                 }
             }
@@ -679,10 +699,22 @@ public class ClassRoutes {
      *                3. It parses the manifest file and fetches the name of the
      *                Main Activity class
      *                4. It gets the Main Activity class code and returns it.
+     *                
+     *                Note: Only available for APK/AAR files with AndroidManifest.xml
      */
     public void handleMainActivity(Context ctx) {
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
+            
+            // Check file type - Main Activity only available for Android files
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            if (!fileType.hasAndroidFeatures()) {
+                com.zin.jadxaimcp.utils.NotApplicableResponse.sendMainActivityNotAvailable(
+                    ctx, fileType.getPrimaryType().getName());
+                return;
+            }
+            
             ResourceFile manifestRes = AndroidManifestParser.getAndroidManifest(mainWindow.getWrapper().getResources());
             if (manifestRes == null) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "AndroidManifest.xml not found", logger);

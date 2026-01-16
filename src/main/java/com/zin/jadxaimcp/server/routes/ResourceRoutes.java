@@ -80,9 +80,21 @@ public class ResourceRoutes {
      * and assigns it to object named manifest. If this object is null then it returns,
      * else it loads the contents of manifest file in ResContainer object and from it fetches 
      * the content in String and returns this content.
+     * 
+     * Note: Only available for APK/AAR files with AndroidManifest.xml
      */
     public void handleManifest(Context ctx) {
         try {
+            // Check file type - Manifest only available for Android files
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            if (!fileType.hasAndroidFeatures()) {
+                com.zin.jadxaimcp.utils.NotApplicableResponse.sendManifestNotAvailable(
+                    ctx, fileType.getPrimaryType().getName());
+                return;
+            }
+            
             ResourceFile manifest = getManifestFile();
             if (manifest == null) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "AndroidManifest.xml not found.", logger);
@@ -112,9 +124,21 @@ public class ResourceRoutes {
      * - locale: Locale variant like "values", "values-en" (default: values)
      * - offset: Pagination offset (default: 0)
      * - limit: Results per page (default: 50, max: 200)
+     * 
+     * Note: Only available for APK/AAR files with Android resources
      */
     public void handleStrings(Context ctx) {
         try {
+            // Check file type - Strings only available for Android files  
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            if (!fileType.hasAndroidFeatures()) {
+                com.zin.jadxaimcp.utils.NotApplicableResponse.sendStringsNotAvailable(
+                    ctx, fileType.getPrimaryType().getName());
+                return;
+            }
+            
             Map<String, Object> result = new HashMap<>();
             result.put("type", "resource/strings");
             
