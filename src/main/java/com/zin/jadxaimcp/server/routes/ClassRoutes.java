@@ -630,10 +630,18 @@ public class ClassRoutes {
                         
                         // Method names (for quick overview)
                         List<String> methodNames = new ArrayList<>();
+                        List<String> nativeMethodNames = new ArrayList<>();
                         for (jadx.core.dex.nodes.MethodNode m : infoClassNode.getMethods()) {
-                            methodNames.add(m.getMethodInfo().getName());
+                            String name = m.getMethodInfo().getName();
+                            methodNames.add(name);
+                            // Collect native methods for security analysis
+                            if (m.getAccessFlags().isNative()) {
+                                nativeMethodNames.add(name);
+                            }
                         }
                         info.put("method_names", methodNames);
+                        info.put("native_method_names", nativeMethodNames);
+                        info.put("native_count", nativeMethodNames.size());
                         
                         // Field names
                         List<String> fieldNames = new ArrayList<>();
@@ -646,7 +654,10 @@ public class ClassRoutes {
                         info.put("fields_count", 0);
                         info.put("method_names", new ArrayList<>());
                         info.put("field_names", new ArrayList<>());
+                        info.put("native_method_names", new ArrayList<>());
+                        info.put("native_count", 0);
                     }
+
                     
                     ctx.json(info);
                     return;

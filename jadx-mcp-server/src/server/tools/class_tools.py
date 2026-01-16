@@ -309,10 +309,13 @@ async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> 
             - fields_count: Number of fields
             - method_names: List of method names
             - field_names: List of field names
+            - native_method_names: List of native method names (for JNI/SO analysis)
+            - native_count: Number of native methods
 
     MCP Tool: get_class_info
-    Description: Retrieves structured class metadata including inheritance hierarchy
+    Description: Retrieves structured class metadata including native methods for security analysis
     """
+
     logger.info(f"get_class_info: class={class_name}, instance={instance_id}")
     result = await get_from_jadx("class-info", {"class_name": class_name}, instance_id=instance_id)
     if "error" in result:
