@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -162,17 +161,10 @@ public class FileTypeDetector {
             }
 
             for (File file : inputFiles) {
-                String fileName = file.getName().toLowerCase();
                 paths.add(file.getAbsolutePath());
 
-                FileType detectedType = detectByExtension(fileName);
-                
-                // For JAR files, check if it's actually an APK (contains classes.dex)
-                if (detectedType == FileType.JAR && containsDex(file)) {
-                    logger.info("File {} has .jar extension but contains DEX, treating as APK", fileName);
-                    detectedType = FileType.APK;
-                }
-                
+                // Use magic number detection for accurate file type identification
+                FileType detectedType = detectFileType(file);
                 types.add(detectedType);
             }
 
@@ -225,5 +217,101 @@ public class FileTypeDetector {
         }
         
         return false;
+    }
+
+    // Magic number constants
+    private static final byte[] MAGIC_DEX = {0x64, 0x65, 0x78, 0x0A};  // "dex\n"
+    private static final byte[] MAGIC_ZIP = {0x50, 0x4B, 0x03, 0x04};  // "PK\x03\x04"
+    private static final byte[] MAGIC_CLASS = {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE};
+
+    /**
+     * Detects file type by magic number (file header bytes).
+     * 
+     * This is more reliable than extension-based detection as it
+     * prevents extension spoofing (e.g., APK renamed to .jar).
+     * 
+     * @param file File to detect
+     * @return Detected file type, or null if magic number doesn't match known types
+     */
+    private static FileType detectByMagic(File file) {
+        if (!file.exists() || !file.canRead() || file.length() < 4) {
+            return null;
+        }
+
+        byte[] header = new byte[4];
+        try (FileInputStream fis = new FileInputStream(file)) {
+            if (fis.read(header) != 4) {
+                return null;
+            }
+        } catch (IOException e) {
+            logger.debug("Failed to read file header for {}: {}", file.getName(), e.getMessage());
+            return null;
+        }
+
+        // Check DEX magic
+        if (matchesMagic(header, MAGIC_DEX)) {
+            return FileType.DEX;
+        }
+
+        // Check ZIP magic (APK, AAR, JAR are all ZIP files)
+        if (matchesMagic(header, MAGIC_ZIP)) {
+            // Need to check contents to distinguish APK/AAR from JAR
+            if (containsDex(file)) {
+                // Has DEX or AndroidManifest, likely APK
+                String fileName = file.getName().toLowerCase();
+                if (fileName.endsWith(".aar")) {
+                    return FileType.AAR;
+                }
+                return FileType.APK;
+            }
+            return FileType.JAR;
+        }
+
+        // Check CLASS file magic
+        if (matchesMagic(header, MAGIC_CLASS)) {
+            return FileType.CLASS;
+        }
+
+        return null;
+    }
+
+    /**
+     * Checks if header bytes match the given magic number
+     */
+    private static boolean matchesMagic(byte[] header, byte[] magic) {
+        if (header.length < magic.length) {
+            return false;
+        }
+        for (int i = 0; i < magic.length; i++) {
+            if (header[i] != magic[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Detects file type using both magic number and extension.
+     * Magic number takes precedence for security.
+     * 
+     * @param file File to detect
+     * @return Detected file type
+     */
+    public static FileType detectFileType(File file) {
+        // Try magic number first (more secure)
+        FileType magicType = detectByMagic(file);
+        if (magicType != null) {
+            // Warn if extension doesn't match magic
+            String fileName = file.getName().toLowerCase();
+            FileType extType = detectByExtension(fileName);
+            if (extType != FileType.UNKNOWN && extType != magicType) {
+                logger.warn("File {} has extension for {} but magic indicates {}",
+                    file.getName(), extType.getName(), magicType.getName());
+            }
+            return magicType;
+        }
+
+        // Fallback to extension
+        return detectByExtension(file.getName().toLowerCase());
     }
 }
