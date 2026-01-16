@@ -347,8 +347,7 @@ public class PluginServer {
                 jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
                 if (wrapper == null) {
                     ctx.status(503).json(java.util.Map.of(
-                        "error", "JADX wrapper not initialized",
-                        "status", "not_ready"
+                        "error", "JADX wrapper not initialized"
                     ));
                     return;
                 }
@@ -357,7 +356,7 @@ public class PluginServer {
                 int total = classes.size();
                 int processed = 0;
                 
-                // Count classes that have completed processing
+                // Count classes that have completed processing (cached)
                 for (jadx.api.JavaClass cls : classes) {
                     if (cls.getClassNode() != null && 
                         cls.getClassNode().getState().isProcessComplete()) {
@@ -365,25 +364,53 @@ public class PluginServer {
                     }
                 }
                 
-                int percentage = total > 0 ? (processed * 100 / total) : 0;
-                String status = processed == total ? "ready" : "loading";
+                int cachedPercentage = total > 0 ? (processed * 100 / total) : 0;
                 
                 java.util.Map<String, Object> response = new java.util.HashMap<>();
-                response.put("status", status);
-                response.put("processed_classes", processed);
+                
+                // === Class Cache Statistics (from JADX ProcessState) ===
                 response.put("total_classes", total);
-                response.put("percentage", percentage);
+                response.put("cached_classes", processed);
+                response.put("cached_percentage", cachedPercentage);
                 
-                // Add search lock status
-                response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
+                // === JVM Memory Statistics (real data from Runtime) ===
+                Runtime runtime = Runtime.getRuntime();
+                long maxMemory = runtime.maxMemory();
+                long totalMemory = runtime.totalMemory();
+                long freeMemory = runtime.freeMemory();
+                long usedMemory = totalMemory - freeMemory;
                 
-                // Add recommendation based on status
-                if (processed < total) {
-                    response.put("recommendation", 
-                        "Use search_in='class' or 'method' for faster results while decompilation is in progress");
-                } else {
-                    response.put("recommendation", "All search modes available");
+                java.util.Map<String, Object> memoryInfo = new java.util.LinkedHashMap<>();
+                memoryInfo.put("max_mb", maxMemory / (1024 * 1024));
+                memoryInfo.put("total_mb", totalMemory / (1024 * 1024));
+                memoryInfo.put("used_mb", usedMemory / (1024 * 1024));
+                memoryInfo.put("free_mb", freeMemory / (1024 * 1024));
+                memoryInfo.put("usage_percentage", totalMemory > 0 ? (int)(usedMemory * 100 / totalMemory) : 0);
+                response.put("memory", memoryInfo);
+                
+                // === Thread Statistics (real data from ThreadMXBean) ===
+                java.lang.management.ThreadMXBean threadMXBean = java.lang.management.ManagementFactory.getThreadMXBean();
+                java.util.Map<String, Object> threadInfo = new java.util.LinkedHashMap<>();
+                threadInfo.put("active_count", threadMXBean.getThreadCount());
+                threadInfo.put("peak_count", threadMXBean.getPeakThreadCount());
+                threadInfo.put("daemon_count", threadMXBean.getDaemonThreadCount());
+                response.put("threads", threadInfo);
+                
+                // === JADX Settings (real config from settings) ===
+                try {
+                    jadx.gui.settings.JadxSettings settings = mainWindow.getSettings();
+                    if (settings != null) {
+                        java.util.Map<String, Object> jadxConfig = new java.util.LinkedHashMap<>();
+                        jadxConfig.put("threads_count", settings.getThreadsCount());
+                        jadxConfig.put("code_cache_mode", settings.getCodeCacheMode().name());
+                        response.put("jadx_config", jadxConfig);
+                    }
+                } catch (Exception e) {
+                    // Settings access may fail, ignore
                 }
+                
+                // === Search Lock Status (from JadxSearchLock) ===
+                response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
                 
                 ctx.json(response);
             } catch (Exception e) {

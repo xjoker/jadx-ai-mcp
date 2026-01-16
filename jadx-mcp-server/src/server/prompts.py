@@ -3,6 +3,75 @@ from fastmcp import FastMCP
 def register_prompts(mcp: FastMCP):
     """Register prompts for the JADX MCP server."""
 
+    @mcp.prompt("status-check")
+    def status_check_prompt() -> str:
+        """Guide the AI to check JADX status before performing resource-intensive operations.
+        
+        This prompt helps AI make informed decisions based on real-time JADX metrics.
+        """
+        return """**Before performing resource-intensive operations, check JADX status.**
+
+Call `get_decompile_status()` first and interpret the results:
+
+## Response Fields and Decision Rules
+
+### 1. Class Cache Status
+| Field | Description | Decision |
+|-------|-------------|----------|
+| `cached_percentage` | % of classes already decompiled | If <20%, avoid `search_in=code` |
+| `cached_classes` | Number of cached classes | Low number = expect slow code search |
+| `total_classes` | Total classes in APK | Large APK (>100k) = use smaller batches |
+
+### 2. Memory Status  
+| Field | Warning Threshold | Action |
+|-------|-------------------|--------|
+| `memory.usage_percentage` | >85% | Reduce batch size, avoid smali |
+| `memory.free_mb` | <200MB | Wait or use smaller requests |
+
+### 3. Thread Status
+| Field | Warning Threshold | Action |
+|-------|-------------------|--------|
+| `threads.active_count` | >50 | JADX is busy, wait before heavy ops |
+
+### 4. Search Lock
+| Field | Meaning | Action |
+|-------|---------|--------|
+| `search_lock.locked=true` | Search in progress | Wait, don't start new search |
+| `search_lock.held_seconds` | How long held | If >30s, may timeout soon |
+
+## Decision Matrix
+
+| Scenario | Recommended Action |
+|----------|-------------------|
+| cached_percentage < 10% | Use `search_in=class/method/field` only |
+| cached_percentage > 50% | `search_in=code` is viable |
+| memory.usage_percentage > 90% | Reduce count to 10, avoid batch ops |
+| search_lock.locked = true | Wait and retry after 5 seconds |
+| threads.active_count > 100 | JADX overloaded, pause operations |
+
+## Example Workflow
+```python
+# 1. Check status first
+status = get_decompile_status()
+
+# 2. Make informed decision
+if status["cached_percentage"] < 20:
+    # Use fast metadata search
+    results = search_classes_by_keyword(search_term="login", search_in="class")
+else:
+    # Code search is viable
+    results = search_classes_by_keyword(search_term="login", search_in="code")
+
+# 3. Monitor memory for batch operations
+if status["memory"]["usage_percentage"] > 80:
+    batch_size = 5  # Smaller batches
+else:
+    batch_size = 20  # Full batch
+```
+
+**Core Principle**: Always check status before heavy operations. React to real metrics, don't guess.
+"""
+
     @mcp.prompt("analyze-activity")
     def analyze_activity_prompt(activity_name: str = "") -> str:
         """Guide the AI to analyze an Android Activity starting from the Manifest.
@@ -11,69 +80,102 @@ def register_prompts(mcp: FastMCP):
             activity_name: Optional name or partial name of the activity to focus on.
         """
         return f"""You are analyzing an Android Activity{' named ' + activity_name if activity_name else ''}.
-Follow this standard reverse engineering workflow:
 
-1.  **Find the Class**:
-    - Use `get_android_manifest()` to find the full class name in `AndroidManifest.xml`.
-    - Look for `<activity android:name="...">` entries.
-    - Note the `package` attribute in the `<manifest>` tag, as class names might be relative (e.g., `.MainActivity`).
+**Step 0: Check System Status** (Important!)
+- Call `get_decompile_status()` to check cache and memory status.
+- If `cached_percentage` < 10%, expect slow code analysis.
 
-2.  **Inspect the Code**:
-    - Once you have the full class name (e.g., `com.example.app.MainActivity`), use `get_class_source()` to read its code.
-    - If the class is missing or obfuscated, use `search_classes_by_keyword(search_term="...", search_in="class")` to find candidates.
+**Step 1: Find the Class**
+- Use `get_android_manifest()` to find the full class name.
+- Look for `<activity android:name="...">` entries.
+- Note the `package` attribute for relative class names (e.g., `.MainActivity`).
 
-3.  **Analyze Lifecycle**:
-    - Focus on `onCreate`, `onStart`, or `onResume` methods to understand initialization logic.
-    - Use `get_method_by_name(class_name, "onCreate")` to see specific method details.
+**Step 2: Get Class Info**
+- Use `get_class_info(class_name)` to see inheritance, methods, and fields.
+- Expected time: <1s
 
-4.  **Trace Logic**:
-    - If you see interesting method calls, use `get_xrefs_to_method` or `get_method_by_name` to follow the control flow.
+**Step 3: Inspect the Code**
+- Use `get_class_source(class_name)` to read the full source.
+- Expected time: <1s (cached), may be slower first time.
+
+**Step 4: Analyze Lifecycle**
+- Focus on `onCreate`, `onStart`, `onResume` methods.
+- Use `get_method_by_name(class_name, "onCreate")` for specific methods.
+- Expected time: <1s
+
+**Step 5: Trace Cross-References**
+- Use `get_xrefs_to_class(class_name)` to find who uses this Activity.
+- Use `get_xrefs_to_method(class_name, method_name)` for method callers.
+- Expected time: <1s with pagination.
+
+**Performance Tips**:
+- If analyzing multiple classes, use `batch_get_class_source()` for efficiency.
+- Check `memory.usage_percentage` before batch operations.
 """
 
     @mcp.prompt("search-code")
     def search_code_prompt(keyword: str) -> str:
-        """Guide the AI to perform effective code searches with retry handling.
+        """Guide the AI to perform effective code searches with status-aware decision making.
         
         Args:
             keyword: The term to search for.
         """
         return f"""You want to search for "{keyword}" in the codebase.
 
-**⚠️ Before Code Search**:
-- Use `get_decompile_status()` to check if JADX is ready.
-- If status is "loading", use metadata search first (class/method/field).
+**⚠️ CRITICAL: Check Status First!**
+```python
+status = get_decompile_status()
+```
 
-**Search Modes** (from fastest to slowest):
-| Mode | Use Case | Triggers Decompilation |
-|:---|:---|:---:|
-| `search_in="class"` | Find class names | No |
-| `search_in="method"` | Find method names | No |
-| `search_in="field"` | Find field names | No |
-| `search_in="code"` | Full-text search | **Yes** (slow) |
+**Decision Matrix Based on Status:**
 
-**Recommended Strategy**:
-1.  **Check status first**:
-    - `get_decompile_status()` → if percentage < 100, avoid `search_in="code"`.
+| Condition | Recommended `search_in` | Reason |
+|-----------|------------------------|--------|
+| `cached_percentage` < 20% | `class`, `method`, `field` | Code search will timeout |
+| `cached_percentage` > 50% | `code` is viable | Enough classes cached |
+| `memory.usage_percentage` > 85% | Use count=10 | Reduce memory pressure |
+| `search_lock.locked` = true | Wait 5s, retry | Another search running |
 
-2.  **Start with metadata search**:
-    - `search_classes_by_keyword(search_term="{keyword}", search_in="class")` for class names.
-    - `search_classes_by_keyword(search_term="{keyword}", search_in="method")` for methods.
-    - These are fast and don't trigger decompilation.
+**Search Modes** (fastest to slowest):
+| Mode | Expected Time | Triggers Decompilation |
+|------|--------------|------------------------|
+| `search_in="class"` | <100ms | No |
+| `search_in="method"` | <100ms | No |
+| `search_in="field"` | <100ms | No |
+| `search_in="code"` | 1-60s | Yes |
+| `search_in="comment"` | 1-60s | Yes |
 
-3.  **For code search, use class batch processing**:
-    - Add `class_offset=0, class_limit=200` to process only 200 classes per request.
-    - Use `next_class_offset` from response to continue: `class_offset=200`.
-    - Add `package` filter to narrow scope: `package="com.example"`.
+**Recommended Workflow:**
+1. **Always check status first** - Don't skip this!
+2. **Start with metadata search** - Fast and reliable:
+   - `search_classes_by_keyword(search_term="{keyword}", search_in="class")`
+   - `search_classes_by_keyword(search_term="{keyword}", search_in="method")`
+3. **Use package filter** to narrow scope:
+   - `package="com.example"` reduces classes to search
+4. **For code search**, check cache first:
+   - If `cached_percentage` < 30%, avoid or use small `count`
+5. **Handle timeout gracefully**:
+   - `search_info.timed_out=true` means partial results returned
+   - Results are still valid, just incomplete
 
-4.  **Handle responses**:
-    - If `{{"busy": true}}`, wait `retry_after` seconds and retry.
-    - If `search_info.timed_out=true`, continue with `next_class_offset`.
-    - Use `offset` and `next_offset` for result pagination.
+**Efficient API/URL Search Workflow:**
+```python
+# 1. Fast metadata search first
+results = search_classes_by_keyword(search_term="Http", search_in="class")
 
-5.  **Efficient workflow for API/URL search**:
-    - First: `search_in="class"` with keywords like "Api", "Request", "Http"
-    - Then: `get_class_source(class_name)` for candidate classes
-    - Last resort: `search_in="code"` with package filter
+# 2. Get source for candidate classes
+for cls in results["classes"][:10]:
+    source = get_class_source(cls)
+    # Analyze in your context
+
+# 3. Only if needed, use code search with package filter
+if not found:
+    results = search_classes_by_keyword(
+        search_term="{keyword}", 
+        search_in="code",
+        package="com.example.network"  # Narrow scope!
+    )
+```
 """
 
 

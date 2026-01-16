@@ -16,7 +16,39 @@ from src.banner import jadx_mcp_server_banner
 from src.server import config, tools
 
 # Initialize MCP Server with stateless HTTP mode (no session required)
-mcp = FastMCP("JADX-AI-MCP Plugin Reverse Engineering Server", stateless_http=True)
+# Instructions are shown to AI when connecting to help with proper tool usage
+MCP_INSTRUCTIONS = """
+JADX AI MCP Server - Android APK Reverse Engineering Tools
+
+IMPORTANT: Before using any resource-intensive operation, always call get_decompile_status() first!
+
+DECISION GUIDE based on get_decompile_status() response:
+- If cached_percentage < 20%: Use search_in='class' or 'method' only (avoid 'code')
+- If memory.usage_percentage > 85%: Reduce batch size to 5, avoid get_smali_of_class
+- If search_lock.locked = true: Wait 5 seconds and retry
+
+PERFORMANCE EXPECTATIONS:
+| Operation              | Expected Time | Notes                          |
+|------------------------|--------------|--------------------------------|
+| search_in=class/method | <100ms       | Always fast, no cache needed   |
+| search_in=code         | 1-60s        | Slow, may timeout on large APK |
+| get_class_source       | <1s          | Fast when cached               |
+| batch_get_*            | <3s          | Up to 20 items per batch       |
+
+RECOMMENDED WORKFLOW:
+1. Call get_decompile_status() to check system status
+2. Use metadata searches first (class, method, field)
+3. Use code search only when cache is ready (cached_percentage > 50%)
+4. Use package filter to narrow search scope for better performance
+
+For detailed guidance, use the 'status-check' or 'search-code' prompts.
+"""
+
+mcp = FastMCP(
+    "JADX-AI-MCP Plugin Reverse Engineering Server", 
+    stateless_http=True,
+    instructions=MCP_INSTRUCTIONS
+)
 
 # Import and register ALL tools using correct FastMCP pattern
 from src.server.tools.class_tools import (
@@ -43,6 +75,7 @@ from src.server.tools.xrefs_tools import (
     get_xrefs_to_class, get_xrefs_to_method, get_xrefs_to_field, batch_get_xrefs
 )
 from src.server.prompts import register_prompts
+from src.server.resources import register_resources
 from src.server.tools.instance_tools import register_instance_tools
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
@@ -192,19 +225,28 @@ async def search_classes_by_keyword(
 ) -> dict:
     """Search for classes containing a specific keyword with flexible filtering options.
     
-    BEST PRACTICE:
-    - Use search_in='class' for finding class names (fastest, most reliable).
-    - Use search_in='method' or 'field' for specific member searches.
-    - AVOID search_in='code' on large APKs as full-text search may timeout or crash.
-    Refer to the 'search-code' prompt for detailed guidance.
-
+    **PERFORMANCE CHARACTERISTICS:**
+    | search_in | Expected Time | Requires Cache | Notes |
+    |-----------|--------------|----------------|-------|
+    | class     | <100ms       | No             | Fastest, searches class names |
+    | method    | <100ms       | No             | Fast, searches method names |
+    | field     | <100ms       | No             | Fast, searches field names |
+    | code      | 1-60s        | Yes            | Slow! May timeout on uncached APKs |
+    | comment   | 1-60s        | Yes            | Slow! Searches code comments |
+    
+    **DECISION GUIDE:**
+    - Check `get_decompile_status()` first!
+    - If `cached_percentage` < 20%: Use 'class', 'method', or 'field' only
+    - If `search_lock.locked` = true: Wait and retry
+    - Use `package` filter to reduce scope and improve performance
+    
     Args:
         search_term: The keyword or string to search for.
-        package: Package name to limit search scope (optional).
-        exclude: Comma-separated package prefixes to exclude (optional).
-        search_in: Comma-separated search scopes: class,method,field,code,comment. Default: code
+        package: Package name to limit search scope (e.g., 'com.example'). Strongly recommended!
+        exclude: Comma-separated package prefixes to exclude.
+        search_in: Search scope: class, method, field, code, comment. Default: code
         offset: Starting index for result pagination. Default: 0
-        count: Maximum number of results. Default: 20
+        count: Maximum number of results (max: 200). Default: 20
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.search_classes_by_keyword(
@@ -267,10 +309,10 @@ async def get_strings(
     - get: Get specific string value (requires key parameter)
     
     Examples:
-    - Summary: get_strings() → {total_strings: 15673, sample_keys: [...]}
-    - Search: get_strings(mode="search", query="login") → {matches: [{key, value}, ...]}
-    - Get: get_strings(mode="get", key="app_name") → {value: "小红书"}
-    - List: get_strings(mode="list", offset=0, limit=50) → {keys: [...]}
+    - Summary: get_strings() -> {total_strings: 15673, sample_keys: [...]}
+    - Search: get_strings(mode="search", query="login") -> {matches: [{key, value}, ...]}
+    - Get: get_strings(mode="get", key="app_name") -> {value: "MyApp"}
+    - List: get_strings(mode="list", offset=0, limit=50) -> {keys: [...]}
     - Change locale: get_strings(locale="values-en")
     
     Args:
@@ -367,17 +409,29 @@ async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> 
 @mcp.tool()
 @with_busy_check
 async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
-    """Get the current decompilation status of the JADX instance.
+    """Get current JADX status with cache, memory, and thread metrics.
     
-    Use this BEFORE using search_in='code' to check if JADX has finished decompiling.
-    If status is 'loading', use search_in='class' or 'method' instead for faster results.
-
+    **IMPORTANT: Call this BEFORE resource-intensive operations!**
+    
+    Use the returned metrics to make informed decisions:
+    - `cached_percentage` < 20%: Avoid search_in='code', use 'class'/'method' instead
+    - `memory.usage_percentage` > 85%: Reduce batch sizes, avoid smali
+    - `search_lock.locked` = true: Wait and retry, another search is running
+    
+    Expected response time: <100ms
+    
     Args:
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     
     Returns:
-        dict with: status ('ready'|'loading'), processed_classes, total_classes, 
-                   percentage (0-100), recommendation, search_lock status
+        dict with:
+        - total_classes: Total classes in APK
+        - cached_classes: Classes with state PROCESS_COMPLETE
+        - cached_percentage: Percentage of cached classes (0-100)
+        - memory: {max_mb, total_mb, used_mb, free_mb, usage_percentage}
+        - threads: {active_count, peak_count, daemon_count}
+        - jadx_config: {threads_count, code_cache_mode}
+        - search_lock: {locked, held_seconds, timeout_seconds}
     """
     return await tools.class_tools.get_decompile_status(instance_id=instance_id)
 
@@ -832,6 +886,9 @@ def main():
     
     # Register Prompts
     register_prompts(mcp)
+    
+    # Register Resources (usage guide, decision matrix, benchmarks)
+    register_resources(mcp)
     
     # Register authentication middleware (HTTP mode only)
     require_auth = bool(loaded_config and loaded_config.users) and not allow_anonymous
