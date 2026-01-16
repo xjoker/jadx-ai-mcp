@@ -94,8 +94,28 @@ public class FridaTypeConverter {
      */
     public static String generateHookTemplate(String className, String methodName, 
                                                List<ArgType> argTypes, boolean isConstructor) {
+        return generateHookTemplate(className, methodName, argTypes, isConstructor, null);
+    }
+
+    /**
+     * Generates a Frida hook template for a method with return type awareness.
+     * 
+     * @param className Fully qualified class name
+     * @param methodName Method name
+     * @param argTypes List of argument types
+     * @param isConstructor Whether this is a constructor
+     * @param returnType The method's return type (null for void)
+     * @return Frida hook code template
+     */
+    public static String generateHookTemplate(String className, String methodName, 
+                                               List<ArgType> argTypes, boolean isConstructor,
+                                               ArgType returnType) {
         String overloadStr = toFridaOverloadString(argTypes);
         String targetMethod = isConstructor ? "$init" : methodName;
+        
+        // Determine if this is a void method
+        boolean isVoid = (returnType == null) || 
+                         (returnType.isPrimitive() && returnType.getPrimitiveType() == PrimitiveType.VOID);
         
         // Generate parameter names
         StringBuilder paramNames = new StringBuilder();
@@ -105,21 +125,34 @@ public class FridaTypeConverter {
         }
         
         StringBuilder template = new StringBuilder();
-        template.append("var clazz = Java.use('").append(className).append("');\n");
-        template.append("clazz.").append(targetMethod);
+        
+        // Wrap in Java.perform() as required by Frida
+        template.append("Java.perform(function() {\n");
+        template.append("    const clazz = Java.use('").append(className).append("');\n");
+        template.append("    clazz.").append(targetMethod);
         
         if (!overloadStr.isEmpty()) {
             template.append(".overload(").append(overloadStr).append(")");
         }
         
         template.append(".implementation = function(").append(paramNames).append(") {\n");
-        template.append("    console.log('").append(methodName).append(" called');\n");
-        template.append("    // TODO: Add your hook logic here\n");
-        template.append("    return this.").append(targetMethod).append("(").append(paramNames).append(");\n");
-        template.append("};");
+        template.append("        console.log('").append(methodName).append(" called');\n");
+        template.append("        // TODO: Add your hook logic here\n");
+        
+        // For void methods, don't use return; for non-void, capture and return result
+        if (isVoid) {
+            template.append("        this.").append(targetMethod).append("(").append(paramNames).append(");\n");
+        } else {
+            template.append("        const result = this.").append(targetMethod).append("(").append(paramNames).append(");\n");
+            template.append("        return result;\n");
+        }
+        
+        template.append("    };\n");
+        template.append("});");
         
         return template.toString();
     }
+
 
     /**
      * Gets the JVM short name for a primitive type.
