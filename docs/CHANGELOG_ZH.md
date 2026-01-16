@@ -8,6 +8,44 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.0.53] - 2026-01-16 18:26
+
+### 新增
+- **`search_native_methods` 工具** 用于 JNI/SO 安全分析
+  - 搜索 APK 中所有 native 方法，无需触发反编译
+  - 支持 `package` 过滤和分页
+  - 返回 Frida 兼容参数类型 (`param_types_frida`)
+  - 在 XHS 应用中发现 1,425 个 native 方法
+
+---
+
+## [6.0.52] - 2026-01-16 18:06
+
+### 新增
+- **`native_method_names`** 字段添加到 `get_class_info` 响应
+  - 列出类中所有 native 方法，便于快速 JNI 分析
+  - `native_count` 提供统计汇总
+
+### 变更
+- 从 `get_method_signature` 移除 `frida_hook_template`（AI 可根据类型信息自行生成）
+
+---
+
+## [6.0.51] - 2026-01-16 17:28
+
+### 新增
+- **Frida 友好输出格式** 用于方法和字段：
+  - `get_fields_of_class` 添加 `type_frida` 字段（如 `[B` 表示 `byte[]`）
+  - `get_method_signature` 添加 `frida_overload` 字符串用于直接 Frida Hook
+  - `/fields-of-class` 和 `/methods-of-class` 结构化 JSON 输出
+  - 方法列表添加 `is_static`, `is_native`, `overload_count`
+
+### 破坏性变更
+- `/fields-of-class` 现返回 JSON（原为纯文本）
+- `/methods-of-class` 现返回 JSON（原为纯文本）
+
+---
+
 ## [6.0.50] - 2026-01-16 15:32
 
 ### 新增
@@ -16,10 +54,8 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
   - 插件：启动时通过 `JadxArgs` API 清除 `renameFlags`
   - 字段/方法名现在与运行时一致（如 `a` 而非 `f439360a`）
 
-### 变更
-- 使 Xposed Hook 开发更可靠，确保字段名一致性
-
 ---
+
 
 ## [6.0.49] - 2026-01-16 11:36
 

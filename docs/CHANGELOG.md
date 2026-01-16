@@ -8,6 +8,44 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.0.53] - 2026-01-16 18:26
+
+### Added
+- **`search_native_methods` tool** for JNI/SO security analysis
+  - Searches all native methods across APK without triggering decompilation
+  - Supports `package` filter and pagination
+  - Returns Frida-compatible parameter types (`param_types_frida`)
+  - Found 1,425 native methods in XHS app
+
+---
+
+## [6.0.52] - 2026-01-16 18:06
+
+### Added
+- **`native_method_names`** field in `get_class_info` response
+  - Lists all native methods in a class for quick JNI analysis
+  - `native_count` for summary statistics
+
+### Changed
+- Removed `frida_hook_template` from `get_method_signature` (AI can generate from type info)
+
+---
+
+## [6.0.51] - 2026-01-16 17:28
+
+### Added
+- **Frida-friendly output format** for methods and fields:
+  - `type_frida` field in `get_fields_of_class` (e.g., `[B` for `byte[]`)
+  - `frida_overload` string in `get_method_signature` for direct Frida hook
+  - Structured JSON output for `/fields-of-class` and `/methods-of-class`
+  - `is_static`, `is_native`, `overload_count` in method listings
+
+### Breaking Changes
+- `/fields-of-class` now returns JSON (was plain text)
+- `/methods-of-class` now returns JSON (was plain text)
+
+---
+
 ## [6.0.50] - 2026-01-16 15:32
 
 ### Added
@@ -16,12 +54,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - Plugin: Clears `renameFlags` on startup via `JadxArgs` API
   - Field/method names now match actual runtime names (e.g., `a` instead of `f439360a`)
 
-### Changed
-- This makes Xposed Hook development more reliable by ensuring field names are consistent
-
 ---
 
 ## [6.0.49] - 2026-01-16 11:36
+
 
 ### Added
 - **MCP Resources** for AI-guided decision making:
