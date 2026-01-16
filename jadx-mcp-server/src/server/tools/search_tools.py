@@ -225,3 +225,49 @@ async def get_method_callees(class_name: str, method_name: str, instance_id: Opt
     if "error" in result:
         logger.warning(f"get_method_callees error: {result.get('error')}")
     return result
+
+
+async def search_native_methods(
+    package: str = "",
+    offset: int = 0,
+    count: int = 50,
+    instance_id: Optional[str] = None
+) -> dict:
+    """
+    Search for all native methods across the APK (metadata-only, fast).
+
+    This is a high-performance operation that reads DEX metadata without triggering decompilation.
+    Native methods are the bridge between Java and native code (JNI), crucial for:
+    - Security analysis (encryption, signing, verification in SO libraries)
+    - Finding Frida Native Hook targets
+    - Identifying SO library entry points
+
+    Args:
+        package: Optional package filter (e.g., 'com.xingin')
+        offset: Pagination offset. Default: 0
+        count: Max results (max: 200). Default: 50
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Search results containing:
+            - native_methods: List of native method objects with:
+                - class_name: Containing class
+                - method_name: Native method name
+                - short_id: Method signature ID
+                - param_types_frida: Frida-compatible parameter types
+            - total_found: Total native methods matching filter
+            - count: Number of results returned
+            - offset: Current offset
+            - has_more: Whether more results available
+
+    MCP Tool: search_native_methods
+    Description: Finds all native methods for JNI/SO security analysis
+    """
+    logger.info(f"search_native_methods: package={package}, offset={offset}, count={count}, instance={instance_id}")
+    params = {"offset": offset, "count": count}
+    if package:
+        params["package"] = package
+    result = await get_from_jadx("search-native-methods", params, instance_id=instance_id)
+    if "error" in result:
+        logger.warning(f"search_native_methods error: {result.get('error')}")
+    return result

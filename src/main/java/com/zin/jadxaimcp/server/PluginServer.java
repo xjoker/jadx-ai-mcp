@@ -317,6 +317,8 @@ public class PluginServer {
         app.get("/search-method", methodRoutes::handleSearchMethod);
         app.get("/method-signature", methodRoutes::handleMethodSignature);
         app.get("/method-callees", methodRoutes::handleMethodCallees);
+        app.get("/search-native-methods", methodRoutes::handleSearchNativeMethods);
+
         
         // --- Xrefs ---
         app.get("/xrefs-to-class", xrefsRoutes::handleXrefsToClass);

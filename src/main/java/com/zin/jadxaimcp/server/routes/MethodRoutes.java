@@ -608,4 +608,107 @@ public class MethodRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving method callees: " + e.getMessage(), e, logger);
         }
     }
+
+    /**
+     * Search for all native methods across the APK.
+     * 
+     * This is a metadata-only operation that does NOT trigger decompilation.
+     * Uses ClassNode.getAccessFlags().isNative() which reads from DEX metadata directly.
+     * 
+     * Query params:
+     * - package: Optional package filter (e.g., "com.xingin")
+     * - offset: Pagination offset (default: 0)
+     * - count: Max results (default: 50, max: 200)
+     */
+    public void handleSearchNativeMethods(Context ctx) {
+        String packageFilter = ctx.queryParam("package");
+        int offset = 0;
+        int count = 50;
+        
+        try {
+            String offsetStr = ctx.queryParam("offset");
+            if (offsetStr != null) offset = Integer.parseInt(offsetStr);
+        } catch (NumberFormatException e) {
+            // Use default
+        }
+        
+        try {
+            String countStr = ctx.queryParam("count");
+            if (countStr != null) count = Math.min(Integer.parseInt(countStr), 200);
+        } catch (NumberFormatException e) {
+            // Use default
+        }
+        
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            if (wrapper == null) {
+                JadxAIMCPPluginError.handleError(ctx, 500, "JadxWrapper not initialized", logger);
+                return;
+            }
+            
+            List<Map<String, Object>> nativeMethods = new ArrayList<>();
+            int totalFound = 0;
+            int skipped = 0;
+            
+            // Iterate through all classes - only accessing metadata, no decompilation
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                String className = cls.getFullName();
+                
+                // Apply package filter if provided
+                if (packageFilter != null && !packageFilter.isEmpty()) {
+                    if (!className.startsWith(packageFilter)) {
+                        continue;
+                    }
+                }
+                
+                jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                if (classNode == null) continue;
+                
+                // Check each method's access flags (metadata only, no decompilation)
+                for (jadx.core.dex.nodes.MethodNode method : classNode.getMethods()) {
+                    if (method.getAccessFlags().isNative()) {
+                        totalFound++;
+                        
+                        // Apply pagination
+                        if (skipped < offset) {
+                            skipped++;
+                            continue;
+                        }
+                        
+                        if (nativeMethods.size() >= count) {
+                            continue; // Keep counting total but don't add more
+                        }
+                        
+                        Map<String, Object> methodInfo = new HashMap<>();
+                        methodInfo.put("class_name", className);
+                        methodInfo.put("method_name", method.getMethodInfo().getName());
+                        methodInfo.put("short_id", method.getMethodInfo().getShortId());
+                        
+                        // Get parameter types for Frida overload
+                        List<String> paramTypes = new ArrayList<>();
+                        for (jadx.core.dex.instructions.args.ArgType argType : method.getMethodInfo().getArgumentsTypes()) {
+                            paramTypes.add(com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(argType));
+                        }
+                        methodInfo.put("param_types_frida", paramTypes);
+                        
+                        nativeMethods.add(methodInfo);
+                    }
+                }
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("native_methods", nativeMethods);
+            response.put("count", nativeMethods.size());
+            response.put("total_found", totalFound);
+            response.put("offset", offset);
+            response.put("has_more", totalFound > offset + nativeMethods.size());
+            if (packageFilter != null && !packageFilter.isEmpty()) {
+                response.put("package_filter", packageFilter);
+            }
+            
+            ctx.json(response);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error searching native methods: " + e.getMessage(), e, logger);
+        }
+    }
 }

@@ -59,8 +59,9 @@ from src.server.tools.class_tools import (
 )
 from src.server.tools.search_tools import (
     get_method_by_name, search_method_by_name, batch_get_method_by_name, search_classes_by_keyword,
-    get_method_signature, get_method_callees
+    get_method_signature, get_method_callees, search_native_methods
 )
+
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
     get_resource_file
@@ -500,6 +501,28 @@ async def get_method_callees(class_name: str, method_name: str, instance_id: Opt
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.get_method_callees(class_name, method_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def search_native_methods(
+    package: str = "",
+    offset: int = 0,
+    count: int = 50,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Search for all native methods across the APK (metadata-only, fast).
+    
+    Native methods are the bridge between Java and native code (JNI).
+    This operation does NOT trigger decompilation - it reads DEX metadata directly.
+    
+    Args:
+        package: Optional package filter (e.g., 'com.xingin')
+        offset: Pagination offset. Default: 0
+        count: Max results (max: 200). Default: 50
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.search_tools.search_native_methods(package, offset, count, instance_id=instance_id)
 
 
 @mcp.tool()
