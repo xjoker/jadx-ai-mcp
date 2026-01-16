@@ -293,3 +293,36 @@ async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> 
     if "error" in result:
         logger.warning(f"get_class_info error: {result.get('error')}")
     return result
+
+
+async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
+    """
+    Get the current decompilation status of the JADX instance.
+    
+    Use this to check if JADX has finished decompiling all classes before
+    using search_in='code' which requires decompilation.
+
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Decompilation status containing:
+            - status: "ready" or "loading"
+            - processed_classes: Number of classes already decompiled
+            - total_classes: Total number of classes
+            - percentage: Progress percentage (0-100)
+            - recommendation: Suggested action based on status
+            - search_lock: Current search lock status
+
+    MCP Tool: get_decompile_status
+    Description: Check if JADX is ready for code search (decompilation complete)
+    """
+    logger.info(f"get_decompile_status: instance={instance_id}")
+    result = await get_from_jadx("decompile-status", instance_id=instance_id)
+    if "error" in result:
+        logger.warning(f"get_decompile_status error: {result.get('error')}")
+    else:
+        status = result.get("status", "unknown")
+        pct = result.get("percentage", 0)
+        logger.info(f"get_decompile_status: {status} ({pct}%)")
+    return result

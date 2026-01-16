@@ -188,6 +188,8 @@ async def search_classes_by_keyword(
     search_in: str = "code",
     offset: int = 0,
     count: int = 20,
+    class_offset: int = 0,
+    class_limit: int = 200,
     instance_id: Optional[str] = None,
 ) -> dict:
     """Search for classes containing a specific keyword with flexible filtering options.
@@ -195,19 +197,23 @@ async def search_classes_by_keyword(
     BEST PRACTICE:
     - Use search_in='class' for finding class names (fastest, most reliable).
     - Use search_in='method' or 'field' for specific member searches.
-    - AVOID search_in='code' on large APKs as full-text search may timeout or crash.
+    - For search_in='code', use class_offset/class_limit to process classes in batches.
     Refer to the 'search-code' prompt for detailed guidance.
 
     Args:
         search_term: The keyword or string to search for.
         package: Package name to limit search scope (optional).
+        exclude: Comma-separated package prefixes to exclude (optional).
         search_in: Comma-separated search scopes: class,method,field,code,comment. Default: code
-        offset: Starting index for pagination. Default: 0
+        offset: Starting index for result pagination. Default: 0
         count: Maximum number of results. Default: 20
+        class_offset: For code search - starting class index. Default: 0
+        class_limit: For code search - max classes per batch. Default: 200
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.search_classes_by_keyword(
-        search_term, package, exclude, search_in, offset, count, instance_id=instance_id
+        search_term, package, exclude, search_in, offset, count, 
+        class_offset, class_limit, instance_id=instance_id
     )
 
 
@@ -361,6 +367,24 @@ async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> 
                    method_count, field_count, method_names, field_names
     """
     return await tools.class_tools.get_class_info(class_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
+    """Get the current decompilation status of the JADX instance.
+    
+    Use this BEFORE using search_in='code' to check if JADX has finished decompiling.
+    If status is 'loading', use search_in='class' or 'method' instead for faster results.
+
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    
+    Returns:
+        dict with: status ('ready'|'loading'), processed_classes, total_classes, 
+                   percentage (0-100), recommendation, search_lock status
+    """
+    return await tools.class_tools.get_decompile_status(instance_id=instance_id)
 
 
 @mcp.tool()

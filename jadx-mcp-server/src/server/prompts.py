@@ -39,30 +39,41 @@ Follow this standard reverse engineering workflow:
         """
         return f"""You want to search for "{keyword}" in the codebase.
 
+**⚠️ Before Code Search**:
+- Use `get_decompile_status()` to check if JADX is ready.
+- If status is "loading", use metadata search first (class/method/field).
+
 **Search Modes** (from fastest to slowest):
-| Mode | Use Case | Speed |
+| Mode | Use Case | Triggers Decompilation |
 |:---|:---|:---:|
-| `search_in="class"` | Find class names | Fast |
-| `search_in="method"` | Find method names | Fast |
-| `search_in="field"` | Find field names | Fast |
-| `search_in="code"` | Full-text search in decompiled code | Slow |
+| `search_in="class"` | Find class names | No |
+| `search_in="method"` | Find method names | No |
+| `search_in="field"` | Find field names | No |
+| `search_in="code"` | Full-text search | **Yes** (slow) |
 
 **Recommended Strategy**:
-1.  **Start with metadata search**:
+1.  **Check status first**:
+    - `get_decompile_status()` → if percentage < 100, avoid `search_in="code"`.
+
+2.  **Start with metadata search**:
     - `search_classes_by_keyword(search_term="{keyword}", search_in="class")` for class names.
     - `search_classes_by_keyword(search_term="{keyword}", search_in="method")` for methods.
+    - These are fast and don't trigger decompilation.
 
-2.  **Use `search_in="code"` with filters**:
+3.  **For code search, use class batch processing**:
+    - Add `class_offset=0, class_limit=200` to process only 200 classes per request.
+    - Use `next_class_offset` from response to continue: `class_offset=200`.
     - Add `package` filter to narrow scope: `package="com.example"`.
-    - Use pagination: `count=20, offset=0` then check `has_more` and `next_offset`.
 
-3.  **Handle 503 Busy Response**:
-    - If you receive `{{"busy": true, "retry_after": 10}}`, wait 10 seconds and retry.
-    - Only one search can run at a time (serialized for stability).
+4.  **Handle responses**:
+    - If `{{"busy": true}}`, wait `retry_after` seconds and retry.
+    - If `search_info.timed_out=true`, continue with `next_class_offset`.
+    - Use `offset` and `next_offset` for result pagination.
 
-4.  **Obfuscated Code Tips**:
-    - Try shorter keywords or string constants.
-    - Use `get_strings(count=50)` carefully to find relevant strings.
+5.  **Efficient workflow for API/URL search**:
+    - First: `search_in="class"` with keywords like "Api", "Request", "Http"
+    - Then: `get_class_source(class_name)` for candidate classes
+    - Last resort: `search_in="code"` with package filter
 """
 
 

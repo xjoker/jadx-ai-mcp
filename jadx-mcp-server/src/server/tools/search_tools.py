@@ -131,35 +131,32 @@ async def search_classes_by_keyword(
     - Use search_in='class' for finding class names (fastest, most reliable).
     - Use search_in='method' or 'field' for specific member searches.
     - AVOID search_in='code' on large APKs as full-text search may timeout or crash.
+    Refer to the 'search-code' prompt for detailed guidance.
 
     Args:
         search_term: The keyword or string to search for.
-        package (optional): Package name to limit the search scope.
-        exclude (optional): Comma-separated package prefixes to exclude/ignore.
-        search_in (optional): Comma-separated list of search scopes (class,method,field,code,comment).
-        offset (optional): Starting index for pagination. Default: 0
-        count (optional): Maximum number of results to return. Default: 20
+        package: Package name to limit search scope (optional).
+        exclude: Comma-separated package prefixes to exclude (optional).
+        search_in: Comma-separated search scopes: class,method,field,code,comment. Default: code
+        offset: Starting index for pagination. Default: 0
+        count: Maximum number of results. Default: 20
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Paginated list of classes containing the search term
+        dict: Paginated list of classes containing the search term, with search_info metadata
 
     MCP Tool: search_classes_by_keyword
     Description: Advanced search tool that finds classes matching a keyword with filtering
     """
-    return await PaginationUtils.get_paginated_data(
-        endpoint="search-classes-by-keyword",
-        offset=offset,
-        count=count,
-        additional_params={
-            "search_term": search_term,
-            "package": package,
-            "exclude": exclude,
-            "search_in": search_in,
-        },
-        data_extractor=lambda parsed: parsed.get("classes", []),
-        fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id),
-    )
+    params = {
+        "search_term": search_term,
+        "package": package,
+        "exclude": exclude,
+        "search_in": search_in,
+        "offset": offset,
+        "count": count,
+    }
+    return await get_from_jadx("search-classes-by-keyword", params, instance_id=instance_id)
 
 
 async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:

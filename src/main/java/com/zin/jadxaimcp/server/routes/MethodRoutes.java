@@ -273,11 +273,11 @@ public class MethodRoutes {
         String methodName = validateMethodParam(ctx);
         if (methodName == null) return;
 
-        // Pagination parameters with early-exit limit
+        // Pagination parameters
         int offset = paginationUtils.getIntParam(ctx, "offset", 0);
         int count = paginationUtils.getIntParam(ctx, "count", 50);
-        final int MAX_COUNT = 200;  // Absolute max per request
-        final int MAX_TOTAL = 500;  // Absolute max total results to scan
+        final int MAX_COUNT = 200;  // Max per request
+        final int TIMEOUT_SECONDS = 30; // Timeout for search
         count = Math.min(count, MAX_COUNT);
 
         try {
@@ -288,7 +288,9 @@ public class MethodRoutes {
             int totalMatches = 0;
             int skipped = 0;
             int collected = 0;
-            boolean hitLimit = false;
+            int classesProcessed = 0;
+            boolean timedOut = false;
+            long startTime = System.currentTimeMillis();
 
             // Try to acquire global lock (fast-fail pattern)
             if (!JadxSearchLock.tryAcquire()) {
@@ -296,38 +298,43 @@ public class MethodRoutes {
                 busyResponse.put("error", "Search operation in progress");
                 busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
                 busyResponse.put("busy", true);
+                busyResponse.put("lock_held_seconds", JadxSearchLock.getLockHeldSeconds());
                 ctx.status(503).json(busyResponse);
                 return;
             }
             try {
+                List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+                int resultsNeeded = offset + count + 1; // +1 to check has_more
+                
                 outerLoop:
-                for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                for (JavaClass cls : allClasses) {
+                    // Timeout check every 100 classes
+                    if (classesProcessed % 100 == 0) {
+                        long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                        if (elapsed > TIMEOUT_SECONDS) {
+                            timedOut = true;
+                            break;
+                        }
+                    }
+                    
                     // Use ClassNode.getMethods() to avoid triggering decompilation!
-                    // ClassNode has method metadata from DEX without needing full decompilation
                     jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                    if (classNode == null) continue;
+                    if (classNode == null) {
+                        classesProcessed++;
+                        continue;
+                    }
                     
                     for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                        // Get method name from MethodInfo (no decompilation needed)
                         String mthName = mth.getMethodInfo().getName();
                         
-                        // Match method name (case-insensitive, partial match)
                         if (mthName.toLowerCase().contains(searchTerm)) {
                             totalMatches++;
                             
-                            // Check absolute limit
-                            if (totalMatches > MAX_TOTAL) {
-                                hitLimit = true;
-                                break outerLoop;
-                            }
-                            
-                            // Skip for offset
                             if (skipped < offset) {
                                 skipped++;
                                 continue;
                             }
                             
-                            // Collect if under count limit
                             if (collected < count) {
                                 Map<String, String> match = new HashMap<>();
                                 match.put("class_name", cls.getFullName());
@@ -337,16 +344,19 @@ public class MethodRoutes {
                                 collected++;
                             }
                             
-                            // Early exit if we have enough
-                            if (collected >= count && totalMatches >= offset + count + 1) {
+                            // Early exit when we have enough
+                            if (totalMatches >= resultsNeeded) {
                                 break outerLoop;
                             }
                         }
                     }
+                    classesProcessed++;
                 }
             } finally {
                 JadxSearchLock.release();
             }
+            
+            long elapsed = (System.currentTimeMillis() - startTime) / 1000;
             
             // Build response with pagination info
             Map<String, Object> response = new HashMap<>();
@@ -356,10 +366,15 @@ public class MethodRoutes {
             response.put("count", collected);
             response.put("has_more", totalMatches > offset + collected);
             response.put("next_offset", offset + collected);
-            if (hitLimit) {
-                response.put("limited", true);
-                response.put("note", "Results capped at " + MAX_TOTAL + ". Use package filter or more specific search term.");
-            }
+            
+            // Search info
+            Map<String, Object> searchInfo = new HashMap<>();
+            searchInfo.put("total_found", totalMatches);
+            searchInfo.put("classes_processed", classesProcessed);
+            searchInfo.put("elapsed_seconds", elapsed);
+            searchInfo.put("timed_out", timedOut);
+            response.put("search_info", searchInfo);
+            
             ctx.json(response);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error during method search: " + e.getMessage(), e, logger);

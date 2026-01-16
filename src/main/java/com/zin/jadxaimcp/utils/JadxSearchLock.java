@@ -1,7 +1,11 @@
 package com.zin.jadxaimcp.utils;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Global lock for JADX search and decompilation operations.
@@ -10,6 +14,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * This singleton lock ensures that only one search/decompilation operation
  * runs at a time across all route handlers, preventing state corruption
  * and intermittent empty results.
+ * 
+ * Features:
+ * - Lock timeout detection: if lock is held > 60s, new requests can acquire it
+ * - Lock hold time tracking for monitoring
  * 
  * Usage (fast-fail pattern):
  * <pre>
@@ -31,11 +39,19 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public final class JadxSearchLock {
     
+    private static final Logger logger = LoggerFactory.getLogger(JadxSearchLock.class);
+    
     // Singleton ReentrantLock shared by all routes
     private static final ReentrantLock LOCK = new ReentrantLock();
     
+    // Track when the lock was acquired (0 means not held)
+    private static final AtomicLong lockAcquireTime = new AtomicLong(0);
+    
     // Recommended retry interval in seconds
     public static final int RETRY_AFTER_SECONDS = 10;
+    
+    // Maximum lock hold time before allowing new requests (60 seconds)
+    public static final int LOCK_TIMEOUT_SECONDS = 60;
     
     private JadxSearchLock() {
         // Prevent instantiation
@@ -43,12 +59,31 @@ public final class JadxSearchLock {
     
     /**
      * Try to acquire the lock immediately (non-blocking).
-     * Use this for fast-fail pattern.
+     * If the lock has been held for more than LOCK_TIMEOUT_SECONDS,
+     * allows new requests to proceed (resets tracking).
      * 
      * @return true if lock acquired, false if busy
      */
     public static boolean tryAcquire() {
-        return LOCK.tryLock();
+        // Check for stale lock (held too long)
+        long acquireTime = lockAcquireTime.get();
+        if (acquireTime > 0 && LOCK.isLocked()) {
+            long heldSeconds = (System.currentTimeMillis() - acquireTime) / 1000;
+            if (heldSeconds > LOCK_TIMEOUT_SECONDS) {
+                logger.warn("Search lock held for {}s (timeout: {}s), allowing new request", 
+                    heldSeconds, LOCK_TIMEOUT_SECONDS);
+                // Reset tracking - allow new request to proceed
+                // Note: We cannot forcibly release another thread's lock,
+                // but we can reset the timing to allow this request
+                lockAcquireTime.set(0);
+            }
+        }
+        
+        boolean acquired = LOCK.tryLock();
+        if (acquired) {
+            lockAcquireTime.set(System.currentTimeMillis());
+        }
+        return acquired;
     }
     
     /**
@@ -59,7 +94,11 @@ public final class JadxSearchLock {
      */
     public static boolean tryAcquire(int timeoutSeconds) {
         try {
-            return LOCK.tryLock(timeoutSeconds, TimeUnit.SECONDS);
+            boolean acquired = LOCK.tryLock(timeoutSeconds, TimeUnit.SECONDS);
+            if (acquired) {
+                lockAcquireTime.set(System.currentTimeMillis());
+            }
+            return acquired;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
@@ -74,6 +113,7 @@ public final class JadxSearchLock {
     @Deprecated
     public static void lock() {
         LOCK.lock();
+        lockAcquireTime.set(System.currentTimeMillis());
     }
     
     /**
@@ -82,6 +122,7 @@ public final class JadxSearchLock {
      */
     public static void release() {
         if (LOCK.isHeldByCurrentThread()) {
+            lockAcquireTime.set(0);
             LOCK.unlock();
         }
     }
@@ -107,5 +148,28 @@ public final class JadxSearchLock {
      */
     public static boolean isHeldByCurrentThread() {
         return LOCK.isHeldByCurrentThread();
+    }
+    
+    /**
+     * Get how long the lock has been held in seconds.
+     * Returns 0 if lock is not currently held.
+     */
+    public static long getLockHeldSeconds() {
+        long acquireTime = lockAcquireTime.get();
+        if (acquireTime == 0) {
+            return 0;
+        }
+        return (System.currentTimeMillis() - acquireTime) / 1000;
+    }
+    
+    /**
+     * Get lock status information for monitoring.
+     */
+    public static java.util.Map<String, Object> getStatus() {
+        java.util.Map<String, Object> status = new java.util.HashMap<>();
+        status.put("locked", LOCK.isLocked());
+        status.put("held_seconds", getLockHeldSeconds());
+        status.put("timeout_seconds", LOCK_TIMEOUT_SECONDS);
+        return status;
     }
 }

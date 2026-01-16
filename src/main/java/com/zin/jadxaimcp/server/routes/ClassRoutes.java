@@ -49,6 +49,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
@@ -60,6 +63,10 @@ public class ClassRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ClassRoutes.class);
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
+    
+    // Thread pool for parallel batch search
+    private static final ExecutorService SEARCH_EXECUTOR = Executors.newFixedThreadPool(
+        Math.max(2, Runtime.getRuntime().availableProcessors() - 1));
 
     /**
      * Enum for specifying search locations in handleSearchClassesByKeyword.
@@ -89,6 +96,11 @@ public class ClassRoutes {
 
     // Pattern to detect jadx obfuscated package names (e.g., p000, p001, p123)
     private static final Pattern OBFUSCATED_PACKAGE_PATTERN = Pattern.compile("^p\\d+$");
+    
+    // Search optimization constants
+    private static final int DEFAULT_RESULT_LIMIT = 50;   // Default results per page
+    private static final int MAX_RESULT_LIMIT = 200;      // Maximum results per page
+    private static final int SEARCH_TIMEOUT_SECONDS = 60; // Timeout for search operations
 
     public ClassRoutes(MainWindow mainWindow, PaginationUtils paginationUtils) {
         this.mainWindow = mainWindow;
@@ -816,7 +828,7 @@ public class ClassRoutes {
         // Parse optional package filter parameter
         String packageFilter = ctx.queryParam("package");
         
-        // Parse optional exclude parameter (comma-separated package prefixes to exclude)
+        // Parse optional exclude parameter
         String excludeParam = ctx.queryParam("exclude");
         List<String> excludePrefixes = new ArrayList<>();
         if (excludeParam != null && !excludeParam.isEmpty()) {
@@ -830,89 +842,245 @@ public class ClassRoutes {
 
         // Parse search locations, default to CODE if not specified
         Set<SearchLocation> searchLocations = parseSearchLocations(ctx.queryParam("search_in"));
+        
+        // Check if code/comment search (requires getCode() - expensive)
+        boolean isCodeSearch = searchLocations.contains(SearchLocation.CODE) 
+            || searchLocations.contains(SearchLocation.COMMENT);
+        
+        // Parse pagination parameters - limit results per page
+        int offset = paginationUtils.getIntParam(ctx, "offset", 0);
+        int count = paginationUtils.getIntParam(ctx, "count", DEFAULT_RESULT_LIMIT);
+        count = Math.min(count, MAX_RESULT_LIMIT);
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
             List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
-            String term = searchTerm.toLowerCase();
+            final String term = searchTerm.toLowerCase();
 
-            // Check if package filter should be applied
-            // Disable package filtering for jadx obfuscated packages (p000, p001, etc.)
+            // Apply package filter and exclusions first
             boolean applyPackageFilter = isValidPackageFilter(packageFilter);
-            if (packageFilter != null && !applyPackageFilter) {
-                logger.info(
-                        "JADX AI MCP: Package filter '{}' appears to be a jadx obfuscated package name, skipping package filtering",
-                        packageFilter);
+            final String pkgFilter = packageFilter;
+            final List<String> excludes = excludePrefixes;
+            
+            List<JavaClass> filteredClasses = allClasses;
+            if (applyPackageFilter || !excludes.isEmpty()) {
+                filteredClasses = new ArrayList<>();
+                for (JavaClass cls : allClasses) {
+                    if (applyPackageFilter && !matchesPackageFilter(cls, pkgFilter)) continue;
+                    if (!excludes.isEmpty()) {
+                        boolean excluded = false;
+                        for (String prefix : excludes) {
+                            if (cls.getFullName().startsWith(prefix)) {
+                                excluded = true;
+                                break;
+                            }
+                        }
+                        if (excluded) continue;
+                    }
+                    filteredClasses.add(cls);
+                }
             }
 
-            // Use LinkedHashSet to maintain order and ensure deduplication
-            Set<JavaClass> matchingClassesSet = new LinkedHashSet<>();
-
-            // Try to acquire global lock (fast-fail pattern)
-            // If another search is in progress, return 503 with retry hint
+            // Try to acquire global lock
             if (!JadxSearchLock.tryAcquire()) {
                 Map<String, Object> busyResponse = new HashMap<>();
                 busyResponse.put("error", "Search operation in progress");
                 busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
                 busyResponse.put("busy", true);
+                busyResponse.put("lock_held_seconds", JadxSearchLock.getLockHeldSeconds());
                 ctx.status(503).json(busyResponse);
                 return;
             }
+            
             try {
-                // Search in each specified location
-                for (SearchLocation location : searchLocations) {
-                    Set<JavaClass> locationResults = searchInLocation(allClasses, term, location, packageFilter,
-                            applyPackageFilter);
-                    matchingClassesSet.addAll(locationResults);
+                final int resultsNeeded = offset + count + 1; // +1 to check if has_more
+                final ConcurrentLinkedQueue<String> results = new ConcurrentLinkedQueue<>();
+                final AtomicInteger totalMatches = new AtomicInteger(0);
+                final AtomicBoolean cancelled = new AtomicBoolean(false);
+                
+                long startTime = System.currentTimeMillis();
+                int batchCount = 0;
+                
+                if (isCodeSearch && filteredClasses.size() > 100) {
+                    // Use JADX's smart batching for code search
+                    List<JavaClass> topClasses = new ArrayList<>();
+                    for (JavaClass cls : filteredClasses) {
+                        if (!cls.isInner()) {
+                            topClasses.add(cls);
+                        }
+                    }
+                    
+                    List<List<JavaClass>> batches = wrapper.buildDecompileBatches(topClasses);
+                    batchCount = batches.size();
+                    
+                    logger.info("JADX AI MCP: Code search '{}' using {} parallel batches", searchTerm, batchCount);
+                    
+                    // Create search tasks for each batch
+                    Set<JavaClass> includedSet = new HashSet<>(filteredClasses);
+                    List<Future<?>> futures = new ArrayList<>();
+                    
+                    for (List<JavaClass> batch : batches) {
+                        Future<?> future = SEARCH_EXECUTOR.submit(() -> {
+                            for (JavaClass cls : batch) {
+                                if (cancelled.get()) return;
+                                if (!includedSet.contains(cls) && !cls.isInner()) continue;
+                                
+                                try {
+                                    boolean matches = false;
+                                    for (SearchLocation location : searchLocations) {
+                                        if (classMatchesInLocation(cls, term, location)) {
+                                            matches = true;
+                                            break;
+                                        }
+                                    }
+                                    if (matches) {
+                                        int total = totalMatches.incrementAndGet();
+                                        results.add(cls.getFullName());
+                                        // Early exit when we have enough
+                                        if (total >= resultsNeeded) {
+                                            cancelled.set(true);
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    // Skip failed classes
+                                }
+                            }
+                        });
+                        futures.add(future);
+                    }
+                    
+                    // Wait for all batches with timeout
+                    for (Future<?> future : futures) {
+                        try {
+                            long elapsed = System.currentTimeMillis() - startTime;
+                            long remaining = SEARCH_TIMEOUT_SECONDS * 1000 - elapsed;
+                            if (remaining > 0) {
+                                future.get(remaining, TimeUnit.MILLISECONDS);
+                            } else {
+                                future.cancel(true);
+                            }
+                        } catch (TimeoutException e) {
+                            future.cancel(true);
+                        } catch (Exception e) {
+                            // Continue with other batches
+                        }
+                    }
+                } else {
+                    // Simple sequential search for metadata search or small class sets
+                    for (JavaClass cls : filteredClasses) {
+                        if (cancelled.get()) break;
+                        
+                        boolean matches = false;
+                        for (SearchLocation location : searchLocations) {
+                            if (classMatchesInLocation(cls, term, location)) {
+                                matches = true;
+                                break;
+                            }
+                        }
+                        if (matches) {
+                            int total = totalMatches.incrementAndGet();
+                            results.add(cls.getFullName());
+                            if (total >= resultsNeeded) {
+                                cancelled.set(true);
+                            }
+                        }
+                    }
                 }
+                
+                // Convert to list and apply pagination
+                List<String> allResults = new ArrayList<>(results);
+                int totalFound = totalMatches.get();
+                
+                // Apply offset/count pagination
+                List<String> paginatedResults = new ArrayList<>();
+                for (int i = offset; i < Math.min(offset + count, allResults.size()); i++) {
+                    paginatedResults.add(allResults.get(i));
+                }
+                
+                long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                boolean timedOut = elapsed >= SEARCH_TIMEOUT_SECONDS;
+                
+                // Build response
+                Map<String, Object> response = new HashMap<>();
+                response.put("type", "class-list");
+                response.put("classes", paginatedResults);
+                response.put("offset", offset);
+                response.put("count", paginatedResults.size());
+                response.put("has_more", totalFound > offset + paginatedResults.size());
+                response.put("next_offset", offset + paginatedResults.size());
+                
+                // Search info
+                Map<String, Object> searchInfo = new HashMap<>();
+                searchInfo.put("total_found", totalFound);
+                searchInfo.put("total_classes", allClasses.size());
+                searchInfo.put("filtered_classes", filteredClasses.size());
+                searchInfo.put("elapsed_seconds", elapsed);
+                searchInfo.put("timed_out", timedOut);
+                searchInfo.put("parallel_batches", batchCount);
+                searchInfo.put("search_locations", searchLocations.toString());
+                
+                response.put("search_info", searchInfo);
+                
+                logger.info("JADX AI MCP: Search '{}' completed in {}s - found {} matches, returned {} (batches: {})", 
+                    searchTerm, elapsed, totalFound, paginatedResults.size(), batchCount);
+                
+                ctx.json(response);
             } finally {
                 JadxSearchLock.release();
             }
-
-            // Apply exclusion filter
-            List<JavaClass> matchingClasses;
-            if (!excludePrefixes.isEmpty()) {
-                matchingClasses = new ArrayList<>();
-                for (JavaClass cls : matchingClassesSet) {
-                    String fullName = cls.getFullName();
-                    boolean excluded = false;
-                    for (String prefix : excludePrefixes) {
-                        if (fullName.startsWith(prefix)) {
-                            excluded = true;
-                            break;
-                        }
-                    }
-                    if (!excluded) {
-                        matchingClasses.add(cls);
-                    }
-                }
-                logger.info("JADX AI MCP: Excluded {} classes with prefixes: {}", 
-                    matchingClassesSet.size() - matchingClasses.size(), excludePrefixes);
-            } else {
-                // Convert to list for pagination
-                matchingClasses = new ArrayList<>(matchingClassesSet);
-            }
-
-            logger.info("JADX AI MCP: Search completed. Found {} unique classes matching '{}' in locations: {}",
-                    matchingClasses.size(), searchTerm, searchLocations);
-
-            Map<String, Object> result = paginationUtils.handlePagination(
-                    ctx,
-                    matchingClasses,
-                    "class-list",
-                    "classes",
-                    JavaClass::getFullName);
-            ctx.json(result);
-        } catch (PaginationException e) {
-            JadxAIMCPPluginError.handleError(ctx,
-                    "Internal error while generating pagination result for handleSearchClassesByKeyword: "
-                            + e.getMessage(),
-                    e, logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx,
-                    "Internal error occurred while trying to handle the search classes by keyword mcp request: "
-                            + e.getMessage(),
-                    e, logger);
+                    "Internal error in search: " + e.getMessage(), e, logger);
+        }
+    }
+    
+    /**
+     * Check if a class matches the search term in the specified location.
+     * For CODE and COMMENT, this triggers decompilation.
+     */
+    private boolean classMatchesInLocation(JavaClass cls, String term, SearchLocation location) {
+        try {
+            switch (location) {
+                case CLASS_NAME:
+                    return cls.getName().toLowerCase().contains(term);
+                    
+                case METHOD_NAME:
+                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                    if (classNode == null) return false;
+                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                        if (mth.getMethodInfo().getName().toLowerCase().contains(term)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                    
+                case FIELD_NAME:
+                    jadx.core.dex.nodes.ClassNode fieldClassNode = cls.getClassNode();
+                    if (fieldClassNode == null) return false;
+                    for (jadx.core.dex.nodes.FieldNode field : fieldClassNode.getFields()) {
+                        if (field.getFieldInfo().getName().toLowerCase().contains(term)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                    
+                case CODE:
+                    String code = cls.getCode();
+                    return code != null && code.toLowerCase().contains(term);
+                    
+                case COMMENT:
+                    String commentCode = cls.getCode();
+                    if (commentCode == null) return false;
+                    // Check for comments containing the term
+                    return commentCode.contains("//" + term) || commentCode.contains("/*" + term)
+                        || (commentCode.toLowerCase().contains("//") && commentCode.toLowerCase().contains(term))
+                        || (commentCode.toLowerCase().contains("/*") && commentCode.toLowerCase().contains(term));
+                    
+                default:
+                    return false;
+            }
+        } catch (Exception e) {
+            return false;
         }
     }
 

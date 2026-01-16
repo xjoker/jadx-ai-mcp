@@ -341,6 +341,59 @@ public class PluginServer {
         app.get("/debug/variables", debugRoutes::handleGetVariables);
         app.get("/debug/threads", debugRoutes::handleGetThreads);
         
+        // --- Decompilation Status ---
+        app.get("/decompile-status", ctx -> {
+            try {
+                jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
+                if (wrapper == null) {
+                    ctx.status(503).json(java.util.Map.of(
+                        "error", "JADX wrapper not initialized",
+                        "status", "not_ready"
+                    ));
+                    return;
+                }
+                
+                java.util.List<jadx.api.JavaClass> classes = wrapper.getIncludedClassesWithInners();
+                int total = classes.size();
+                int processed = 0;
+                
+                // Count classes that have completed processing
+                for (jadx.api.JavaClass cls : classes) {
+                    if (cls.getClassNode() != null && 
+                        cls.getClassNode().getState().isProcessComplete()) {
+                        processed++;
+                    }
+                }
+                
+                int percentage = total > 0 ? (processed * 100 / total) : 0;
+                String status = processed == total ? "ready" : "loading";
+                
+                java.util.Map<String, Object> response = new java.util.HashMap<>();
+                response.put("status", status);
+                response.put("processed_classes", processed);
+                response.put("total_classes", total);
+                response.put("percentage", percentage);
+                
+                // Add search lock status
+                response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
+                
+                // Add recommendation based on status
+                if (processed < total) {
+                    response.put("recommendation", 
+                        "Use search_in='class' or 'method' for faster results while decompilation is in progress");
+                } else {
+                    response.put("recommendation", "All search modes available");
+                }
+                
+                ctx.json(response);
+            } catch (Exception e) {
+                logger.error("Error getting decompile status", e);
+                ctx.status(500).json(java.util.Map.of(
+                    "error", "Failed to get decompile status: " + e.getMessage()
+                ));
+            }
+        });
+        
         // --- Cache Management ---
         app.post("/cache/clear", ctx -> {
             try {
