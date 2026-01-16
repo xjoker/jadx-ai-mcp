@@ -142,3 +142,100 @@ def register_resources(mcp):
                 ]
             }
         }
+
+    @mcp.resource("jadx://capabilities")
+    def get_capabilities() -> dict:
+        """Current JADX instance capabilities based on loaded file type.
+        
+        Read this resource to understand:
+        - What file type is loaded (APK, JAR, DEX, AAR)
+        - Which tools are available or unavailable
+        - Recommended workflow for this file type
+        
+        IMPORTANT: Tool availability depends on file type.
+        JAR files do not support Android-specific tools like:
+        - get_android_manifest
+        - get_smali_of_class
+        - get_strings
+        - get_main_activity_class
+        """
+        # Get file type info from default instance
+        from .instance_registry import InstanceRegistry
+        
+        default_instance = InstanceRegistry.get_default()
+        if not default_instance:
+            return {
+                "status": "no_instance",
+                "message": "No JADX instance connected",
+                "file_type": "unknown",
+                "android_features": False,
+                "smali_available": False,
+                "unavailable_tools": [],
+            }
+        
+        apk_info = default_instance.apk_info or {}
+        file_type = apk_info.get("file_type", "unknown")
+        android_features = apk_info.get("android_features", True)  # Default to True for backwards compat
+        smali_available = apk_info.get("smali_available", True)
+        unavailable_tools = apk_info.get("unavailable_tools", [])
+        
+        # Build tool availability matrix
+        tool_availability = {
+            "always_available": [
+                "get_class_source",
+                "get_method_by_name",
+                "get_methods_of_class",
+                "get_fields_of_class",
+                "get_class_info",
+                "get_all_classes",
+                "search_classes_by_keyword",
+                "get_xrefs_to_class",
+                "get_xrefs_to_method",
+                "get_xrefs_to_field",
+                "rename_class",
+                "rename_method",
+                "rename_field",
+                "batch_get_class_source",
+                "batch_get_method_by_name",
+            ],
+            "android_only": [
+                "get_android_manifest",
+                "get_main_activity_class",
+                "get_strings",
+                "get_main_application_classes_names",
+                "get_main_application_classes_code",
+            ],
+            "dex_only": [
+                "get_smali_of_class",
+            ],
+        }
+        
+        # Determine recommended workflow based on file type
+        if file_type == "jar":
+            workflow = (
+                "For JAR files: Use get_all_classes to browse package structure, "
+                "search_classes_by_keyword to find target classes, "
+                "get_class_source to view decompiled Java code."
+            )
+        elif file_type == "dex":
+            workflow = (
+                "For DEX files: Full Android analysis available. "
+                "Use get_smali_of_class for low-level bytecode analysis."
+            )
+        else:  # APK, AAR, or unknown (default to full features)
+            workflow = (
+                "Full Android analysis available. Start with get_android_manifest "
+                "to understand app structure, then analyze activities and services."
+            )
+        
+        return {
+            "status": "ok",
+            "file_type": file_type,
+            "android_features": android_features,
+            "smali_available": smali_available,
+            "unavailable_tools": unavailable_tools,
+            "tool_availability": tool_availability,
+            "recommended_workflow": workflow,
+            "instance_name": default_instance.name,
+        }
+
