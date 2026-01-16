@@ -232,6 +232,21 @@ public class JadxAIMCP implements JadxPlugin {
                     pluginServer.stop();
                 }
                 
+                // === Disable JADX auto-rename for accurate Hook development ===
+                // This ensures field/method names match the actual runtime names
+                try {
+                    jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
+                    if (wrapper != null && wrapper.getDecompiler() != null) {
+                        jadx.api.JadxArgs args = wrapper.getDecompiler().getArgs();
+                        if (args != null && args.getRenameFlags() != null) {
+                            args.getRenameFlags().clear();
+                            logger.info("JADX-AI-MCP Plugin: Disabled auto-rename for accurate field/method names");
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("JADX-AI-MCP Plugin: Could not disable auto-rename: " + e.getMessage());
+                }
+                
                 // Create and start new server
                 pluginServer = new PluginServer(mainWindow, currentPort, currentBindAddress, this);
                 pluginServer.start();
