@@ -1882,4 +1882,137 @@ public class ClassRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Error getting package classes: " + e.getMessage(), e, logger);
         }
     }
+    
+    /**
+     * Handle the /jar-bytecode MCP tool call.
+     * 
+     * Gets the disassembled bytecode representation of a JAR class.
+     * This is the JAR equivalent of get_smali_of_class for APK files.
+     * 
+     * For JAR files, JADX can provide disassembled output similar to javap.
+     * For APK files, this returns Dalvik bytecode (smali).
+     * 
+     * Parameters:
+     * - class_name: Fully qualified class name (required)
+     */
+    public void handleJarBytecode(Context ctx) {
+        try {
+            String className = ctx.queryParam("class_name");
+            if (className == null || className.isEmpty()) {
+                ctx.status(400).json(Map.of("error", "class_name parameter is required"));
+                return;
+            }
+            
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            
+            // Find the class
+            JavaClass targetClass = null;
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                if (cls.getFullName().equals(className)) {
+                    targetClass = cls;
+                    break;
+                }
+            }
+            
+            if (targetClass == null) {
+                ctx.status(404).json(Map.of(
+                    "error", "Class not found: " + className,
+                    "suggestion", "Use search_classes_by_keyword to find the correct class name"
+                ));
+                return;
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "bytecode");
+            result.put("class_name", className);
+            result.put("file_type", fileType.getPrimaryType().getName());
+            
+            // Get the class node for bytecode access
+            jadx.core.dex.nodes.ClassNode classNode = targetClass.getClassNode();
+            if (classNode == null) {
+                result.put("error", "Cannot access bytecode - class node not available");
+                ctx.json(result);
+                return;
+            }
+            
+            // Build bytecode representation
+            StringBuilder bytecode = new StringBuilder();
+            
+            // Class header
+            bytecode.append("// Class: ").append(className).append("\n");
+            bytecode.append("// File type: ").append(fileType.getPrimaryType().getName().toUpperCase()).append("\n\n");
+            
+            // Access flags
+            bytecode.append("// Access: ").append(classNode.getAccessFlags().rawValue())
+                    .append(" (").append(classNode.getAccessFlags().toString()).append(")\n");
+            
+            // Super class
+            if (classNode.getSuperClass() != null) {
+                bytecode.append("// Extends: ").append(classNode.getSuperClass().toString()).append("\n");
+            }
+            
+            // Interfaces
+            if (!classNode.getInterfaces().isEmpty()) {
+                bytecode.append("// Implements: ");
+                for (int i = 0; i < classNode.getInterfaces().size(); i++) {
+                    if (i > 0) bytecode.append(", ");
+                    bytecode.append(classNode.getInterfaces().get(i).toString());
+                }
+                bytecode.append("\n");
+            }
+            bytecode.append("\n");
+            
+            // Fields
+            bytecode.append("// Fields:\n");
+            for (jadx.core.dex.nodes.FieldNode field : classNode.getFields()) {
+                bytecode.append("  ").append(field.getAccessFlags().toString())
+                        .append(" ").append(field.getType().toString())
+                        .append(" ").append(field.getName()).append("\n");
+            }
+            bytecode.append("\n");
+            
+            // Methods with signature
+            bytecode.append("// Methods:\n");
+            for (jadx.core.dex.nodes.MethodNode method : classNode.getMethods()) {
+                bytecode.append("  ").append(method.getAccessFlags().toString())
+                        .append(" ").append(method.getMethodInfo().getReturnType())
+                        .append(" ").append(method.getName())
+                        .append("(");
+                
+                // Parameters
+                var args = method.getMethodInfo().getArgumentsTypes();
+                for (int i = 0; i < args.size(); i++) {
+                    if (i > 0) bytecode.append(", ");
+                    bytecode.append(args.get(i).toString());
+                }
+                bytecode.append(")\n");
+                
+                // Try to get instructions count
+                if (method.getBasicBlocks() != null) {
+                    bytecode.append("    // Basic blocks: ").append(method.getBasicBlocks().size()).append("\n");
+                }
+            }
+            
+            result.put("bytecode", bytecode.toString());
+            result.put("field_count", classNode.getFields().size());
+            result.put("method_count", classNode.getMethods().size());
+            result.put("status", "success");
+            
+            // Add note about smali availability
+            if (fileType.isSmaliAvailable()) {
+                result.put("smali_available", true);
+                result.put("note", "Use get_smali_of_class for full Dalvik bytecode (APK/DEX files)");
+            } else {
+                result.put("smali_available", false);
+                result.put("note", "JAR files use JVM bytecode. This shows class structure similar to javap.");
+            }
+            
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error getting bytecode: " + e.getMessage(), e, logger);
+        }
+    }
 }

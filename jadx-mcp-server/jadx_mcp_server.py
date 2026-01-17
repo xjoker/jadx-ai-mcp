@@ -65,7 +65,8 @@ from src.server.tools.search_tools import (
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
     get_resource_file, jar_get_manifest, jar_get_services, jar_get_entry_points,
-    get_file_info, get_config_strings, get_package_classes, jar_get_dependencies
+    get_file_info, get_config_strings, get_package_classes, jar_get_dependencies,
+    jar_get_bytecode
 )
 from src.server.tools.refactor_tools import (
     rename_class, rename_method, rename_field, rename_package
@@ -505,6 +506,23 @@ async def jar_get_dependencies(instance_id: Optional[str] = None) -> dict:
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.resource_tools.jar_get_dependencies(instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def jar_get_bytecode(
+    class_name: str,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Get bytecode/class structure for APK or JAR classes.
+    
+    JAR equivalent of get_smali_of_class. Shows class structure similar to javap.
+    
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.Main')
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.resource_tools.jar_get_bytecode(class_name, instance_id=instance_id)
 
 
 @mcp.tool()

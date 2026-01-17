@@ -403,3 +403,38 @@ async def jar_get_dependencies(instance_id: Optional[str] = None) -> dict:
     Description: Analyze Maven coordinates and embedded dependencies in JAR files
     """
     return await get_from_jadx("jar-dependencies", instance_id=instance_id)
+
+
+async def jar_get_bytecode(
+    class_name: str,
+    instance_id: Optional[str] = None
+) -> dict:
+    """
+    Get bytecode representation of a class from an APK or JAR file.
+    
+    This is the JAR equivalent of get_smali_of_class:
+    - APK/DEX: Returns Dalvik bytecode (use get_smali_of_class for full smali)
+    - JAR: Returns JVM class structure similar to javap output
+    
+    Args:
+        class_name: Fully qualified class name (e.g., 'com.example.Main')
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        
+    Returns:
+        dict: Bytecode representation
+        
+        {
+            "status": "success",
+            "class_name": "com.example.Main",
+            "file_type": "jar",
+            "bytecode": "// Class structure...",
+            "field_count": 5,
+            "method_count": 10,
+            "smali_available": false
+        }
+    
+    MCP Tool: jar_get_bytecode
+    Description: Get bytecode/class structure for APK or JAR classes
+    """
+    return await get_from_jadx("jar-bytecode", {"class_name": class_name}, instance_id=instance_id)
+
