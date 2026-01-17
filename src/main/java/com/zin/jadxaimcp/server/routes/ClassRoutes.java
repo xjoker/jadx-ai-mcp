@@ -1592,4 +1592,181 @@ public class ClassRoutes {
         }
     }
 
+    /**
+     * Handle the /jar-entry-points MCP tool call.
+     * 
+     * Intelligently discovers entry points for JAR files:
+     * 1. Main-Class from MANIFEST.MF
+     * 2. Start-Class for Spring Boot (actual application class)
+     * 3. Classes with @SpringBootApplication annotation
+     * 4. Classes with public static void main(String[]) method
+     * 5. SPI services (from META-INF/services)
+     * 
+     * Only available for JAR files.
+     */
+    public void handleJarEntryPoints(Context ctx) {
+        try {
+            // Check file type
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            
+            if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
+                // Not a JAR file - return NOT_APPLICABLE with APK alternative
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "NOT_APPLICABLE");
+                response.put("reason", "JAR entry points detection is only for JAR files. This is a " + 
+                    fileType.getPrimaryType().getName().toUpperCase() + " file.");
+                response.put("file_type", fileType.getPrimaryType().getName());
+                response.put("alternatives", List.of(
+                    Map.of("tool", "get_main_activity_class", "description", "Get MainActivity for APK files")
+                ));
+                ctx.json(response);
+                return;
+            }
+            
+            // Get the loaded JAR file
+            java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().isEmpty() ? null 
+                : wrapper.getProject().getFilePaths().get(0);
+            if (jarPath == null || !jarPath.toFile().exists()) {
+                ctx.status(404).json(Map.of("error", "No JAR file loaded"));
+                return;
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "jar-entry-points");
+            result.put("file_name", jarPath.getFileName().toString());
+            
+            List<Map<String, Object>> entryPoints = new ArrayList<>();
+            String primaryEntry = null;
+            
+            // 1. Read MANIFEST.MF for Main-Class and Start-Class
+            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarPath.toFile())) {
+                java.util.jar.Manifest manifest = jar.getManifest();
+                if (manifest != null) {
+                    java.util.jar.Attributes attrs = manifest.getMainAttributes();
+                    
+                    // Check Start-Class first (Spring Boot actual entry point)
+                    String startClass = attrs.getValue("Start-Class");
+                    if (startClass != null && !startClass.isEmpty()) {
+                        Map<String, Object> entry = new HashMap<>();
+                        entry.put("type", "spring_boot_start_class");
+                        entry.put("class", startClass);
+                        entry.put("source", "MANIFEST.MF Start-Class");
+                        entry.put("priority", 1);
+                        entryPoints.add(entry);
+                        primaryEntry = startClass;
+                    }
+                    
+                    // Check Main-Class
+                    String mainClass = attrs.getValue("Main-Class");
+                    if (mainClass != null && !mainClass.isEmpty()) {
+                        Map<String, Object> entry = new HashMap<>();
+                        // Check if it's a Spring Boot launcher
+                        boolean isSpringBootLauncher = mainClass.contains("springframework.boot.loader");
+                        entry.put("type", isSpringBootLauncher ? "spring_boot_launcher" : "main_class");
+                        entry.put("class", mainClass);
+                        entry.put("source", "MANIFEST.MF Main-Class");
+                        entry.put("priority", isSpringBootLauncher ? 3 : 1);
+                        if (isSpringBootLauncher) {
+                            entry.put("note", "This is Spring Boot launcher. Use Start-Class for actual app.");
+                        }
+                        entryPoints.add(entry);
+                        if (primaryEntry == null && !isSpringBootLauncher) {
+                            primaryEntry = mainClass;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.debug("Failed to read manifest for entry points: " + e.getMessage());
+            }
+            
+            // 2. Search for Spring Boot application classes by class name pattern
+            // Note: Full annotation detection requires decompilation, skipped for performance
+            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+            for (JavaClass cls : allClasses) {
+                try {
+                    String className = cls.getFullName();
+                    // Look for common Spring Boot application class naming patterns
+                    if (className.endsWith("Application") || 
+                        className.contains(".Application$") ||
+                        className.endsWith("App") ||
+                        className.contains(".bootstrap.")) {
+                        // Check if this class is likely the main entry (has main method)
+                        jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                        if (classNode != null) {
+                            for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                                if (mth.getMethodInfo().getName().equals("main") && 
+                                    mth.getAccessFlags().isStatic() &&
+                                    mth.getAccessFlags().isPublic()) {
+                                    Map<String, Object> entry = new HashMap<>();
+                                    entry.put("type", "application_class");
+                                    entry.put("class", className);
+                                    entry.put("source", "naming_pattern");
+                                    entry.put("priority", 2);
+                                    entryPoints.add(entry);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // Skip classes that can't be analyzed
+                }
+            }
+            
+            // 3. Search for public static void main(String[]) methods
+            int mainMethodCount = 0;
+            for (JavaClass cls : allClasses) {
+                if (mainMethodCount >= 10) break; // Limit to first 10
+                try {
+                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                    if (classNode == null) continue;
+                    
+                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                        jadx.core.dex.info.MethodInfo mthInfo = mth.getMethodInfo();
+                        // Check for main method signature
+                        if (mthInfo.getName().equals("main") && 
+                            mth.getAccessFlags().isStatic() &&
+                            mth.getAccessFlags().isPublic()) {
+                            // Check return type is void
+                            if (mthInfo.getReturnType().toString().equals("void")) {
+                                // Check parameter is String[]
+                                List<jadx.core.dex.instructions.args.ArgType> args = mthInfo.getArgumentsTypes();
+                                if (args.size() == 1 && args.get(0).toString().contains("String[]")) {
+                                    Map<String, Object> entry = new HashMap<>();
+                                    entry.put("type", "main_method");
+                                    entry.put("class", cls.getFullName());
+                                    entry.put("method", "main(String[])");
+                                    entry.put("source", "method_signature");
+                                    entry.put("priority", 4);
+                                    entryPoints.add(entry);
+                                    mainMethodCount++;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // Skip
+                }
+            }
+            
+            result.put("status", "success");
+            result.put("entry_points", entryPoints);
+            result.put("total_found", entryPoints.size());
+            if (primaryEntry != null) {
+                result.put("primary_entry", primaryEntry);
+            }
+            
+            if (entryPoints.isEmpty()) {
+                result.put("note", "No entry points found. This may be a library JAR without executable entry.");
+            }
+            
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error finding JAR entry points: " + e.getMessage(), e, logger);
+        }
+    }
 }

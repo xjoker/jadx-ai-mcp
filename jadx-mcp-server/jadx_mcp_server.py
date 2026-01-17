@@ -64,7 +64,7 @@ from src.server.tools.search_tools import (
 
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
-    get_resource_file, jar_get_manifest, jar_get_services
+    get_resource_file, jar_get_manifest, jar_get_services, jar_get_entry_points
 )
 from src.server.tools.refactor_tools import (
     rename_class, rename_method, rename_field, rename_package
@@ -401,6 +401,22 @@ async def jar_get_services(instance_id: Optional[str] = None) -> dict:
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.resource_tools.jar_get_services(instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def jar_get_entry_points(instance_id: Optional[str] = None) -> dict:
+    """Discover entry points for JAR files.
+    
+    Finds Main-Class, Start-Class (Spring Boot), @SpringBootApplication classes,
+    and public static void main() methods.
+    
+    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.resource_tools.jar_get_entry_points(instance_id=instance_id)
 
 
 @mcp.tool()

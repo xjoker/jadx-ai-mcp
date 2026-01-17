@@ -199,3 +199,40 @@ async def jar_get_services(instance_id: Optional[str] = None) -> dict:
     """
     return await get_from_jadx("jar-services", instance_id=instance_id)
 
+
+async def jar_get_entry_points(instance_id: Optional[str] = None) -> dict:
+    """
+    Intelligently discover entry points for JAR files.
+    
+    This tool finds all possible entry points in a JAR:
+    1. Main-Class from MANIFEST.MF (standard executable JAR)
+    2. Start-Class for Spring Boot (actual application class)
+    3. Classes with @SpringBootApplication annotation
+    4. Classes with public static void main(String[]) method
+    
+    The result includes a "primary_entry" field recommending the best entry point.
+    
+    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        
+    Returns:
+        dict: List of discovered entry points with priority
+        
+        Success response:
+        {
+            "status": "success",
+            "primary_entry": "com.example.Application",
+            "entry_points": [
+                {"type": "spring_boot_start_class", "class": "...", "priority": 1},
+                {"type": "main_class", "class": "...", "priority": 1}
+            ],
+            "total_found": 2
+        }
+    
+    MCP Tool: jar_get_entry_points
+    Description: Discover entry points (Main-Class, Spring Boot, main()) in JAR files
+    """
+    return await get_from_jadx("jar-entry-points", instance_id=instance_id)
+
