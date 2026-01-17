@@ -368,3 +368,38 @@ async def jar_get_entry_points(instance_id: Optional[str] = None) -> dict:
     """
     return await get_from_jadx("jar-entry-points", instance_id=instance_id)
 
+
+async def jar_get_dependencies(instance_id: Optional[str] = None) -> dict:
+    """
+    Analyze dependencies embedded in JAR files.
+    
+    This tool discovers dependencies from multiple sources:
+    1. META-INF/maven/*/pom.properties - Maven coordinates
+    2. MANIFEST.MF Class-Path entries
+    3. BOOT-INF/lib/*.jar - Spring Boot nested dependencies
+    
+    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        
+    Returns:
+        dict: Dependency analysis results
+        
+        Success response:
+        {
+            "status": "success",
+            "group_id": "com.example",
+            "artifact_id": "my-app",
+            "version": "1.0.0",
+            "dependencies": [
+                {"name": "spring-core", "version": "6.1.0", "source": "BOOT-INF/lib"}
+            ],
+            "total_dependencies": 150,
+            "nested_jars_count": 150
+        }
+    
+    MCP Tool: jar_get_dependencies
+    Description: Analyze Maven coordinates and embedded dependencies in JAR files
+    """
+    return await get_from_jadx("jar-dependencies", instance_id=instance_id)

@@ -1148,4 +1148,153 @@ public class ResourceRoutes {
         }
         return null;
     }
+    
+    /**
+     * Handle the /jar-dependencies MCP tool call.
+     * 
+     * Analyzes JAR dependencies from multiple sources:
+     * 1. META-INF/maven/.../pom.properties - Maven coordinates
+     * 2. META-INF/maven/.../pom.xml - Full dependency tree
+     * 3. MANIFEST.MF - Class-Path entries
+     * 4. Nested JARs in BOOT-INF/lib/ (Spring Boot)
+     * 
+     * Only available for JAR files.
+     */
+    public void handleJarDependencies(Context ctx) {
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            
+            if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
+                List<com.zin.jadxaimcp.utils.NotApplicableResponse.Alternative> alts = new ArrayList<>();
+                alts.add(new com.zin.jadxaimcp.utils.NotApplicableResponse.Alternative(
+                    "get_file_info", "Get file type and available features"));
+                com.zin.jadxaimcp.utils.NotApplicableResponse.send(
+                    ctx, "Dependency analysis is only for JAR files. This is a " + 
+                    fileType.getPrimaryType().getName().toUpperCase() + " file.",
+                    fileType.getPrimaryType().getName(), alts);
+                return;
+            }
+            
+            java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().isEmpty() ? null 
+                : wrapper.getProject().getFilePaths().get(0);
+            if (jarPath == null) {
+                ctx.status(404).json(Map.of("error", "No JAR file loaded"));
+                return;
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "jar-dependencies");
+            result.put("file_name", jarPath.getFileName().toString());
+            
+            List<Map<String, Object>> dependencies = new ArrayList<>();
+            String groupId = null;
+            String artifactId = null;
+            String version = null;
+            
+            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarPath.toFile())) {
+                java.util.Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                
+                // Track nested JARs (Spring Boot BOOT-INF/lib/)
+                List<String> nestedJars = new ArrayList<>();
+                
+                while (entries.hasMoreElements()) {
+                    java.util.jar.JarEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    
+                    // 1. Parse pom.properties for Maven coordinates
+                    if (name.endsWith("pom.properties") && name.startsWith("META-INF/maven/")) {
+                        try (InputStream is = jar.getInputStream(entry)) {
+                            java.util.Properties props = new java.util.Properties();
+                            props.load(is);
+                            groupId = props.getProperty("groupId");
+                            artifactId = props.getProperty("artifactId");
+                            version = props.getProperty("version");
+                        }
+                    }
+                    
+                    // 2. Count nested JARs in BOOT-INF/lib/
+                    if (name.startsWith("BOOT-INF/lib/") && name.endsWith(".jar")) {
+                        String jarName = name.substring("BOOT-INF/lib/".length());
+                        nestedJars.add(jarName);
+                        
+                        // Parse dependency info from jar name (e.g., spring-core-6.1.0.jar)
+                        Map<String, Object> dep = parseDependencyFromJarName(jarName);
+                        if (dep != null) {
+                            dep.put("source", "BOOT-INF/lib");
+                            dependencies.add(dep);
+                        }
+                    }
+                }
+                
+                // 3. Check MANIFEST.MF for Class-Path
+                java.util.jar.Manifest manifest = jar.getManifest();
+                if (manifest != null) {
+                    String classPath = manifest.getMainAttributes().getValue("Class-Path");
+                    if (classPath != null && !classPath.isEmpty()) {
+                        String[] paths = classPath.split("\\s+");
+                        for (String path : paths) {
+                            if (path.endsWith(".jar")) {
+                                Map<String, Object> dep = parseDependencyFromJarName(path);
+                                if (dep != null) {
+                                    dep.put("source", "MANIFEST Class-Path");
+                                    dependencies.add(dep);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                result.put("nested_jars_count", nestedJars.size());
+            }
+            
+            // Set main artifact info
+            if (groupId != null) result.put("group_id", groupId);
+            if (artifactId != null) result.put("artifact_id", artifactId);
+            if (version != null) result.put("version", version);
+            
+            result.put("dependencies", dependencies);
+            result.put("total_dependencies", dependencies.size());
+            result.put("status", "success");
+            
+            if (dependencies.isEmpty()) {
+                result.put("note", "No embedded dependencies found. Check external build files (pom.xml, build.gradle).");
+            }
+            
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error analyzing JAR dependencies: " + e.getMessage(), e, logger);
+        }
+    }
+    
+    /**
+     * Parse dependency info from JAR filename.
+     * E.g., "spring-core-6.1.0.jar" -> {name: "spring-core", version: "6.1.0"}
+     */
+    private Map<String, Object> parseDependencyFromJarName(String jarName) {
+        if (jarName == null || !jarName.endsWith(".jar")) return null;
+        
+        // Remove .jar suffix
+        String name = jarName.substring(0, jarName.length() - 4);
+        
+        // Try to extract version (last segment after -)
+        int lastDash = name.lastIndexOf('-');
+        if (lastDash > 0) {
+            String possibleVersion = name.substring(lastDash + 1);
+            // Check if it looks like a version (starts with digit)
+            if (!possibleVersion.isEmpty() && Character.isDigit(possibleVersion.charAt(0))) {
+                Map<String, Object> dep = new HashMap<>();
+                dep.put("name", name.substring(0, lastDash));
+                dep.put("version", possibleVersion);
+                return dep;
+            }
+        }
+        
+        // No version detected
+        Map<String, Object> dep = new HashMap<>();
+        dep.put("name", name);
+        return dep;
+    }
 }
