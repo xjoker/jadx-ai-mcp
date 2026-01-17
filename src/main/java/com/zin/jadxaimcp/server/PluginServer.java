@@ -293,6 +293,7 @@ public class PluginServer {
         if (plugin != null) {
             ApkInfoRoutes apkInfoRoutes = new ApkInfoRoutes(mainWindow, plugin);
             app.get("/apk-info", apkInfoRoutes::handleApkInfo);
+            app.get("/file-info", apkInfoRoutes::handleFileInfo);
         }
 
         // --- Class & Code Navigation ---

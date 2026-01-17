@@ -119,6 +119,44 @@ async def get_resource_file(resource_name: str, instance_id: Optional[str] = Non
 
 
 # ============================================================================
+# Unified Interface Tools (APK + JAR)
+# ============================================================================
+
+async def get_file_info(instance_id: Optional[str] = None) -> dict:
+    """
+    Get unified file information for both APK and JAR files.
+    
+    This is the recommended first tool to call when starting analysis.
+    It provides file type detection and recommends which tools to use.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        
+    Returns:
+        dict: Unified file information
+        
+        Common fields:
+        - file_type: "apk", "jar", "dex", "aar"
+        - file_name: Original filename
+        - class_count: Total classes
+        - android_features: True if Android tools available
+        - smali_available: True if Smali generation works
+        - features: Map of feature availability
+        - recommended_tools: List of suggested tools for this file type
+        
+        For APK/AAR (android_features=true):
+        - apk_package, version_name, version_code
+        
+        For JAR (file_type="jar"):
+        - main_class, implementation_title, spring_boot_version
+    
+    MCP Tool: get_file_info
+    Description: Unified file info - start here to understand file type and available tools
+    """
+    return await get_from_jadx("file-info", instance_id=instance_id)
+
+
+# ============================================================================
 # JAR-specific Tools
 # ============================================================================
 
