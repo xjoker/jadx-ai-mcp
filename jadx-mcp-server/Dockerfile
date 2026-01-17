@@ -19,7 +19,7 @@ RUN mkdir -p data/config
 # Expose MCP port
 EXPOSE 8651
 
-# Run MCP server in HTTP mode
+# Run MCP server with config file
 ENV JADX_MCP_HOST=0.0.0.0
 ENV JADX_MCP_PORT=8651
-CMD ["uv", "run", "fastmcp", "run", "jadx_mcp_server.py", "--transport", "sse", "--path", "/mcp", "--host", "0.0.0.0", "--port", "8651"]
+CMD ["uv", "run", "python", "jadx_mcp_server.py", "--http", "--host", "0.0.0.0", "--port", "8651", "--config", "/app/data/config/jadx-config.toml"]

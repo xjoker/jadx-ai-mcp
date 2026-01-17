@@ -1,11 +1,14 @@
 # JADX MCP Server 双实例测试配置
 
-[[instances]]
+[security]
+allow_dynamic_instances = true
+
+[[jadx_instances]]
 name = "nexus-jar"
 host = "host.docker.internal"
 port = 8650
 
-[[instances]]
+[[jadx_instances]]
 name = "xhs-apk"
 host = "host.docker.internal"
 port = 8652
