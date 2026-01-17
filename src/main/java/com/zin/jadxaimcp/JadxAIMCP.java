@@ -506,41 +506,131 @@ public class JadxAIMCP implements JadxPlugin {
     }
 
     /**
-     * @return String The automatically generated instance name based on APK info
+     * @return String The automatically generated instance name based on file info
      *
-     * This method generates a default instance name using APK package name and version code.
-     * Used when user doesn't specify a custom instance name.
+     * This method generates a default instance name.
+     * For APK: Uses package name + version code (e.g., "xhs-v12345")
+     * For JAR: Uses priority order:
+     *   1. MANIFEST.MF Implementation-Title + Implementation-Version
+     *   2. MANIFEST.MF Main-Class (last segment)
+     *   3. JAR file name (without .jar extension)
+     *   4. Fallback: jadx-port
      */
     public String getAutoInstanceName() {
         try {
-            if (mainWindow == null) return null;
+            if (mainWindow == null) return "jadx-" + currentPort;
             JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) return null;
+            if (wrapper == null) return "jadx-" + currentPort;
             
-            java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
-            if (resources == null || resources.isEmpty()) return null;
-            
-            jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
-            if (manifestFile == null) return null;
-            
-            jadx.core.xmlgen.ResContainer container = manifestFile.loadContent();
-            String manifestXml = container.getText().getCodeStr();
-            
-            String pkgName = extractManifestAttribute(manifestXml, "package");
-            if (pkgName != null) {
-                // Use last part of package name + version code
-                String[] parts = pkgName.split("\\.");
-                String shortName = parts[parts.length - 1];
-                String versionCodeStr = extractManifestAttribute(manifestXml, "android:versionCode");
-                if (versionCodeStr != null) {
-                    return shortName + "-v" + versionCodeStr;
+            // Detect file type using FileTypeDetector
+            java.io.File loadedFile = getLoadedFile();
+            if (loadedFile != null) {
+                com.zin.jadxaimcp.utils.FileTypeDetector.FileType fileType = 
+                    com.zin.jadxaimcp.utils.FileTypeDetector.detectFileType(loadedFile);
+                
+                // For JAR files, use JAR-specific naming
+                if (fileType == com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
+                    return getJarInstanceName(loadedFile);
                 }
-                return shortName;
+            }
+            
+            // For APK/AAR/DEX: Use Android manifest-based naming
+            java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
+            if (resources != null && !resources.isEmpty()) {
+                jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
+                if (manifestFile != null) {
+                    jadx.core.xmlgen.ResContainer container = manifestFile.loadContent();
+                    String manifestXml = container.getText().getCodeStr();
+                    
+                    String pkgName = extractManifestAttribute(manifestXml, "package");
+                    if (pkgName != null) {
+                        // Use last part of package name + version code
+                        String[] parts = pkgName.split("\\.");
+                        String shortName = parts[parts.length - 1];
+                        String versionCodeStr = extractManifestAttribute(manifestXml, "android:versionCode");
+                        if (versionCodeStr != null) {
+                            return shortName + "-v" + versionCodeStr;
+                        }
+                        return shortName;
+                    }
+                }
             }
         } catch (Exception e) {
             logger.debug("Failed to generate auto instance name: " + e.getMessage());
         }
         return "jadx-" + currentPort;
+    }
+    
+    /**
+     * Gets the currently loaded file from JADX wrapper.
+     */
+    private java.io.File getLoadedFile() {
+        try {
+            if (mainWindow == null) return null;
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            if (wrapper == null) return null;
+            
+            java.util.List<java.nio.file.Path> inputFiles = wrapper.getProject().getFilePaths();
+            if (inputFiles != null && !inputFiles.isEmpty()) {
+                return inputFiles.get(0).toFile();
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to get loaded file: " + e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * Generates instance name for JAR files using MANIFEST.MF or file name.
+     * Priority:
+     *   1. Implementation-Title + Implementation-Version
+     *   2. Main-Class (last segment)
+     *   3. File name (without .jar extension)
+     */
+    private String getJarInstanceName(java.io.File jarFile) {
+        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarFile)) {
+            java.util.jar.Manifest manifest = jar.getManifest();
+            if (manifest != null) {
+                java.util.jar.Attributes attrs = manifest.getMainAttributes();
+                
+                // Priority 1: Implementation-Title + Implementation-Version
+                String implTitle = attrs.getValue("Implementation-Title");
+                String implVersion = attrs.getValue("Implementation-Version");
+                if (implTitle != null && !implTitle.isEmpty()) {
+                    if (implVersion != null && !implVersion.isEmpty()) {
+                        return sanitizeInstanceName(implTitle) + "-v" + sanitizeInstanceName(implVersion);
+                    }
+                    return sanitizeInstanceName(implTitle);
+                }
+                
+                // Priority 2: Main-Class (use last segment)
+                String mainClass = attrs.getValue("Main-Class");
+                if (mainClass != null && !mainClass.isEmpty()) {
+                    String[] parts = mainClass.split("\\.");
+                    return sanitizeInstanceName(parts[parts.length - 1]);
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to read JAR manifest: " + e.getMessage());
+        }
+        
+        // Priority 3: File name without extension
+        String fileName = jarFile.getName();
+        if (fileName.toLowerCase().endsWith(".jar")) {
+            fileName = fileName.substring(0, fileName.length() - 4);
+        }
+        return sanitizeInstanceName(fileName);
+    }
+    
+    /**
+     * Sanitizes instance name by removing/replacing problematic characters.
+     */
+    private String sanitizeInstanceName(String name) {
+        if (name == null) return "unknown";
+        // Replace spaces and special chars with hyphens, keep alphanumeric and hyphens
+        return name.replaceAll("[^a-zA-Z0-9._-]", "-")
+                   .replaceAll("-+", "-")  // Collapse multiple hyphens
+                   .replaceAll("^-|-$", ""); // Remove leading/trailing hyphens
     }
     
     /**

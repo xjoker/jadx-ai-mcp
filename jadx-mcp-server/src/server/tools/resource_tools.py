@@ -116,3 +116,53 @@ async def get_resource_file(resource_name: str, instance_id: Optional[str] = Non
     Description: Fetches content of any resource file by path
     """
     return await get_from_jadx("get-resource-file", {"file_name": resource_name}, instance_id=instance_id)
+
+
+# ============================================================================
+# JAR-specific Tools
+# ============================================================================
+
+async def jar_get_manifest(instance_id: Optional[str] = None) -> dict:
+    """
+    Read META-INF/MANIFEST.MF from JAR files.
+    
+    This tool extracts structured information from JAR manifest including:
+    - Main-Class: Entry point for executable JARs
+    - Implementation-Title/Version: Library identification
+    - Spring Boot specific attributes (Start-Class, Spring-Boot-Lib, etc.)
+    - OSGi Bundle attributes
+    - All custom manifest attributes
+    
+    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        
+    Returns:
+        dict: Structured manifest data with common and all attributes
+        
+        Success response:
+        {
+            "status": "success",
+            "type": "jar-manifest",
+            "main_class": "com.example.App",
+            "implementation_title": "my-app",
+            "implementation_version": "1.0.0",
+            "spring_boot_version": "2.7.0",  // if Spring Boot JAR
+            "all_attributes": {"key": "value", ...},
+            "attribute_count": 15
+        }
+        
+        NOT_APPLICABLE response (for APK/AAR):
+        {
+            "status": "NOT_APPLICABLE",
+            "reason": "JAR Manifest is only available for JAR files",
+            "file_type": "apk",
+            "alternatives": [{"tool": "apk_get_manifest", "description": "..."}]
+        }
+    
+    MCP Tool: jar_get_manifest
+    Description: Read and parse MANIFEST.MF from JAR files for library metadata and entry point discovery
+    """
+    return await get_from_jadx("jar-manifest", instance_id=instance_id)
+

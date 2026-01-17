@@ -724,4 +724,147 @@ public class ResourceRoutes {
     private ResourceFile getManifestFile() {
         return AndroidManifestParser.getAndroidManifest(mainWindow.getWrapper().getResources());
     }
+    
+    /**
+     * Handle the /jar-manifest MCP tool call.
+     * 
+     * Reads META-INF/MANIFEST.MF from JAR files and returns structured information.
+     * Only available for JAR files.
+     * 
+     * Response format:
+     * {
+     *   "main_class": "com.example.App",
+     *   "implementation_title": "my-app",
+     *   "implementation_version": "1.0.0",
+     *   "class_path": "lib/dep.jar",
+     *   "spring_boot_classes": "BOOT-INF/classes/",
+     *   "all_attributes": {...}
+     * }
+     */
+    public void handleJarManifest(Context ctx) {
+        try {
+            // Check file type - only available for JAR files
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            
+            if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
+                // Not a JAR file - return NOT_APPLICABLE with APK alternative
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "NOT_APPLICABLE");
+                response.put("reason", "JAR Manifest is only available for JAR files. This is a " + 
+                    fileType.getPrimaryType().getName().toUpperCase() + " file.");
+                response.put("file_type", fileType.getPrimaryType().getName());
+                response.put("alternatives", List.of(
+                    Map.of("tool", "apk_get_manifest", "description", "Get AndroidManifest.xml for APK/AAR files")
+                ));
+                ctx.json(response);
+                return;
+            }
+            
+            // Get the loaded JAR file
+            java.io.File jarFile = getLoadedFile(wrapper);
+            if (jarFile == null || !jarFile.exists()) {
+                JadxAIMCPPluginError.handleError(ctx, 404, "No JAR file loaded.", logger);
+                return;
+            }
+            
+            // Read MANIFEST.MF
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "jar-manifest");
+            result.put("file_name", jarFile.getName());
+            
+            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarFile)) {
+                java.util.jar.Manifest manifest = jar.getManifest();
+                
+                if (manifest == null) {
+                    result.put("status", "not_found");
+                    result.put("message", "JAR file does not contain META-INF/MANIFEST.MF");
+                    ctx.json(result);
+                    return;
+                }
+                
+                java.util.jar.Attributes mainAttrs = manifest.getMainAttributes();
+                result.put("status", "success");
+                
+                // Extract commonly used attributes
+                addIfPresent(result, "main_class", mainAttrs.getValue("Main-Class"));
+                addIfPresent(result, "implementation_title", mainAttrs.getValue("Implementation-Title"));
+                addIfPresent(result, "implementation_version", mainAttrs.getValue("Implementation-Version"));
+                addIfPresent(result, "implementation_vendor", mainAttrs.getValue("Implementation-Vendor"));
+                addIfPresent(result, "specification_title", mainAttrs.getValue("Specification-Title"));
+                addIfPresent(result, "specification_version", mainAttrs.getValue("Specification-Version"));
+                addIfPresent(result, "class_path", mainAttrs.getValue("Class-Path"));
+                addIfPresent(result, "created_by", mainAttrs.getValue("Created-By"));
+                addIfPresent(result, "built_by", mainAttrs.getValue("Built-By"));
+                addIfPresent(result, "build_jdk", mainAttrs.getValue("Build-Jdk"));
+                addIfPresent(result, "bundle_name", mainAttrs.getValue("Bundle-Name"));
+                addIfPresent(result, "bundle_symbolic_name", mainAttrs.getValue("Bundle-SymbolicName"));
+                addIfPresent(result, "bundle_version", mainAttrs.getValue("Bundle-Version"));
+                
+                // Spring Boot specific
+                addIfPresent(result, "spring_boot_version", mainAttrs.getValue("Spring-Boot-Version"));
+                addIfPresent(result, "spring_boot_classes", mainAttrs.getValue("Spring-Boot-Classes"));
+                addIfPresent(result, "spring_boot_lib", mainAttrs.getValue("Spring-Boot-Lib"));
+                addIfPresent(result, "start_class", mainAttrs.getValue("Start-Class"));
+                
+                // All attributes as map
+                Map<String, String> allAttributes = new HashMap<>();
+                for (Object key : mainAttrs.keySet()) {
+                    String keyStr = key.toString();
+                    String value = mainAttrs.getValue(keyStr);
+                    if (value != null) {
+                        allAttributes.put(keyStr, value);
+                    }
+                }
+                result.put("all_attributes", allAttributes);
+                result.put("attribute_count", allAttributes.size());
+                
+                // Check for named sections (per-entry attributes)
+                Map<String, java.util.jar.Attributes> entries = manifest.getEntries();
+                if (!entries.isEmpty()) {
+                    Map<String, Map<String, String>> sections = new HashMap<>();
+                    for (Map.Entry<String, java.util.jar.Attributes> entry : entries.entrySet()) {
+                        Map<String, String> sectionAttrs = new HashMap<>();
+                        for (Object key : entry.getValue().keySet()) {
+                            sectionAttrs.put(key.toString(), entry.getValue().getValue(key.toString()));
+                        }
+                        sections.put(entry.getKey(), sectionAttrs);
+                    }
+                    result.put("named_sections", sections);
+                    result.put("section_count", sections.size());
+                }
+            }
+            
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error reading JAR manifest: " + e.getMessage(), e, logger);
+        }
+    }
+    
+    /**
+     * Helper to add attribute to result map if value is not null.
+     */
+    private void addIfPresent(Map<String, Object> result, String key, String value) {
+        if (value != null && !value.isEmpty()) {
+            result.put(key, value);
+        }
+    }
+    
+    /**
+     * Get the loaded file from JADX wrapper.
+     */
+    private java.io.File getLoadedFile(JadxWrapper wrapper) {
+        try {
+            if (wrapper == null) return null;
+            java.util.List<java.nio.file.Path> inputFiles = wrapper.getProject().getFilePaths();
+            if (inputFiles != null && !inputFiles.isEmpty()) {
+                return inputFiles.get(0).toFile();
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to get loaded file: " + e.getMessage());
+        }
+        return null;
+    }
 }

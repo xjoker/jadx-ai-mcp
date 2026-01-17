@@ -12,7 +12,9 @@
 *.iml
 
 # Build artifacts (we use jadx plugins --install instead)
-target/
+# For local dev builds, we need .jar files from target/
+target/*
+!target/*.jar
 
 # Documentation (not needed in image)
 *.md
