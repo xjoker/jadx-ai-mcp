@@ -334,6 +334,7 @@ public class PluginServer {
         
         // --- JAR-specific Resources ---
         app.get("/jar-manifest", resourceRoutes::handleJarManifest);
+        app.get("/jar-services", resourceRoutes::handleJarServices);
 
         // --- Renaming ---
         app.get("/rename-class", refactoringRoutes::handleRenameClass);

@@ -867,4 +867,116 @@ public class ResourceRoutes {
         }
         return null;
     }
+    
+    /**
+     * Handle the /jar-services MCP tool call.
+     * 
+     * Reads META-INF/services/* from JAR files to discover SPI service providers.
+     * This is useful for understanding plugin architectures, JDBC drivers, logging frameworks, etc.
+     * 
+     * Response format:
+     * {
+     *   "services": [
+     *     {"interface": "java.sql.Driver", "implementations": ["com.mysql.cj.jdbc.Driver"]},
+     *     {"interface": "org.slf4j.spi.SLF4JServiceProvider", "implementations": ["ch.qos.logback..."]}
+     *   ],
+     *   "total_services": 2
+     * }
+     */
+    public void handleJarServices(Context ctx) {
+        try {
+            // Check file type - only available for JAR files
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            
+            if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
+                // Not a JAR file - return NOT_APPLICABLE
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "NOT_APPLICABLE");
+                response.put("reason", "JAR Services (SPI) is only available for JAR files. This is a " + 
+                    fileType.getPrimaryType().getName().toUpperCase() + " file.");
+                response.put("file_type", fileType.getPrimaryType().getName());
+                response.put("alternatives", List.of(
+                    Map.of("tool", "search_classes_by_keyword", "description", "Search for interface implementations")
+                ));
+                ctx.json(response);
+                return;
+            }
+            
+            // Get the loaded JAR file
+            java.io.File jarFile = getLoadedFile(wrapper);
+            if (jarFile == null || !jarFile.exists()) {
+                JadxAIMCPPluginError.handleError(ctx, 404, "No JAR file loaded.", logger);
+                return;
+            }
+            
+            // Read META-INF/services
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "jar-services");
+            result.put("file_name", jarFile.getName());
+            
+            List<Map<String, Object>> services = new ArrayList<>();
+            
+            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarFile)) {
+                java.util.Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                
+                while (entries.hasMoreElements()) {
+                    java.util.jar.JarEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    
+                    // Look for META-INF/services/* files
+                    if (name.startsWith("META-INF/services/") && !entry.isDirectory()) {
+                        String interfaceName = name.substring("META-INF/services/".length());
+                        
+                        // Skip nested directories
+                        if (interfaceName.contains("/")) continue;
+                        
+                        // Read implementations
+                        List<String> implementations = new ArrayList<>();
+                        try (InputStream is = jar.getInputStream(entry);
+                             java.io.BufferedReader reader = new java.io.BufferedReader(
+                                 new java.io.InputStreamReader(is, StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                line = line.trim();
+                                // Skip comments and empty lines
+                                if (!line.isEmpty() && !line.startsWith("#")) {
+                                    // Remove inline comments
+                                    int commentIdx = line.indexOf('#');
+                                    if (commentIdx > 0) {
+                                        line = line.substring(0, commentIdx).trim();
+                                    }
+                                    if (!line.isEmpty()) {
+                                        implementations.add(line);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (!implementations.isEmpty()) {
+                            Map<String, Object> service = new HashMap<>();
+                            service.put("interface", interfaceName);
+                            service.put("implementations", implementations);
+                            service.put("count", implementations.size());
+                            services.add(service);
+                        }
+                    }
+                }
+            }
+            
+            result.put("status", "success");
+            result.put("services", services);
+            result.put("total_services", services.size());
+            
+            if (services.isEmpty()) {
+                result.put("note", "No META-INF/services found. This JAR may not use Java SPI.");
+            }
+            
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error reading JAR services: " + e.getMessage(), e, logger);
+        }
+    }
 }

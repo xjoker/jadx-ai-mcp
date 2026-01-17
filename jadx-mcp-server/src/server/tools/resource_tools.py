@@ -166,3 +166,36 @@ async def jar_get_manifest(instance_id: Optional[str] = None) -> dict:
     """
     return await get_from_jadx("jar-manifest", instance_id=instance_id)
 
+
+async def jar_get_services(instance_id: Optional[str] = None) -> dict:
+    """
+    Read META-INF/services/* from JAR files to discover SPI service providers.
+    
+    Java SPI (Service Provider Interface) is used by many frameworks:
+    - JDBC drivers (java.sql.Driver)
+    - Logging frameworks (org.slf4j.spi.SLF4JServiceProvider)
+    - Servlet containers
+    - Plugin architectures
+    
+    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        
+    Returns:
+        dict: List of service interfaces and their implementations
+        
+        Success response:
+        {
+            "status": "success",
+            "services": [
+                {"interface": "java.sql.Driver", "implementations": ["com.mysql.cj.jdbc.Driver"], "count": 1}
+            ],
+            "total_services": 1
+        }
+    
+    MCP Tool: jar_get_services
+    Description: Discover Java SPI service providers in JAR files
+    """
+    return await get_from_jadx("jar-services", instance_id=instance_id)
+

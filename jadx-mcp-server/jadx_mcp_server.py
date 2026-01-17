@@ -64,7 +64,7 @@ from src.server.tools.search_tools import (
 
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
-    get_resource_file, jar_get_manifest
+    get_resource_file, jar_get_manifest, jar_get_services
 )
 from src.server.tools.refactor_tools import (
     rename_class, rename_method, rename_field, rename_package
@@ -386,6 +386,21 @@ async def jar_get_manifest(instance_id: Optional[str] = None) -> dict:
         dict: Structured manifest data with common and all attributes
     """
     return await tools.resource_tools.jar_get_manifest(instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def jar_get_services(instance_id: Optional[str] = None) -> dict:
+    """Read META-INF/services/* from JAR files to discover SPI service providers.
+    
+    Java SPI is used by JDBC drivers, logging frameworks, plugin architectures.
+    
+    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+    
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.resource_tools.jar_get_services(instance_id=instance_id)
 
 
 @mcp.tool()
