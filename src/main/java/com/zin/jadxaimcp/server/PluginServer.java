@@ -340,6 +340,7 @@ public class PluginServer {
         
         // --- Unified Interface (APK + JAR) ---
         app.get("/config-strings", resourceRoutes::handleConfigStrings);
+        app.get("/package-classes", classRoutes::handlePackageClasses);
 
         // --- Renaming ---
         app.get("/rename-class", refactoringRoutes::handleRenameClass);

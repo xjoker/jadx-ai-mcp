@@ -1769,4 +1769,117 @@ public class ClassRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Error finding JAR entry points: " + e.getMessage(), e, logger);
         }
     }
+    
+    /**
+     * Handle the /package-classes MCP tool call.
+     * 
+     * Unified interface to get classes by package prefix. Works for both APK and JAR files.
+     * 
+     * Parameters:
+     * - package: Package prefix to filter classes (required unless using auto-detect)
+     * - auto: If "true", auto-detect main package from manifest (APK) or manifest (JAR)
+     * - include_inner: Include inner classes (default: true)
+     * - offset/count: Pagination parameters
+     */
+    public void handlePackageClasses(Context ctx) {
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            
+            String packagePrefix = ctx.queryParam("package");
+            boolean autoDetect = "true".equalsIgnoreCase(ctx.queryParam("auto"));
+            boolean includeInner = !"false".equalsIgnoreCase(ctx.queryParam("include_inner"));
+            
+            // Auto-detect package from manifest
+            if (autoDetect || packagePrefix == null || packagePrefix.isEmpty()) {
+                if (fileType.hasAndroidFeatures()) {
+                    // APK/AAR: Get package from AndroidManifest.xml
+                    try {
+                        List<ResourceFile> resources = wrapper.getResources();
+                        ResourceFile manifestRes = AndroidManifestParser.getAndroidManifest(resources);
+                        if (manifestRes != null) {
+                            String manifestXml = manifestRes.loadContent().getText().getCodeStr();
+                            Document manifestDoc = parseManifestXml(manifestXml, wrapper.getArgs().getSecurity());
+                            Element manifestElement = (Element) manifestDoc.getElementsByTagName("manifest").item(0);
+                            packagePrefix = manifestElement.getAttribute("package");
+                        }
+                    } catch (Exception e) {
+                        logger.debug("Failed to auto-detect package from manifest: {}", e.getMessage());
+                    }
+                } else if (fileType.getPrimaryType() == com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
+                    // JAR: Try to detect main package from manifest or top-level classes
+                    try {
+                        java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().get(0);
+                        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarPath.toFile())) {
+                            java.util.jar.Manifest manifest = jar.getManifest();
+                            if (manifest != null) {
+                                String startClass = manifest.getMainAttributes().getValue("Start-Class");
+                                if (startClass == null) {
+                                    startClass = manifest.getMainAttributes().getValue("Main-Class");
+                                }
+                                if (startClass != null && startClass.contains(".")) {
+                                    // Get package from class name (e.g., com.example.App -> com.example)
+                                    int lastDot = startClass.lastIndexOf('.');
+                                    packagePrefix = startClass.substring(0, lastDot);
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.debug("Failed to auto-detect package from JAR manifest: {}", e.getMessage());
+                    }
+                }
+            }
+            
+            // Validate package prefix
+            if (packagePrefix == null || packagePrefix.isEmpty()) {
+                ctx.status(400).json(Map.of(
+                    "error", "Package prefix not specified and could not be auto-detected",
+                    "hint", "Use ?package=com.example or ?auto=true"
+                ));
+                return;
+            }
+            
+            // Filter classes
+            final String pkgPrefix = packagePrefix;
+            List<JavaClass> allClasses = includeInner 
+                ? wrapper.getIncludedClassesWithInners()
+                : wrapper.getDecompiler().getClasses();
+                
+            List<JavaClass> matchedClasses = allClasses.stream()
+                .filter(cls -> cls.getFullName().startsWith(pkgPrefix + ".") || 
+                               cls.getFullName().equals(pkgPrefix))
+                .collect(Collectors.toList());
+            
+            // Apply pagination
+            int offset = paginationUtils.getIntParam(ctx, "offset", 0);
+            int count = paginationUtils.getIntParam(ctx, "count", 100);
+            count = Math.min(count, 500);
+            
+            List<Map<String, Object>> classesInfo = new ArrayList<>();
+            for (int i = offset; i < Math.min(offset + count, matchedClasses.size()); i++) {
+                JavaClass cls = matchedClasses.get(i);
+                Map<String, Object> classInfo = new HashMap<>();
+                classInfo.put("name", cls.getFullName());
+                classInfo.put("is_inner", cls.isInner());
+                classesInfo.add(classInfo);
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "package-classes");
+            result.put("file_type", fileType.getPrimaryType().getName());
+            result.put("package", packagePrefix);
+            result.put("classes", classesInfo);
+            result.put("offset", offset);
+            result.put("count", classesInfo.size());
+            result.put("total_matched", matchedClasses.size());
+            result.put("has_more", matchedClasses.size() > offset + classesInfo.size());
+            result.put("status", "success");
+            
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error getting package classes: " + e.getMessage(), e, logger);
+        }
+    }
 }

@@ -205,6 +205,51 @@ async def get_config_strings(
     return await get_from_jadx("config-strings", params, instance_id=instance_id)
 
 
+async def get_package_classes(
+    package: Optional[str] = None,
+    auto: bool = False,
+    include_inner: bool = True,
+    offset: int = 0,
+    count: int = 100,
+    instance_id: Optional[str] = None
+) -> dict:
+    """
+    Get classes by package prefix. Works for both APK and JAR files.
+    
+    This unified tool replaces get_main_application_classes_names and works
+    with any package prefix, not just the main application package.
+    
+    Args:
+        package: Package prefix to filter (e.g., "com.example.app")
+        auto: Auto-detect main package from manifest (default: False)
+        include_inner: Include inner classes (default: True)
+        offset: Pagination offset
+        count: Max results (default: 100, max: 500)
+        instance_id: Optional. Target JADX instance name.
+        
+    Returns:
+        dict: Filtered class list with pagination
+        
+        {
+            "package": "com.example.app",
+            "classes": [{"name": "...", "is_inner": false}, ...],
+            "total_matched": 150,
+            "has_more": true
+        }
+    
+    MCP Tool: get_package_classes
+    Description: Get classes by package prefix - works for APK and JAR files
+    """
+    params = {}
+    if package: params["package"] = package
+    if auto: params["auto"] = "true"
+    if not include_inner: params["include_inner"] = "false"
+    if offset: params["offset"] = str(offset)
+    if count != 100: params["count"] = str(count)
+    
+    return await get_from_jadx("package-classes", params, instance_id=instance_id)
+
+
 # ============================================================================
 # JAR-specific Tools
 # ============================================================================

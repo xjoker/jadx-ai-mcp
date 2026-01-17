@@ -65,7 +65,7 @@ from src.server.tools.search_tools import (
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
     get_resource_file, jar_get_manifest, jar_get_services, jar_get_entry_points,
-    get_file_info, get_config_strings
+    get_file_info, get_config_strings, get_package_classes
 )
 from src.server.tools.refactor_tools import (
     rename_class, rename_method, rename_field, rename_package
@@ -404,6 +404,34 @@ async def get_config_strings(
     """
     return await tools.resource_tools.get_config_strings(
         mode=mode, query=query, key=key, file=file, instance_id=instance_id
+    )
+
+
+@mcp.tool()
+@with_busy_check
+async def get_package_classes(
+    package: Optional[str] = None,
+    auto: bool = False,
+    include_inner: bool = True,
+    offset: int = 0,
+    count: int = 100,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Get classes by package prefix for APK or JAR files.
+    
+    Use ?auto=true to auto-detect main package from manifest.
+    
+    Args:
+        package: Package prefix (e.g., "com.example.app")
+        auto: Auto-detect main package (default: False)
+        include_inner: Include inner classes (default: True)
+        offset: Pagination offset
+        count: Max results (default: 100, max: 500)
+        instance_id: Optional. Target JADX instance name.
+    """
+    return await tools.resource_tools.get_package_classes(
+        package=package, auto=auto, include_inner=include_inner,
+        offset=offset, count=count, instance_id=instance_id
     )
 
 
