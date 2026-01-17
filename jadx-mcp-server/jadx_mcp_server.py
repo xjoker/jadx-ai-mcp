@@ -50,33 +50,8 @@ mcp = FastMCP(
     instructions=MCP_INSTRUCTIONS
 )
 
-# Import and register ALL tools using correct FastMCP pattern
-from src.server.tools.class_tools import (
-    fetch_current_class, get_selected_text, get_class_source, batch_get_class_source,
-    get_all_classes, get_methods_of_class, get_fields_of_class, get_smali_of_class,
-    get_main_application_classes_names, get_main_application_classes_code, get_main_activity_class,
-    get_class_info
-)
-from src.server.tools.search_tools import (
-    get_method_by_name, search_method_by_name, batch_get_method_by_name, search_classes_by_keyword,
-    get_method_signature, get_method_callees, search_native_methods
-)
-
-from src.server.tools.resource_tools import (
-    get_android_manifest, get_strings, get_all_resource_file_names,
-    get_resource_file, jar_get_manifest, jar_get_services, jar_get_entry_points,
-    get_file_info, get_config_strings, get_package_classes, jar_get_dependencies,
-    jar_get_bytecode
-)
-from src.server.tools.refactor_tools import (
-    rename_class, rename_method, rename_field, rename_package
-)
-from src.server.tools.debug_tools import (
-    debug_get_stack_frames, debug_get_threads, debug_get_variables
-)
-from src.server.tools.xrefs_tools import (
-    get_xrefs_to_class, get_xrefs_to_method, get_xrefs_to_field, batch_get_xrefs
-)
+# Note: Tool functions are defined below with @mcp.tool() decorator
+# They delegate to src.server.tools modules for implementation
 from src.server.prompts import register_prompts
 from src.server.resources import register_resources
 from src.server.tools.instance_tools import register_instance_tools
@@ -85,6 +60,7 @@ from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
 from src.server.auth_middleware import BearerAuthMiddleware
 from src.server.health_monitor import HealthMonitor
 from src.server.logging_config import configure_logging, get_logger
+from src.server import tools
 
 logger = get_logger("main")
 

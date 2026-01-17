@@ -489,7 +489,7 @@ class InstanceRegistry:
                 instance.apk_info = apk_info
             
             if last_check is not None:
-                instance.last_check = last_check
+                instance.last_health_check = datetime.fromisoformat(last_check)
             
             if old_status != status:
                 logger.info(f"Instance '{name}' status: {old_status} -> {status}")

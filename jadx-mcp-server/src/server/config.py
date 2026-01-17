@@ -9,6 +9,7 @@ Author: Jafar Pathan (zinja-coder@github)
 License: See LICENSE file
 """
 
+import asyncio
 import httpx
 import json
 from typing import Union, Dict, Any, Optional
@@ -33,15 +34,24 @@ class HttpClientManager:
     Reuses connections across multiple requests instead of creating new ones.
     """
     _client: Optional[httpx.AsyncClient] = None
+    _lock: Optional[asyncio.Lock] = None
     
     @classmethod
-    def get_client(cls) -> httpx.AsyncClient:
-        """Get or create the shared async HTTP client."""
-        if cls._client is None or cls._client.is_closed:
-            cls._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(REQUEST_TIMEOUT),
-                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
-            )
+    def _get_lock(cls) -> asyncio.Lock:
+        """Get or create the asyncio lock (must be called within event loop)."""
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
+    
+    @classmethod
+    async def get_client(cls) -> httpx.AsyncClient:
+        """Get or create the shared async HTTP client (thread-safe)."""
+        async with cls._get_lock():
+            if cls._client is None or cls._client.is_closed:
+                cls._client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(REQUEST_TIMEOUT),
+                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+                )
         return cls._client
     
     @classmethod
@@ -142,7 +152,7 @@ async def health_ping() -> Union[str, Dict[str, Any]]:
     """
     logger.info(f"Attempting to connect to {JADX_HTTP_BASE}/health")
     try:
-        client = HttpClientManager.get_client()
+        client = await HttpClientManager.get_client()
         resp = await client.get(f"{JADX_HTTP_BASE}/health")
         resp.raise_for_status()
         return resp.text
@@ -212,7 +222,7 @@ async def get_from_jadx(
     logger.info(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
     
     try:
-        client = HttpClientManager.get_client()
+        client = await HttpClientManager.get_client()
         resp = await client.get(url, params=params, headers=headers)
         resp.raise_for_status()
         
