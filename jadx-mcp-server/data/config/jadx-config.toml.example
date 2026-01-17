@@ -1,0 +1,15 @@
+# JADX MCP Server 配置示例
+# 复制此文件为 jadx-config.toml 并根据需要修改
+
+[security]
+# 允许动态添加实例（通过 add_jadx_instance 工具）
+allow_dynamic_instances = false
+
+# 预配置的 JADX 实例列表
+# 取消注释并修改以下示例配置
+
+# [[jadx_instances]]
+# name = "my-jadx"
+# host = "127.0.0.1"
+# port = 8650
+# default = true
