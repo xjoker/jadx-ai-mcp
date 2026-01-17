@@ -979,4 +979,173 @@ public class ResourceRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Error reading JAR services: " + e.getMessage(), e, logger);
         }
     }
+    
+    /**
+     * Handle the /config-strings MCP tool call.
+     * 
+     * Unified configuration strings API that works for both APK and JAR files:
+     * - APK/AAR: Returns strings.xml content (via existing get_strings logic)
+     * - JAR: Searches for .properties files and returns their contents
+     * 
+     * Parameters:
+     * - mode: "summary" (default) | "search" | "get"
+     * - query: Search keyword for mode=search
+     * - key: Property key for mode=get
+     * - file: Specific properties file (for JAR), default searches all
+     */
+    public void handleConfigStrings(Context ctx) {
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            
+            String mode = ctx.queryParam("mode");
+            if (mode == null) mode = "summary";
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", "config-strings");
+            
+            if (fileType.hasAndroidFeatures()) {
+                // APK/AAR: Delegate to existing strings handler logic
+                result.put("source_type", "android_strings");
+                result.put("source_file", "res/values/strings.xml");
+                result.put("note", "For full functionality, use get_strings tool with mode parameter");
+                
+                // Quick summary of strings availability
+                try {
+                    ResourceFile stringsFile = findStringsXml(wrapper);
+                    if (stringsFile != null) {
+                        result.put("available", true);
+                        result.put("recommended_tool", "get_strings");
+                    } else {
+                        result.put("available", false);
+                        result.put("error", "strings.xml not found");
+                    }
+                } catch (Exception e) {
+                    result.put("available", false);
+                    result.put("error", e.getMessage());
+                }
+            } else if (fileType.getPrimaryType() == com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
+                // JAR: Search for .properties files
+                result.put("source_type", "java_properties");
+                
+                java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().isEmpty() ? null 
+                    : wrapper.getProject().getFilePaths().get(0);
+                if (jarPath == null) {
+                    ctx.status(404).json(Map.of("error", "No JAR file loaded"));
+                    return;
+                }
+                
+                String query = ctx.queryParam("query");
+                String key = ctx.queryParam("key");
+                String targetFile = ctx.queryParam("file");
+                
+                List<Map<String, Object>> propertiesFiles = new ArrayList<>();
+                
+                try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarPath.toFile())) {
+                    java.util.Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                    
+                    while (entries.hasMoreElements()) {
+                        java.util.jar.JarEntry entry = entries.nextElement();
+                        String name = entry.getName();
+                        
+                        // Look for .properties files
+                        if (name.endsWith(".properties") && !entry.isDirectory()) {
+                            // Filter by target file if specified
+                            if (targetFile != null && !name.contains(targetFile)) {
+                                continue;
+                            }
+                            
+                            Map<String, Object> propFile = new HashMap<>();
+                            propFile.put("file", name);
+                            
+                            // Read properties
+                            java.util.Properties props = new java.util.Properties();
+                            try (InputStream is = jar.getInputStream(entry)) {
+                                props.load(is);
+                            }
+                            
+                            propFile.put("key_count", props.size());
+                            
+                            if ("summary".equals(mode)) {
+                                // Just file info and sample keys
+                                List<String> sampleKeys = new ArrayList<>();
+                                int count = 0;
+                                for (String k : props.stringPropertyNames()) {
+                                    if (count++ >= 5) break;
+                                    sampleKeys.add(k);
+                                }
+                                propFile.put("sample_keys", sampleKeys);
+                            } else if ("search".equals(mode) && query != null) {
+                                // Search for matching keys/values
+                                Map<String, String> matches = new HashMap<>();
+                                for (String k : props.stringPropertyNames()) {
+                                    String v = props.getProperty(k);
+                                    if (k.toLowerCase().contains(query.toLowerCase()) ||
+                                        (v != null && v.toLowerCase().contains(query.toLowerCase()))) {
+                                        matches.put(k, v);
+                                    }
+                                }
+                                propFile.put("matches", matches);
+                                propFile.put("match_count", matches.size());
+                            } else if ("get".equals(mode) && key != null) {
+                                // Get specific key
+                                String value = props.getProperty(key);
+                                if (value != null) {
+                                    propFile.put("key", key);
+                                    propFile.put("value", value);
+                                }
+                            } else {
+                                // Default: all properties
+                                Map<String, String> allProps = new HashMap<>();
+                                for (String k : props.stringPropertyNames()) {
+                                    allProps.put(k, props.getProperty(k));
+                                }
+                                propFile.put("properties", allProps);
+                            }
+                            
+                            propertiesFiles.add(propFile);
+                            
+                            // Limit files in summary mode
+                            if ("summary".equals(mode) && propertiesFiles.size() >= 10) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                result.put("files", propertiesFiles);
+                result.put("total_files", propertiesFiles.size());
+                
+                if (propertiesFiles.isEmpty()) {
+                    result.put("note", "No .properties files found in JAR");
+                }
+            } else {
+                result.put("source_type", "unknown");
+                result.put("error", "Config strings not available for this file type");
+            }
+            
+            result.put("status", "success");
+            ctx.json(result);
+            
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Error reading config strings: " + e.getMessage(), e, logger);
+        }
+    }
+    
+    /**
+     * Find strings.xml in resources.
+     */
+    private ResourceFile findStringsXml(JadxWrapper wrapper) {
+        List<ResourceFile> resources = wrapper.getResources();
+        if (resources == null) return null;
+        
+        for (ResourceFile res : resources) {
+            if (res.getOriginalName() != null && 
+                res.getOriginalName().contains("strings.xml")) {
+                return res;
+            }
+        }
+        return null;
+    }
 }

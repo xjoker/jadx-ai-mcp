@@ -337,6 +337,9 @@ public class PluginServer {
         app.get("/jar-manifest", resourceRoutes::handleJarManifest);
         app.get("/jar-services", resourceRoutes::handleJarServices);
         app.get("/jar-entry-points", classRoutes::handleJarEntryPoints);
+        
+        // --- Unified Interface (APK + JAR) ---
+        app.get("/config-strings", resourceRoutes::handleConfigStrings);
 
         // --- Renaming ---
         app.get("/rename-class", refactoringRoutes::handleRenameClass);

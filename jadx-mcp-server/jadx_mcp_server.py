@@ -65,7 +65,7 @@ from src.server.tools.search_tools import (
 from src.server.tools.resource_tools import (
     get_android_manifest, get_strings, get_all_resource_file_names,
     get_resource_file, jar_get_manifest, jar_get_services, jar_get_entry_points,
-    get_file_info
+    get_file_info, get_config_strings
 )
 from src.server.tools.refactor_tools import (
     rename_class, rename_method, rename_field, rename_package
@@ -379,6 +379,32 @@ async def get_file_info(instance_id: Optional[str] = None) -> dict:
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.resource_tools.get_file_info(instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def get_config_strings(
+    mode: str = "summary",
+    query: Optional[str] = None,
+    key: Optional[str] = None,
+    file: Optional[str] = None,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Get configuration strings from APK or JAR files.
+    
+    - APK/AAR: Info about strings.xml availability
+    - JAR: Reads .properties files with search/get support
+    
+    Args:
+        mode: "summary" | "search" | "get" | "all"
+        query: Search keyword (for mode=search)
+        key: Property key (for mode=get)
+        file: Filter by properties file name (JAR only)
+        instance_id: Optional. Target JADX instance name.
+    """
+    return await tools.resource_tools.get_config_strings(
+        mode=mode, query=query, key=key, file=file, instance_id=instance_id
+    )
 
 
 # ============================================================================

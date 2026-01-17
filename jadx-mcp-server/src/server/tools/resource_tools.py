@@ -156,6 +156,55 @@ async def get_file_info(instance_id: Optional[str] = None) -> dict:
     return await get_from_jadx("file-info", instance_id=instance_id)
 
 
+async def get_config_strings(
+    mode: str = "summary",
+    query: Optional[str] = None,
+    key: Optional[str] = None,
+    file: Optional[str] = None,
+    instance_id: Optional[str] = None
+) -> dict:
+    """
+    Get configuration strings from both APK and JAR files.
+    
+    This unified tool handles:
+    - APK/AAR: Provides info about strings.xml (use get_strings for full access)
+    - JAR: Reads .properties files with search/get capabilities
+    
+    Args:
+        mode: "summary" (default) | "search" | "get" | "all"
+        query: Search keyword for mode=search
+        key: Property key for mode=get
+        file: Filter by specific properties file (JAR only)
+        instance_id: Optional. Target JADX instance name.
+        
+    Returns:
+        dict: Configuration strings based on file type
+        
+        For APK:
+        {
+            "source_type": "android_strings",
+            "available": true,
+            "recommended_tool": "get_strings"
+        }
+        
+        For JAR:
+        {
+            "source_type": "java_properties",
+            "files": [{"file": "application.properties", "key_count": 25, ...}],
+            "total_files": 3
+        }
+    
+    MCP Tool: get_config_strings
+    Description: Unified config strings - handles APK strings.xml and JAR .properties
+    """
+    params = {"mode": mode}
+    if query: params["query"] = query
+    if key: params["key"] = key
+    if file: params["file"] = file
+    
+    return await get_from_jadx("config-strings", params, instance_id=instance_id)
+
+
 # ============================================================================
 # JAR-specific Tools
 # ============================================================================
