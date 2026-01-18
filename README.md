@@ -11,7 +11,7 @@
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
-[📖 Full Documentation](docs/) | [简体中文](docs/README.zh-cn.md)
+[📖 Full Documentation](docs/) | [简体中文](README.zh-cn.md)
 
 </div>
 
@@ -27,7 +27,7 @@ docker run -d --name jadx -p 6080:6080 -p 8651:8651 -v ~/apks:/apks xjoker/jadx-
 open http://localhost:6080
 ```
 
-**That's it!** Put your APK in `~/apks/`, open it in JADX, and let AI analyze it.
+**That's it!** Put your APK or JAR in `~/apks/`, open it in JADX, and let AI analyze it.
 
 > 💡 **Let AI guide your installation?** Send this to Claude/ChatGPT:
 > ```
