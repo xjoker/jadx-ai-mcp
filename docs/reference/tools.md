@@ -196,6 +196,7 @@
 
 ### 🔗 Related Documentation
 
-- [Quick Start Guide](QUICK_START.md)
-- [FAQ / Troubleshooting](FAQ.md)
-- [Docker Deployment](DOCKER.zh-cn.md)
+- [Quick Start Guide](../getting-started/quickstart.md)
+- [AI Integration](../guides/ai-integration.md)
+- [FAQ / Troubleshooting](../troubleshooting/faq.md)
+- [Docker Deployment](../deployment/docker.md)
