@@ -9,7 +9,7 @@
 
 **👉 Original Project**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
-English | [简体中文](docs/README_ZH.md)
+English | [简体中文](docs/README.zh-cn.md)
 
 ![GitHub contributors JADX-AI-MCP](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
 ![GitHub contributors JADX-MCP-SERVER](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
@@ -164,6 +164,19 @@ It is combination of two tools:
 
 The following MCP tools are available. **All tools support an optional `instance_id` parameter for multi-instance targeting.**
 
+### 📊 Supported File Types
+
+| Type | Description | Example Tools |
+|:-----|:------------|:--------------|
+| **APK** | Android apps | `get_android_manifest`, `get_smali_of_class` |
+| **JAR** | Java libraries, Spring Boot apps | `jar_get_manifest`, `jar_get_entry_points` |
+| **AAR** | Android libraries | Same as APK |
+| **DEX** | Dalvik bytecode | Core analysis tools |
+
+> 💡 **Tip**: Call `get_file_info()` first to determine file type and recommended tools.
+> 
+> See [docs/TOOLS.md](docs/TOOLS.md) for the complete 47-tool availability matrix.
+
 ### Code Analysis Tools
 - `fetch_current_class(instance_id?)` — Get the class name and full source of selected class
 - `get_selected_text(instance_id?)` — Get currently selected text
@@ -183,12 +196,26 @@ The following MCP tools are available. **All tools support an optional `instance
 - `get_main_activity_class(instance_id?)` — Fetch main activity from AndroidManifest.xml
 - `get_main_application_classes_code(offset=0, count=0, instance_id?)` — Fetch main application classes' code
 - `get_main_application_classes_names(instance_id?)` — Fetch main application classes' names
+- `search_native_methods(package="", offset=0, count=50, instance_id?)` — **Search native methods** (JNI/SO analysis, returns param_types_frida)
+- `get_decompile_status(instance_id?)` — **Get decompilation status** (status, percentage, search_lock)
 
 ### Resource Tools
 - `get_android_manifest(instance_id?)` — Retrieve AndroidManifest.xml content
 - `get_strings(mode="summary", query?, key?, locale="values", offset=0, limit=50, instance_id?)` — **AI-friendly string analysis** (modes: summary, list, search, get)
 - `get_all_resource_file_names(offset=0, count=0, instance_id?)` — List all resource file names
 - `get_resource_file(resource_name, instance_id?)` — Retrieve resource file content
+
+### Unified Interface Tools (APK/JAR/AAR/DEX)
+- `get_file_info(instance_id?)` — **Get unified file metadata** (file type, class count, recommended tools)
+- `get_config_strings(mode="summary", query?, key?, file?, instance_id?)` — **Unified config strings** (APK: strings.xml info, JAR: *.properties)
+- `get_package_classes(package?, auto=false, include_inner=true, offset=0, count=100, instance_id?)` — **Get classes by package prefix** (use `auto=true` for auto-detect)
+
+### JAR/AAR Analysis Tools
+- `jar_get_manifest(instance_id?)` — **Read META-INF/MANIFEST.MF** (Main-Class, Implementation-*, Spring Boot attrs)
+- `jar_get_services(instance_id?)` — **Read SPI services** (META-INF/services/*)
+- `jar_get_entry_points(instance_id?)` — **Discover entry points** (Main-Class, @SpringBootApplication, main() methods)
+- `jar_get_dependencies(instance_id?)` — **Analyze embedded dependencies** (pom.properties, Class-Path, BOOT-INF/lib)
+- `jar_get_bytecode(class_name, instance_id?)` — **View class bytecode** (similar to javap)
 
 ### Refactoring Tools
 - `rename_class(class_name, new_name, instance_id?)` — Rename a class
@@ -553,12 +580,30 @@ docker run -d --name mcp-server \
 
 ### Concurrent Search Handling
 
-Search operations use a **serialized lock** to prevent JADX internal state conflicts:
+Search operations use **InstanceBusyTracker** serialized lock to prevent JADX internal state conflicts:
 
 | Scenario | Response | AI Action |
 |----------|----------|-----------|
 | Search available | `200 OK` + results | Process normally |
-| Search busy | `200 OK` + `{"error": "INSTANCE_BUSY", ...}` | Wait and retry (default timeout 300s) |
+| Search busy | `200 OK` + `INSTANCE_BUSY` error | Wait and retry |
+
+**`INSTANCE_BUSY` Error Structure** (code ref: `busy_tracker.py:77-85`):
+
+```json
+{
+  "error": "INSTANCE_BUSY",
+  "message": "Instance 'xhs-v8' is processing another request",
+  "current_operation": "search_classes_by_keyword",
+  "busy_since": "2026-01-18T10:00:00",
+  "elapsed_seconds": 45,
+  "timeout_seconds": 300
+}
+```
+
+**Timeout & Auto-Release**:
+- Default timeout: **300 seconds** (5 minutes)
+- Lock is auto-released after timeout, allowing new requests
+- Use `check_instance_status()` to query current busy state
 
 **Why serialization?**
 - JADX decompilation is not thread-safe
@@ -587,6 +632,10 @@ For performance, batch operations (`batch_get_class_source`, `batch_get_method_b
 | **Lazy Loading** | Cache is populated on first batch call. May return `LOADING` status initially. |
 | **Auto-Invalidation** | Any rename operation (`rename_class`, `rename_method`, `rename_field`, `rename_package`) automatically clears the cache. |
 | **30s Global Cooldown** | Cache clear operations are debounced with a 30-second cooldown to prevent excessive reloading. |
+
+**Trigger Conditions** (code ref: `refactor_tools.py:20-21,40-41,62-63,88-89`):
+- All `rename_*` operations trigger cache clear after completion
+- Manual `clear_class_cache()` calls are also subject to cooldown
 
 > **Note**: Use `clear_class_cache()` to manually clear if you suspect stale data after JADX-side modifications.
 

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**让 AI 直接分析 Android APK 的 JADX 插件**
+**让 AI 直接分析 Android APK 和 Java JAR 的 JADX 插件**
 
 > 🔱 基于 [zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) 增强开发
 
@@ -18,17 +18,26 @@
 
 ## 🤖 这是什么？
 
-**JADX-AI-MCP** 是一个让 **Claude、ChatGPT 等 AI 直接分析 Android APK** 的工具。
+**JADX-AI-MCP** 是一个让 **Claude、ChatGPT 等 AI 直接分析 Android APK 和 Java JAR** 的工具。
+
+### 支持的文件类型
+
+| 类型 | 说明 |
+|:-----|:-----|
+| **APK** | Android 应用包 |
+| **JAR** | Java 库/Spring Boot 应用 |
+| **AAR** | Android 库 |
+| **DEX** | Dalvik 字节码 |
 
 ### 它能做什么？
 
-| 功能 | 示例 |
-|:-----|:-----|
-| 🔍 **代码搜索** | "找到所有加密相关的类" |
-| 📖 **代码阅读** | "解释 MainActivity 的 onCreate 做了什么" |
-| 🔗 **引用追踪** | "谁调用了这个登录方法？" |
-| 🛡️ **安全审计** | "检查这个类有没有硬编码密钥" |
-| ✏️ **逆向辅助** | "把这个混淆类重命名为有意义的名字" |
+| 功能 | APK 示例 | JAR 示例 |
+|:-----|:---------|:---------|
+| 🔍 **代码搜索** | "找到所有加密相关的类" | "搜索 JDBC 连接代码" |
+| 📖 **代码阅读** | "解释 MainActivity 的 onCreate" | "分析 Main-Class 入口" |
+| 🔗 **引用追踪** | "谁调用了登录方法？" | "谁实现了这个 SPI 接口？" |
+| 🛡️ **安全审计** | "检查硬编码密钥" | "检查 SQL 注入风险" |
+| ✏️ **逆向辅助** | "重命名混淆类" | "分析 Spring Boot 依赖" |
 
 ### 它解决什么问题？
 
@@ -42,7 +51,7 @@
 打开 JADX → AI 自动分析 → 直接得到答案 ✅
 ```
 
-**AI 可以直接访问整个 APK 的反编译代码**，不需要你手动复制粘贴！
+**AI 可以直接访问整个 APK/JAR 的反编译代码**，不需要你手动复制粘贴！
 
 ---
 

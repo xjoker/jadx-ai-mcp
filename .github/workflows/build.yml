@@ -115,6 +115,12 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # 判断是否为 dev 版本
+          if [[ "$VERSION" == *"-dev"* ]]; then
+            echo "is_dev=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_dev=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download JAR artifact
         uses: actions/download-artifact@v4
@@ -166,7 +172,7 @@ jobs:
             artifacts/jadx-ai-mcp-${{ steps.tag_version.outputs.version }}.jar
             artifacts/jadx-mcp-server-${{ steps.tag_version.outputs.version }}.zip
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.tag_version.outputs.is_dev == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -221,6 +227,14 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # 判断是否为 dev 版本，决定 Docker tag
+          if [[ "$VERSION" == *"-dev"* ]]; then
+            echo "is_dev=true" >> $GITHUB_OUTPUT
+            echo "docker_alias=dev" >> $GITHUB_OUTPUT
+          else
+            echo "is_dev=false" >> $GITHUB_OUTPUT
+            echo "docker_alias=latest" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -249,7 +263,7 @@ jobs:
             PLUGIN_VERSION=${{ steps.version.outputs.version }}
           tags: |
             xjoker/jadx-ai-mcp:${{ steps.version.outputs.version }}
-            xjoker/jadx-ai-mcp:latest
+            xjoker/jadx-ai-mcp:${{ steps.version.outputs.docker_alias }}
           cache-from: type=gha,scope=main
           cache-to: type=gha,mode=max,scope=main
 
@@ -263,6 +277,7 @@ jobs:
           push: true
           tags: |
             xjoker/jadx-mcp-server:${{ steps.version.outputs.version }}
-            xjoker/jadx-mcp-server:latest
+            xjoker/jadx-mcp-server:${{ steps.version.outputs.docker_alias }}
           cache-from: type=gha,scope=mcp
           cache-to: type=gha,mode=max,scope=mcp
+

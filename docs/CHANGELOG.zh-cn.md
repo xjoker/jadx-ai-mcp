@@ -8,6 +8,42 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.1.0] - 2026-01-17 (未发布)
+
+### 🎉 重大功能：完整的 JAR/AAR/DEX 支持
+
+本版本将 JADX-AI-MCP 从 Android 专用工具升级为**通用 JVM 字节码分析平台**。
+
+### 新增
+
+**统一接口工具**（适用于 APK/JAR/AAR/DEX）：
+- `get_file_info` — 统一文件元数据，自动识别文件类型并推荐工具
+- `get_config_strings` — 配置字符串（APK: strings.xml 概要, JAR: *.properties）
+- `get_package_classes` — 按包前缀获取类，支持 `auto=true` 自动检测
+
+**JAR 专用工具**：
+- `jar_get_manifest` — 读取 META-INF/MANIFEST.MF（Main-Class, Implementation-*, Spring Boot）
+- `jar_get_services` — 读取 SPI 服务（META-INF/services/*）
+- `jar_get_entry_points` — 发现入口点（Main-Class, @SpringBootApplication, main() 方法）
+- `jar_get_dependencies` — 分析嵌入依赖（pom.properties, Class-Path, BOOT-INF/lib）
+- `jar_get_bytecode` — 查看类字节码结构（类似 javap）
+
+**基础设施**：
+- `FileTypeDetector.java` — 基于 Magic Number 的文件类型检测
+- `NotApplicableResponse.java` — APK 专用工具对 JAR 返回统一 NOT_APPLICABLE 响应
+- `jadx://capabilities` MCP Resource 提供动态工具可用性
+
+### 变更
+- APK 专用工具现在对 JAR 文件返回 `NOT_APPLICABLE` 明确提示，而非崩溃
+- 文档已更新，包含 JAR 支持章节
+
+### 技术细节
+- **30 个文件修改**，**+3,529 行**代码
+- 使用 Nexus JAR 测试（112,699 类，14 个入口点）
+- 完全向后兼容现有 APK 工作流
+
+---
+
 ## [6.0.53] - 2026-01-16 18:26
 
 ### 新增

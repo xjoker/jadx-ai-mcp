@@ -3,9 +3,9 @@
 # JADX-AI-MCP (Zin MCP Suite 的一部分)
 
 > 🔱 **这是 [zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp) 的 Fork 版本**  
-> 原始项目由 [@zinja-coder](https://github.com/zinja-coder) 创建。本 Fork 添加了多实例支持、多用户认证等增强功能。
+> 原始项目由 [@zinja-coder](https://github.com/zinja-coder) 创建。本 Fork 添加了多实例支持、多用户认证、**JAR/AAR 文件分析**等增强功能。
 
-⚡ 全自动化 MCP 服务器 + JADX 插件，通过 MCP 协议与 LLM 通信，使用 Claude 等大语言模型分析 Android APK——轻松发现漏洞、分析 APK、逆向工程。
+⚡ 全自动化 MCP 服务器 + JADX 插件，通过 MCP 协议与 LLM 通信，使用 Claude 等大语言模型分析 **Android APK、Java JAR、AAR 和 DEX** 文件——轻松发现漏洞、分析代码、逆向工程。
 
 **👉 原始项目**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
@@ -36,7 +36,7 @@
 - ❌ 生产级安全服务（无审计日志、无细粒度 RBAC）
 - ❌ 完整的自动化逆向框架
 
-> 📖 安全相关说明请参阅 [SECURITY_ZH.md](SECURITY_ZH.md)
+> 📖 安全相关说明请参阅 [SECURITY.zh-cn.md](SECURITY.zh-cn.md)
 
 ---
 
@@ -190,7 +190,7 @@ docker/apks/jadx-2/target.apk  → JADX #2 自动打开
 docker/apks/jadx-3/target.apk  → JADX #3 自动打开
 ```
 
-> 📖 详细使用说明见 [QUICK_START_ZH.md](QUICK_START_ZH.md)
+> 📖 详细使用说明见 [QUICK_START.zh-cn.md](QUICK_START.zh-cn.md)
 
 ### All-in-One 容器
 
@@ -290,12 +290,30 @@ docker run -d --name mcp-server \
 
 ### 并发搜索处理
 
-搜索操作使用**串行锁**防止 JADX 内部状态冲突：
+搜索操作使用 **InstanceBusyTracker** 串行锁防止 JADX 内部状态冲突：
 
 | 场景 | 响应 | AI 动作 |
 |------|------|---------|
 | 搜索可用 | `200 OK` + 结果 | 正常处理 |
-| 搜索忙碌 | `200 OK` + `{"error": "INSTANCE_BUSY", ...}` | 等待后重试（默认超时 300 秒）|
+| 搜索忙碌 | `200 OK` + `INSTANCE_BUSY` 错误 | 等待后重试 |
+
+**`INSTANCE_BUSY` 错误结构**（代码真值：`busy_tracker.py:77-85`）：
+
+```json
+{
+  "error": "INSTANCE_BUSY",
+  "message": "Instance 'xhs-v8' is processing another request",
+  "current_operation": "search_classes_by_keyword",
+  "busy_since": "2026-01-18T10:00:00",
+  "elapsed_seconds": 45,
+  "timeout_seconds": 300
+}
+```
+
+**超时与自动释放**：
+- 默认超时：**300 秒**（5 分钟）
+- 超时后自动释放锁，允许新请求
+- 可通过 `check_instance_status()` 查询当前忙碌状态
 
 **为什么串行化？**
 - JADX 反编译不是线程安全的
@@ -324,6 +342,10 @@ docker run -d --name mcp-server \
 | **懒加载** | 缓存在首次批量调用时填充。初始可能返回 `LOADING` 状态。|
 | **自动失效** | 任何重命名操作（`rename_class`、`rename_method`、`rename_field`、`rename_package`）都会自动清除缓存。|
 | **30秒全局冷却** | 缓存清除操作有 30 秒的防抖冷却期，以防止过度重新加载。|
+
+**触发条件**（代码真值：`refactor_tools.py:20-21,40-41,62-63,88-89`）：
+- 所有 `rename_*` 操作完成后自动触发
+- 手动调用 `clear_class_cache()` 也受冷却限制
 
 > **注意**：如果怀疑 JADX 端修改后数据过期，可使用 `clear_class_cache()` 手动清除。
 
@@ -778,12 +800,28 @@ jadx_mcp_server --http --jadx-instances "192.168.1.10:8650:v1,192.168.1.11:8650:
 - `get_main_activity_class(instance_id?)` — 从 AndroidManifest.xml 获取主 Activity
 - `get_main_application_classes_code(offset=0, count=0, instance_id?)` — 获取主应用类的代码
 - `get_main_application_classes_names(instance_id?)` — 获取主应用类的名称
+- `search_native_methods(package="", offset=0, count=50, instance_id?)` — **搜索 native 方法**（JNI/SO 安全分析，返回 param_types_frida）
+- `get_decompile_status(instance_id?)` — **获取反编译状态**（status, percentage, search_lock）
 
 ### 资源工具
 - `get_android_manifest(instance_id?)` — 获取 AndroidManifest.xml
 - `get_strings(mode="summary", query?, key?, locale="values", offset=0, limit=50, instance_id?)` — **AI 友好的字符串分析**（模式：summary, list, search, get）
 - `get_all_resource_file_names(offset=0, count=0, instance_id?)` — 列出所有资源文件名
 - `get_resource_file(resource_name, instance_id?)` — 获取资源文件内容
+
+### 统一接口工具（APK/JAR/AAR/DEX 通用）🆕
+- `get_file_info(instance_id?)` — **推荐首先调用**：获取文件类型、类数量、推荐使用的工具
+- `get_config_strings(mode="summary", query?, key?, file?, instance_id?)` — **统一配置字符串**（APK: strings.xml 概要, JAR: *.properties 文件）
+- `get_package_classes(package?, auto=false, include_inner=true, offset=0, count=100, instance_id?)` — **按包前缀获取类**（`auto=true` 自动检测主包）
+
+### JAR 专用工具 🆕
+> 以下工具仅适用于 JAR 文件，对 APK/AAR/DEX 返回 `NOT_APPLICABLE`
+
+- `jar_get_manifest(instance_id?)` — **读取 META-INF/MANIFEST.MF**（Main-Class, Implementation-*, Spring Boot 属性）
+- `jar_get_services(instance_id?)` — **读取 SPI 服务**（META-INF/services/* 目录）
+- `jar_get_entry_points(instance_id?)` — **发现入口点**（Main-Class, @SpringBootApplication, main() 方法）
+- `jar_get_dependencies(instance_id?)` — **分析嵌入依赖**（pom.properties, Class-Path, BOOT-INF/lib）
+- `jar_get_bytecode(class_name, instance_id?)` — **查看类字节码**（类似 javap，APK/JAR 通用）
 
 ### 重构工具
 - `rename_class(class_name, new_name, instance_id?)` — 重命名类

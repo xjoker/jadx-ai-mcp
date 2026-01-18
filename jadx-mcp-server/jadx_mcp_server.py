@@ -73,10 +73,13 @@ from typing import Optional
 @mcp.tool()
 @with_busy_check
 async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
-    """Fetch the currently selected class and its code from the JADX-GUI plugin.
+    """Fetch the currently selected class and its code from the JADX-GUI.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {class_name: str, source: str, package: str}
     """
     return await tools.class_tools.fetch_current_class(instance_id=instance_id)
 
@@ -87,7 +90,10 @@ async def get_selected_text(instance_id: Optional[str] = None) -> dict:
     """Returns the currently selected text in the decompiled code view.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {selected_text: str, class_name: str, line_number: int}
     """
     return await tools.class_tools.get_selected_text(instance_id=instance_id)
 
@@ -204,31 +210,22 @@ async def search_classes_by_keyword(
     count: int = 20,
     instance_id: Optional[str] = None,
 ) -> dict:
-    """Search for classes containing a specific keyword with flexible filtering options.
+    """Search for classes containing a keyword with flexible filtering.
     
-    **PERFORMANCE CHARACTERISTICS:**
-    | search_in | Expected Time | Requires Cache | Notes |
-    |-----------|--------------|----------------|-------|
-    | class     | <100ms       | No             | Fastest, searches class names |
-    | method    | <100ms       | No             | Fast, searches method names |
-    | field     | <100ms       | No             | Fast, searches field names |
-    | code      | 1-60s        | Yes            | Slow! May timeout on uncached APKs |
-    | comment   | 1-60s        | Yes            | Slow! Searches code comments |
-    
-    **DECISION GUIDE:**
-    - Check `get_decompile_status()` first!
-    - If `cached_percentage` < 20%: Use 'class', 'method', or 'field' only
-    - If `search_lock.locked` = true: Wait and retry
-    - Use `package` filter to reduce scope and improve performance
+    IMPORTANT: Call get_decompile_status() first! Use search_in='class/method/field' 
+    for fast searches (<100ms). Use 'code' only when cached_percentage > 20%.
     
     Args:
-        search_term: The keyword or string to search for.
-        package: Package name to limit search scope (e.g., 'com.example'). Strongly recommended!
+        search_term: Keyword to search for.
+        package: Package filter (e.g., 'com.example'). Strongly recommended!
         exclude: Comma-separated package prefixes to exclude.
-        search_in: Search scope: class, method, field, code, comment. Default: code
-        offset: Starting index for result pagination. Default: 0
-        count: Maximum number of results (max: 200). Default: 20
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        search_in: Scope: class|method|field|code|comment. Default: code
+        offset: Pagination offset. Default: 0
+        count: Max results (max: 200). Default: 20
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {classes: [...], total: int, has_more: bool}
     """
     return await tools.search_tools.search_classes_by_keyword(
         search_term, package, exclude, search_in, offset, count, instance_id=instance_id
@@ -267,7 +264,10 @@ async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
     """Retrieve and return the AndroidManifest.xml content.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {manifest: str, package: str, activities: [...], permissions: [...]}
     """
     return await tools.resource_tools.get_android_manifest(instance_id=instance_id)
 
@@ -321,10 +321,15 @@ async def get_strings(
 @mcp.tool()
 @with_busy_check
 async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Retrieve all resource files names.
+    """Retrieve all resource file names with pagination.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        offset: Pagination offset. Default: 0
+        count: Max results (0=all). Default: 0
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {files: [str, ...], total: int, has_more: bool}
     """
     return await tools.resource_tools.get_all_resource_file_names(offset, count, instance_id=instance_id)
 
@@ -332,10 +337,14 @@ async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_
 @mcp.tool()
 @with_busy_check
 async def get_resource_file(resource_name: str, instance_id: Optional[str] = None) -> dict:
-    """Retrieve resource file content.
+    """Retrieve resource file content by name.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        resource_name: Resource file path (e.g., 'res/layout/activity_main.xml').
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {content: str, size: int, is_binary: bool}
     """
     return await tools.resource_tools.get_resource_file(resource_name, instance_id=instance_id)
 
@@ -507,7 +516,10 @@ async def get_main_application_classes_names(instance_id: Optional[str] = None) 
     """Fetch main application classes' names from Manifest package.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {classes: [str, ...], package: str, count: int}
     """
     return await tools.class_tools.get_main_application_classes_names(instance_id=instance_id)
 
@@ -515,10 +527,15 @@ async def get_main_application_classes_names(instance_id: Optional[str] = None) 
 @mcp.tool()
 @with_busy_check
 async def get_main_application_classes_code(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch main application classes' code with pagination.
+    """Fetch main application classes' source code with pagination.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        offset: Pagination offset. Default: 0
+        count: Max results (0=all). Default: 0
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {classes: [{name, source}, ...], total: int, has_more: bool}
     """
     return await tools.class_tools.get_main_application_classes_code(offset, count, instance_id=instance_id)
 
@@ -526,10 +543,13 @@ async def get_main_application_classes_code(offset: int = 0, count: int = 0, ins
 @mcp.tool()
 @with_busy_check
 async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
-    """Fetch the main activity class from AndroidManifest.xml.
+    """Fetch the main activity class name from AndroidManifest.xml.
 
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {class_name: str, source: str, package: str}
     """
     return await tools.class_tools.get_main_activity_class(instance_id=instance_id)
 
@@ -586,7 +606,15 @@ async def rename_class(class_name: str, new_name: str, instance_id: Optional[str
     """Renames a specific class.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        class_name: Fully qualified class name to rename.
+        new_name: New class name (simple name, not fully qualified).
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {success: bool, message: str}
+    
+    Note:
+        Triggers 30s class cache cooldown.
     """
     return await tools.refactor_tools.rename_class(class_name, new_name, instance_id=instance_id)
 
@@ -597,7 +625,15 @@ async def rename_method(method_name: str, new_name: str, instance_id: Optional[s
     """Renames a specific method.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        method_name: Method name to rename.
+        new_name: New method name.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {success: bool, message: str}
+    
+    Note:
+        Triggers 30s class cache cooldown.
     """
     return await tools.refactor_tools.rename_method(method_name, new_name, instance_id=instance_id)
 
@@ -608,7 +644,16 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
     """Renames a specific field.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        class_name: Fully qualified class name containing the field.
+        field_name: Field name to rename.
+        new_name: New field name.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {success: bool, message: str}
+    
+    Note:
+        Triggers 30s class cache cooldown.
     """
     return await tools.refactor_tools.rename_field(class_name, field_name, new_name, instance_id=instance_id)
 
@@ -670,7 +715,15 @@ async def rename_package(old_package_name: str, new_package_name: str, instance_
     """Renames a package and all its classes.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        old_package_name: Current package name (e.g., 'com.example.old').
+        new_package_name: New package name (e.g., 'com.example.new').
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {success: bool, renamed_count: int, message: str}
+    
+    Note:
+        Triggers 30s class cache cooldown.
     """
     return await tools.refactor_tools.rename_package(old_package_name, new_package_name, instance_id=instance_id)
 
@@ -678,10 +731,13 @@ async def rename_package(old_package_name: str, new_package_name: str, instance_
 @mcp.tool()
 @with_busy_check
 async def debug_get_stack_frames(instance_id: Optional[str] = None) -> dict:
-    """Get current stack frames (call stack).
+    """Get current stack frames (call stack) when debugger is attached.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {frames: [{class_name, method_name, line_number}, ...], thread_id: str}
     """
     return await tools.debug_tools.debug_get_stack_frames(instance_id=instance_id)
 
@@ -692,7 +748,10 @@ async def debug_get_threads(instance_id: Optional[str] = None) -> dict:
     """Get all threads in the debugged process.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {threads: [{id, name, state, is_suspended}, ...], count: int}
     """
     return await tools.debug_tools.debug_get_threads(instance_id=instance_id)
 
@@ -700,10 +759,13 @@ async def debug_get_threads(instance_id: Optional[str] = None) -> dict:
 @mcp.tool()
 @with_busy_check
 async def debug_get_variables(instance_id: Optional[str] = None) -> dict:
-    """Get current variables when process is suspended.
+    """Get current variables when debugger is suspended at a breakpoint.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {variables: [{name, type, value}, ...], scope: str}
     """
     return await tools.debug_tools.debug_get_variables(instance_id=instance_id)
 
@@ -715,9 +777,12 @@ async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, 
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.Helper').
-        offset: Starting index for pagination (default: 0).
-        count: Maximum results to return (default: 20).
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        offset: Pagination offset. Default: 0
+        count: Max results. Default: 20
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
     """
     return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
 
@@ -730,7 +795,14 @@ async def get_xrefs_to_method(
     """Find all references to a method.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        class_name: Fully qualified class name.
+        method_name: Method name to find references for.
+        offset: Pagination offset. Default: 0
+        count: Max results. Default: 20
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
     """
     return await tools.xrefs_tools.get_xrefs_to_method(
         class_name, method_name, offset, count, instance_id=instance_id
@@ -745,7 +817,14 @@ async def get_xrefs_to_field(
     """Find all references to a field.
     
     Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        class_name: Fully qualified class name.
+        field_name: Field name to find references for.
+        offset: Pagination offset. Default: 0
+        count: Max results. Default: 20
+        instance_id: Target JADX instance name.
+    
+    Returns:
+        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
     """
     return await tools.xrefs_tools.get_xrefs_to_field(
         class_name, field_name, offset, count, instance_id=instance_id

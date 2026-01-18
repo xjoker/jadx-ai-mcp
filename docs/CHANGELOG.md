@@ -8,6 +8,42 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.0] - 2026-01-17 (Unreleased)
+
+### 🎉 Major Feature: Full JAR/AAR/DEX Support
+
+This release transforms JADX-AI-MCP from an Android-only tool to a **universal JVM bytecode analysis platform**.
+
+### Added
+
+**Unified Interface Tools** (work for APK/JAR/AAR/DEX):
+- `get_file_info` — Unified file metadata with file type detection and recommended tools
+- `get_config_strings` — Config strings (APK: strings.xml summary, JAR: *.properties files)
+- `get_package_classes` — Get classes by package prefix with `auto=true` detection
+
+**JAR-Specific Tools**:
+- `jar_get_manifest` — Read META-INF/MANIFEST.MF (Main-Class, Implementation-*, Spring Boot)
+- `jar_get_services` — Read SPI services from META-INF/services/*
+- `jar_get_entry_points` — Discover entry points (Main-Class, @SpringBootApplication, main() methods)
+- `jar_get_dependencies` — Analyze embedded dependencies (pom.properties, Class-Path, BOOT-INF/lib)
+- `jar_get_bytecode` — View class bytecode structure (similar to javap)
+
+**Infrastructure**:
+- `FileTypeDetector.java` — Magic number-based file type detection
+- `NotApplicableResponse.java` — Unified NOT_APPLICABLE responses for APK-only tools
+- `jadx://capabilities` MCP Resource for dynamic tool availability
+
+### Changed
+- APK-only tools now return `NOT_APPLICABLE` with clear messages instead of crashing on JAR files
+- Documentation updated with JAR support sections
+
+### Technical Details
+- **30 files changed**, **+3,529 lines** of code
+- Tested with Nexus JAR (112,699 classes, 14 entry points)
+- Full backward compatibility with existing APK workflows
+
+---
+
 ## [6.0.53] - 2026-01-16 18:26
 
 ### Added

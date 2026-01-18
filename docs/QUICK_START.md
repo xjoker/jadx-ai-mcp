@@ -222,6 +222,6 @@ Access http://localhost:6080, then File → Open → `/apks/your-app.apk`
 
 ## 🔗 Related Docs
 
-- [Docker 详细配置](DOCKER.md)
-- [MCP 多实例配置](MCP_CONFIG.md)
-- [工具列表](TOOLS.md)
+- [Docker Deployment](DOCKER.zh-cn.md)
+- [FAQ / Troubleshooting](FAQ.md)
+- [Tools Reference](TOOLS.md)

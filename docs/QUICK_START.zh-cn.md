@@ -127,4 +127,4 @@ docker compose down -v
 
 ---
 
-📖 详细 Docker 部署指南：[DOCKER_ZH.md](DOCKER_ZH.md)
+📖 详细 Docker 部署指南：[DOCKER.zh-cn.md](DOCKER.zh-cn.md)

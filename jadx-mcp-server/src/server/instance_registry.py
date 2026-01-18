@@ -167,12 +167,11 @@ class InstanceRegistry:
                 return result
                 
             except Exception as e:
-                error_detail = str(e) or "(no details)"
-                error_msg = f"Failed to add instance: {type(e).__name__}: {error_detail}"
-                logger.error(error_msg)
+                # 安全审计: 日志保留完整信息，外部返回仅含异常类型
+                logger.error(f"Failed to add instance: {type(e).__name__}: {e}")
                 return {
                     "success": False,
-                    "message": error_msg,
+                    "message": f"Failed to add instance: {type(e).__name__}",
                 }
     
     @classmethod
