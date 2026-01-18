@@ -10,7 +10,7 @@
 ![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 
-[📖 完整文档](docs/) | [English](README.md)
+[📖 完整文档](docs/index.zh-cn.md) | [English](README.md)
 
 </div>
 
