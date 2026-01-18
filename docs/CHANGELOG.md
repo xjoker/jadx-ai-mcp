@@ -35,10 +35,12 @@ This release transforms JADX-AI-MCP from an Android-only tool to a **universal J
 
 ### Changed
 - APK-only tools now return `NOT_APPLICABLE` with clear messages instead of crashing on JAR files
-- Documentation updated with JAR support sections
+- **Documentation restructured**: Simplified root README, detailed docs in `/docs/`
+- Tool docstrings enhanced with `Returns:` specifications
+- Exception messages sanitized (removed `str(e)` in 6 places)
 
 ### Technical Details
-- **30 files changed**, **+3,529 lines** of code
+- **36 files changed**, **+4,000 lines** of code
 - Tested with Nexus JAR (112,699 classes, 14 entry points)
 - Full backward compatibility with existing APK workflows
 

@@ -5,7 +5,17 @@
 
 ---
 
-## Step 0: Understand User Environment / 了解用户环境
+## Step 0: Language Detection / 语言检测
+
+**⚠️ IMPORTANT: Detect user's language first!**
+
+1. Check the user's system language or previous conversation language
+2. If Chinese (中文), respond in **Simplified Chinese** throughout
+3. Otherwise, respond in **English** by default
+
+---
+
+## Step 1: Understand User Environment / 了解用户环境
 
 Ask the user / 询问用户：
 
