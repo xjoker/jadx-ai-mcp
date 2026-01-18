@@ -9,7 +9,7 @@
 
 **👉 原始项目**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
 
-[English](../README.md) | 简体中文
+[English](index.md) | 简体中文
 
 ![GitHub contributors](https://img.shields.io/github/contributors/xjoker/jadx-ai-mcp)
 ![GitHub all releases](https://img.shields.io/github/downloads/xjoker/jadx-ai-mcp/total)

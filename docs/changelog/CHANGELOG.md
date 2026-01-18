@@ -8,6 +8,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.1] - 2026-01-18
+
+### 📚 Documentation Restructure
+
+**Major documentation overhaul** for improved navigation and clarity.
+
+### Changed
+
+**File Structure**:
+- Renamed all `docs/*/README.md` to `docs/*/index.md` to avoid confusion with root README
+- Split all bilingual documents into separate language files (`.md` for English, `.zh-cn.md` for Chinese)
+- Created `README.zh-cn.md` in root directory (simplified Chinese entry point)
+
+**New Documentation Files** (38 total):
+- `docs/deployment/docker.md` / `docker.zh-cn.md` — Docker single container guide
+- `docs/deployment/local.md` / `local.zh-cn.md` — Local installation guide
+- `docs/guides/ai-integration.md` / `ai-integration.zh-cn.md` — Claude/Cursor/Continue setup
+- `docs/troubleshooting/windows.md` / `windows.zh-cn.md` — Windows-specific issues
+- `docs/reference/configuration.md` / `configuration.zh-cn.md` — Full config reference
+
+**Content Updates**:
+- Added "APK or JAR" clarification in Quick Start
+- Updated Release Notes links in GitHub Actions
+- Added Changelog link to release notes
+- Fixed Token logging security note (marked as FIXED)
+
+---
+
 ## [6.1.0] - 2026-01-17 (Unreleased)
 
 ### 🎉 Major Feature: Full JAR/AAR/DEX Support

@@ -8,6 +8,34 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.1.1] - 2026-01-18
+
+### 📚 文档结构重构
+
+**重大文档改版**，提升导航与可读性。
+
+### 变更
+
+**文件结构**：
+- 将所有 `docs/*/README.md` 重命名为 `docs/*/index.md`，避免与根目录 README 混淆
+- 拆分所有双语文档为独立语言文件（`.md` 英文，`.zh-cn.md` 中文）
+- 在根目录创建 `README.zh-cn.md`（简化中文入口）
+
+**新增文档文件**（共 38 个）：
+- `docs/deployment/docker.md` / `docker.zh-cn.md` — Docker 单容器指南
+- `docs/deployment/local.md` / `local.zh-cn.md` — 本地安装指南
+- `docs/guides/ai-integration.md` / `ai-integration.zh-cn.md` — Claude/Cursor/Continue 配置
+- `docs/troubleshooting/windows.md` / `windows.zh-cn.md` — Windows 专项问题
+- `docs/reference/configuration.md` / `configuration.zh-cn.md` — 完整配置参考
+
+**内容更新**：
+- 快速开始添加 "APK or JAR" 说明
+- 更新 GitHub Actions Release Notes 链接
+- Release Notes 添加 Changelog 链接
+- Token 日志安全说明标记为已修复
+
+---
+
 ## [6.1.0] - 2026-01-17 (未发布)
 
 ### 🎉 重大功能：完整的 JAR/AAR/DEX 支持
