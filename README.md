@@ -89,7 +89,7 @@ jadx-mcp-server --transport streamable-http
 |:---------|:------------|
 | [Quick Start](docs/QUICK_START.md) | Docker setup guide |
 | [Tools Reference](docs/TOOLS.md) | 51 MCP tools matrix |
-| [Advanced Guide](docs/ADVANCED.md) | Configuration, multi-instance, hooks |
+| [详细中文文档](docs/README.zh-cn.md) | Full Chinese documentation |
 | [Security](docs/SECURITY.md) | Authentication, permissions |
 | [FAQ](docs/FAQ.md) | Troubleshooting |
 | [Changelog](docs/CHANGELOG.md) | Version history |
