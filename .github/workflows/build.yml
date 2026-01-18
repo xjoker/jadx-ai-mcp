@@ -160,7 +160,8 @@ jobs:
           ## 📖 Documentation
 
           - [README](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/README.md)
-          - [中文文档](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/README_ZH.md)
+          - [中文文档](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/docs/README.zh-cn.md)
+          - [Changelog](https://github.com/xjoker/jadx-ai-mcp/blob/jadx-ai/docs/changelog/CHANGELOG.md)
           EOF
 
       - name: Create GitHub Release
