@@ -1,58 +1,61 @@
-# 📚 JADX-AI-MCP Documentation / 文档
+# 📚 JADX-AI-MCP Documentation
 
-This directory contains all documentation for the JADX-AI-MCP project.
-
-## 📖 Documentation Index
-
-### Main Documentation
-
-| English | 中文 |
-|:--------|:-----|
-| [README.md](../README.md) | [README.zh-cn.md](README.zh-cn.md) |
-| [SECURITY.md](SECURITY.md) | [SECURITY.zh-cn.md](SECURITY.zh-cn.md) |
-| [CHANGELOG.md](CHANGELOG.md) | [CHANGELOG.zh-cn.md](CHANGELOG.zh-cn.md) |
-| [TOOLS.md](TOOLS.md) | (双语 / Bilingual) |
-
-### Quick Start & Deployment
-
-| English | 中文 |
-|:--------|:-----|
-| [QUICK_START.md](QUICK_START.md) | [QUICK_START.zh-cn.md](QUICK_START.zh-cn.md) |
-| [DOCKER.zh-cn.md](DOCKER.zh-cn.md) | (中文 / Chinese) |
-| [INSTALL_GUIDE.md](INSTALL_GUIDE.md) | (双语 / Bilingual) |
-| [FAQ.md](FAQ.md) | (双语 / Bilingual) |
-
-### Testing
-
-| Document | Description |
-|:---------|:------------|
-| [AI_TEST_PROMPT.md](AI_TEST_PROMPT.md) | AI 测试提示词 |
-| [AI_TEST_PROMPT.zh-cn.md](AI_TEST_PROMPT.zh-cn.md) | AI 测试提示词（中文） |
+[English](#english) | [简体中文](#简体中文)
 
 ---
 
-## 📁 File Structure
+## English
 
-```
-docs/
-├── README.md               ← You are here (Index)
-├── README.zh-cn.md         # 中文详细文档
-├── TOOLS.md                # 工具参考（双语）
-├── CHANGELOG.md            # 版本历史
-├── CHANGELOG.zh-cn.md      # 版本历史（中文）
-├── QUICK_START.md          # 快速开始
-├── QUICK_START.zh-cn.md    # 快速开始（中文）
-├── DOCKER.zh-cn.md         # Docker 部署指南
-├── INSTALL_GUIDE.md        # AI 安装指南
-├── FAQ.md                  # 常见问题
-├── SECURITY.md             # Security considerations
-└── SECURITY.zh-cn.md       # 安全说明
-```
+Welcome to JADX-AI-MCP documentation!
+
+### 📖 Documentation Structure
+
+| Section | Description |
+|:--------|:------------|
+| [Getting Started](getting-started/) | Quick start and installation guides |
+| [Deployment](deployment/) | Docker, local, and multi-instance deployment |
+| [Guides](guides/) | AI integration, multi-instance management |
+| [Reference](reference/) | Tools reference, configuration |
+| [Troubleshooting](troubleshooting/) | FAQ and common issues |
+| [Security](security/) | Authentication and permissions |
+| [Changelog](changelog/) | Version history |
+
+### 🚀 Quick Links
+
+- **New User?** → [Quick Start](getting-started/quickstart.md)
+- **Docker Deploy?** → [Docker Guide](deployment/docker.md)
+- **Tool Reference?** → [51 MCP Tools](reference/tools.md)
+- **Problem?** → [FAQ](troubleshooting/faq.md)
 
 ---
 
-## 🔗 Quick Links
+## 简体中文
 
-- **Issues**: [github.com/xjoker/jadx-ai-mcp/issues](https://github.com/xjoker/jadx-ai-mcp/issues)
-- **Releases**: [github.com/xjoker/jadx-ai-mcp/releases](https://github.com/xjoker/jadx-ai-mcp/releases)
-- **Original Project**: [github.com/zinja-coder/jadx-ai-mcp](https://github.com/zinja-coder/jadx-ai-mcp)
+欢迎阅读 JADX-AI-MCP 文档！
+
+### 📖 文档结构
+
+| 章节 | 说明 |
+|:-----|:-----|
+| [入门指南](getting-started/) | 快速开始和安装说明 |
+| [部署指南](deployment/) | Docker、本地、多实例部署 |
+| [使用指南](guides/) | AI 集成、多实例管理 |
+| [参考文档](reference/) | 工具参考、配置说明 |
+| [问题排查](troubleshooting/) | 常见问题 |
+| [安全说明](security/) | 认证与权限 |
+| [更新日志](changelog/) | 版本历史 |
+
+### 🚀 快速链接
+
+- **新用户？** → [快速开始](getting-started/quickstart.zh-cn.md)
+- **Docker 部署？** → [Docker 指南](deployment/docker.zh-cn.md)
+- **工具参考？** → [51 个 MCP 工具](reference/tools.zh-cn.md)
+- **遇到问题？** → [常见问题](troubleshooting/faq.zh-cn.md)
+
+---
+
+## 🔗 External Links
+
+- [GitHub Repository](https://github.com/xjoker/jadx-ai-mcp)
+- [Releases](https://github.com/xjoker/jadx-ai-mcp/releases)
+- [Issues](https://github.com/xjoker/jadx-ai-mcp/issues)

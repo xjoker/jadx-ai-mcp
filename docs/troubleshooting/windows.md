@@ -1,0 +1,229 @@
+# Windows Troubleshooting / Windows 问题排查
+
+[English](#english) | [简体中文](#简体中文)
+
+---
+
+## English
+
+### Common Windows Issues
+
+#### 1. `$(pwd)` doesn't work
+
+**Problem:** PowerShell/CMD doesn't recognize `$(pwd)` syntax.
+
+**Solution:**
+
+**PowerShell:**
+```powershell
+docker run -d --name jadx `
+  -p 6080:6080 -p 8651:8651 `
+  -v ${PWD}/apks:/apks `
+  xjoker/jadx-ai-mcp:latest
+```
+
+**CMD:**
+```cmd
+docker run -d --name jadx ^
+  -p 6080:6080 -p 8651:8651 ^
+  -v %cd%/apks:/apks ^
+  xjoker/jadx-ai-mcp:latest
+```
+
+---
+
+#### 2. Docker volume permission issues
+
+**Problem:** "Access denied" when mounting volumes.
+
+**Solutions:**
+1. **Enable WSL2 backend** (recommended):
+   - Docker Desktop → Settings → General → "Use the WSL 2 based engine"
+
+2. **Share drive in Docker settings**:
+   - Docker Desktop → Settings → Resources → File Sharing
+   - Add your drive (e.g., C:)
+
+3. **Use named volumes** (always works):
+   ```powershell
+   docker run -d --name jadx `
+     -p 6080:6080 -p 8651:8651 `
+     -v jadx-apks:/apks `
+     xjoker/jadx-ai-mcp:latest
+   ```
+
+---
+
+#### 3. `python3` command not found
+
+**Problem:** Windows uses `python` not `python3`.
+
+**Solutions:**
+```powershell
+# Check Python version
+python --version
+
+# Or use py launcher
+py -3 --version
+
+# Install with pip
+pip install "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server"
+```
+
+---
+
+#### 4. JADX installation on Windows
+
+**Steps:**
+1. Download `jadx-x.x.x.zip` from [JADX Releases](https://github.com/skylot/jadx/releases)
+2. Extract to a folder (e.g., `C:\jadx`)
+3. Add to PATH:
+   - Search "Environment Variables" in Windows
+   - Edit `Path` variable
+   - Add `C:\jadx\bin`
+4. Restart terminal
+
+---
+
+#### 5. Port already in use
+
+**Problem:** Port 6080 or 8651 already in use.
+
+**Solutions:**
+```powershell
+# Find process using port
+netstat -ano | findstr :6080
+
+# Kill process by PID
+taskkill /PID <pid> /F
+
+# Or use different ports
+docker run -d --name jadx `
+  -p 7080:6080 -p 9651:8651 `
+  -v ${PWD}/apks:/apks `
+  xjoker/jadx-ai-mcp:latest
+```
+
+---
+
+#### 6. Line ending issues (CRLF vs LF)
+
+**Problem:** Git converts line endings, causing script failures.
+
+**Solution:**
+```bash
+# Configure git (once)
+git config --global core.autocrlf false
+
+# Or in .gitattributes
+* text=auto eol=lf
+```
+
+---
+
+## 简体中文
+
+### Windows 常见问题
+
+#### 1. `$(pwd)` 不工作
+
+**问题：** PowerShell/CMD 不识别 `$(pwd)` 语法。
+
+**解决方案：**
+
+**PowerShell:**
+```powershell
+docker run -d --name jadx `
+  -p 6080:6080 -p 8651:8651 `
+  -v ${PWD}/apks:/apks `
+  xjoker/jadx-ai-mcp:latest
+```
+
+**CMD:**
+```cmd
+docker run -d --name jadx ^
+  -p 6080:6080 -p 8651:8651 ^
+  -v %cd%/apks:/apks ^
+  xjoker/jadx-ai-mcp:latest
+```
+
+---
+
+#### 2. Docker 卷权限问题
+
+**问题：** 挂载卷时提示 "Access denied"。
+
+**解决方案：**
+1. **启用 WSL2 后端**（推荐）：
+   - Docker Desktop → 设置 → 常规 → "Use the WSL 2 based engine"
+
+2. **在 Docker 设置中共享驱动器**：
+   - Docker Desktop → 设置 → 资源 → 文件共享
+   - 添加你的驱动器（如 C:）
+
+3. **使用命名卷**（始终有效）：
+   ```powershell
+   docker run -d --name jadx `
+     -p 6080:6080 -p 8651:8651 `
+     -v jadx-apks:/apks `
+     xjoker/jadx-ai-mcp:latest
+   ```
+
+---
+
+#### 3. `python3` 命令找不到
+
+**问题：** Windows 使用 `python` 而不是 `python3`。
+
+**解决方案：**
+```powershell
+# 检查 Python 版本
+python --version
+
+# 或使用 py 启动器
+py -3 --version
+
+# 用 pip 安装
+pip install "git+https://github.com/xjoker/jadx-ai-mcp#subdirectory=jadx-mcp-server"
+```
+
+---
+
+#### 4. Windows 上安装 JADX
+
+**步骤：**
+1. 从 [JADX Releases](https://github.com/skylot/jadx/releases) 下载 `jadx-x.x.x.zip`
+2. 解压到文件夹（如 `C:\jadx`）
+3. 添加到 PATH：
+   - Windows 搜索 "环境变量"
+   - 编辑 `Path` 变量
+   - 添加 `C:\jadx\bin`
+4. 重启终端
+
+---
+
+#### 5. 端口已被占用
+
+**问题：** 端口 6080 或 8651 已被占用。
+
+**解决方案：**
+```powershell
+# 查找使用端口的进程
+netstat -ano | findstr :6080
+
+# 通过 PID 结束进程
+taskkill /PID <pid> /F
+
+# 或使用其他端口
+docker run -d --name jadx `
+  -p 7080:6080 -p 9651:8651 `
+  -v ${PWD}/apks:/apks `
+  xjoker/jadx-ai-mcp:latest
+```
+
+---
+
+## Related / 相关
+
+- [Docker Deployment](../deployment/docker.md)
+- [FAQ](faq.md)

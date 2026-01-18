@@ -106,13 +106,15 @@ allow_dynamic_instances = false  # Default: DISABLED
 
 ### 3. Token Exposure in Logs
 
-**Risk Level:** Low
+**Risk Level:** ~~Low~~ **FIXED** ✅
 
-**Description:** Debug logging may include authentication tokens.
+**Description:** ~~Debug logging may include authentication tokens.~~
 
-**Mitigation:**
-- Use `INFO` or higher log level in production
-- Avoid exposing logs to untrusted parties
+**Status (v6.1.0+):** Token values are no longer logged. Only "Authentication token configured" or "Authentication disabled" messages appear in logs.
+
+**Previous Mitigation (obsolete):**
+- ~~Use `INFO` or higher log level in production~~
+- ~~Avoid exposing logs to untrusted parties~~
 
 ---
 
