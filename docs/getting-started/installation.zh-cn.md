@@ -4,7 +4,7 @@
 
 ---
 
-> 📖 本安装指南是专为 AI 智能体设计的双语文档，请参阅 [installation.md](installation.md)。
+> 📖 本安装指南是专为 AI 智能体设计的双语文档，请参阅 [installation.md](installation.zh-cn.md)。
 > 
 > AI 会根据你的语言偏好自动使用中文进行引导。
 

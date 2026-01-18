@@ -80,5 +80,5 @@ port = 8650
 
 ## Related / 相关
 
-- [Security](../security/security.md)
-- [Multi-Instance Deployment](../deployment/docker-compose.md)
+- [Security](../security/security.zh-cn.md)
+- [Multi-Instance Deployment](../deployment/docker-compose.zh-cn.md)

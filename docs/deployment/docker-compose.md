@@ -1,19 +1,21 @@
 # Docker Compose Deployment
 
-[English](#english) | [简体中文](docker-compose.zh-cn.md)
+**English** | [简体中文](docker-compose.zh-cn.md)
 
 ---
 
-## English
+> 🏗️ Multi-instance JADX deployment for parallel analysis
 
-### Overview
+## Overview
 
-Docker Compose enables multi-instance JADX deployment for:
+Docker Compose enables:
 - **Parallel APK analysis**: Analyze multiple APKs simultaneously
 - **Team collaboration**: Each member has dedicated instance
 - **Version comparison**: Compare different app versions
 
-### Architecture
+---
+
+## Architecture
 
 ```mermaid
 flowchart TB
@@ -22,7 +24,9 @@ flowchart TB
     MCP --> J3[JADX #3 :8670<br/>dev.apk]
 ```
 
-### Quick Start
+---
+
+## Quick Start
 
 ```bash
 # Clone and navigate
@@ -37,7 +41,9 @@ mkdir -p config
 docker compose up -d
 ```
 
-### Access
+---
+
+## Access Points
 
 | Service | URL |
 |:--------|:----|
@@ -46,7 +52,9 @@ docker compose up -d
 | **JADX #3** | http://localhost:6082 |
 | **MCP Server** | http://localhost:8651/mcp |
 
-### Configuration
+---
+
+## Configuration
 
 Create `config/jadx-config.toml`:
 
@@ -68,7 +76,9 @@ host = "jadx-3"
 port = 8650
 ```
 
-### Port Reference
+---
+
+## Port Reference
 
 | Component | noVNC | Plugin API |
 |:----------|:------|:-----------|
@@ -77,7 +87,9 @@ port = 8650
 | JADX #3 | 6082 | 8670 |
 | MCP Server | - | 8651 |
 
-### Common Commands
+---
+
+## Common Commands
 
 ```bash
 # View all logs
@@ -96,7 +108,9 @@ docker compose down
 docker compose down -v
 ```
 
-### Scaling
+---
+
+## Scaling
 
 Add more JADX instances by copying the service definition:
 
@@ -113,13 +127,7 @@ jadx-4:
 
 ---
 
-## 简体中文
-
-完整的中文文档请参见 [docker-compose.zh-cn.md](docker-compose.zh-cn.md)。
-
----
-
-## Next Steps / 下一步
+## 🔗 Related
 
 - [Configuration Reference](../reference/configuration.md)
 - [Tools Reference](../reference/tools.md)

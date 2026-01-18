@@ -94,7 +94,7 @@ docker run -d --name jadx \
 | 文档 | 说明 |
 |:-----|:-----|
 | [快速开始](docs/getting-started/quickstart.zh-cn.md) | 5 分钟 Docker 部署 |
-| [详细安装](docs/getting-started/installation.md) | 全平台详细安装 |
+| [详细安装](docs/getting-started/installation.zh-cn.md) | 全平台详细安装 |
 
 ### 参考文档
 

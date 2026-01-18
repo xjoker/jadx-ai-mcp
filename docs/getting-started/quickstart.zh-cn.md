@@ -1,54 +1,54 @@
-# JADX-AI-MCP Docker Compose 快速部署
+# 快速开始
 
-[English](../docker/QUICK_START.md) | 简体中文
+[English](quickstart.md) | **简体中文**
 
-## 📦 一键启动
+---
+
+> ⏱️ 5 分钟 Docker 快速开始！
+
+## 前置要求
+
+- 已安装 Docker ([下载](https://docker.com))
+- 要分析的 APK 或 JAR 文件
+
+---
+
+## 🚀 一键启动
 
 ```bash
-# 1. 进入 docker 目录
-cd docker
-
-# 2. 启动所有服务
-docker compose up -d
-
-# 3. 查看服务状态
-docker compose ps
+docker run -d --name jadx \
+  -p 6080:6080 -p 8651:8651 \
+  -v ~/apks:/apks \
+  xjoker/jadx-ai-mcp:latest
 ```
 
-## 🌐 访问地址
+**访问地址：**
+- 🌐 **JADX 桌面**: http://localhost:6080
+- 🤖 **MCP Server**: http://localhost:8651
 
-| 服务 | 地址 | 说明 |
-|:-----|:-----|:-----|
-| **MCP Server** | http://localhost:8651/mcp | 连接 Claude/LLM |
-| **JADX #1** | http://localhost:6080 | noVNC 桌面 |
-| **JADX #2** | http://localhost:6081 | noVNC 桌面 |
-| **JADX #3** | http://localhost:6082 | noVNC 桌面 |
+---
 
 ## 📱 加载 APK
 
-### 方式 1: 自动加载（推荐）
+1. 将 APK 复制到 `~/apks/` 目录
+2. 浏览器打开 http://localhost:6080
+3. JADX 中: **File → Open → /apks/你的应用.apk**
 
-将 APK 命名为 `target.apk` 放入对应目录，JADX 启动时自动加载：
+> 💡 提示：将文件命名为 `target.apk` 可自动加载
 
-```bash
-apks/jadx-1/target.apk  → JADX #1 自动打开
-apks/jadx-2/target.apk  → JADX #2 自动打开
-apks/jadx-3/target.apk  → JADX #3 自动打开
-```
+---
 
-### 方式 2: 手动加载
+## 🔌 连接 AI 客户端
 
-1. 访问 JADX 的 noVNC 页面
-2. 在 JADX GUI 中: File → Open → `/apks/your-app.apk`
+### Claude Desktop
 
-## 🤖 连接 Claude
+编辑 `claude_desktop_config.json`:
 
-```bash
-# Claude CLI
-claude mcp add --transport http jadx http://localhost:8651/mcp
-```
-
-或在 `claude_desktop_config.json` 中添加:
+| 系统 | 路径 |
+|:-----|:-----|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Linux | `~/.config/claude/claude_desktop_config.json` |
 
 ```json
 {
@@ -61,70 +61,30 @@ claude mcp add --transport http jadx http://localhost:8651/mcp
 }
 ```
 
-## 📊 架构图
+重启 Claude Desktop。
 
-```mermaid
-flowchart TB
-    subgraph DockerCompose["Docker Compose"]
-        subgraph MCP["MCP Server"]
-            MCPServer["jadx-mcp-server<br/>:8651"]
-        end
-        
-        subgraph Network["jadx-network"]
-            J1["JADX #1<br/>:6080 / :8650"]
-            J2["JADX #2<br/>:6081 / :8660"]
-            J3["JADX #3<br/>:6082 / :8670"]
-        end
-        
-        subgraph Volume["./apks/ (共享)"]
-            APK1["jadx-1/target.apk"]
-            APK2["jadx-2/target.apk"]
-            APK3["jadx-3/target.apk"]
-        end
-    end
-    
-    Client["Claude / LLM Client"] --> MCPServer
-    MCPServer --> J1
-    MCPServer --> J2
-    MCPServer --> J3
-    J1 -.-> APK1
-    J2 -.-> APK2
-    J3 -.-> APK3
-```
+### Cursor
 
-## 🎯 使用场景
-
-### 场景 1: 比较 APP 版本
-```
-将 app-v1.apk 在 JADX #1 打开
-将 app-v2.apk 在 JADX #2 打开
-让 AI: "比较 jadx-1 和 jadx-2 中 MainActivity 的差异"
-```
-
-### 场景 2: 团队协作
-```
-Alice 用 JADX #1 分析登录模块
-Bob 用 JADX #2 分析支付模块
-Admin 用 JADX #3 做整体审计
-```
-
-## 🛑 停止服务
-
-```bash
-# 停止所有服务
-docker compose down
-
-# 停止并删除数据卷（清理缓存）
-docker compose down -v
-```
-
-## ⚙️ 自定义配置
-
-编辑 `config/jadx-config.toml` 可以:
-- 添加用户认证
-- 修改超时时间
-- 添加更多 JADX 实例
+设置 → MCP → 添加服务器:
+- Name: `jadx`
+- Type: `HTTP`
+- URL: `http://localhost:8651/mcp`
 
 ---
 
-📖 详细 Docker 部署指南：[DOCKER.zh-cn.md](DOCKER.zh-cn.md)
+## ✅ 测试
+
+在 Claude 中询问：
+
+> "列出这个 APK 的主 Activity"
+
+如果成功返回结果，安装完成！🎉
+
+---
+
+## 🔗 下一步
+
+- [Docker 选项](../deployment/docker.zh-cn.md) - 缓存、配置卷
+- [Docker Compose](../deployment/docker-compose.zh-cn.md) - 多实例部署
+- [本地安装](../deployment/local.zh-cn.md) - 无 Docker 安装
+- [AI 集成](../guides/ai-integration.zh-cn.md) - 更多 AI 客户端

@@ -9,7 +9,7 @@
 | 文档 | 说明 |
 |:-----|:-----|
 | [快速开始](getting-started/quickstart.zh-cn.md) | 5 分钟 Docker 部署 |
-| [详细安装](getting-started/installation.md) | 全平台详细安装 |
+| [详细安装](getting-started/installation.zh-cn.md) | 全平台详细安装 |
 
 ---
 

@@ -117,6 +117,6 @@
 
 ## Related / 相关
 
-- [Configuration Reference](../reference/configuration.md)
-- [Docker Deployment](../deployment/docker.md)
-- [FAQ](../troubleshooting/faq.md)
+- [Configuration Reference](../reference/configuration.zh-cn.md)
+- [Docker Deployment](../deployment/docker.zh-cn.md)
+- [FAQ](../troubleshooting/faq.zh-cn.md)

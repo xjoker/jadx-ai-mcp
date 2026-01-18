@@ -106,5 +106,5 @@ docker run -d --name jadx `
 
 ## Related / 相关
 
-- [Docker Deployment](../deployment/docker.md)
-- [FAQ](faq.md)
+- [Docker Deployment](../deployment/docker.zh-cn.md)
+- [FAQ](faq.zh-cn.md)

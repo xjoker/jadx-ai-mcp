@@ -122,5 +122,5 @@ docker rm -f jadx
 ## 下一步
 
 - [配置多实例](docker-compose.zh-cn.md)
-- [工具参考](../reference/tools.md)
-- [常见问题](../troubleshooting/faq.md)
+- [工具参考](../reference/tools.zh-cn.md)
+- [常见问题](../troubleshooting/faq.zh-cn.md)

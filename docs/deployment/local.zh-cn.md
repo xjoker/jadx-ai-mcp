@@ -108,5 +108,5 @@ jadx_mcp_server
 
 ## Next Steps / 下一步
 
-- [Docker Deployment](docker.md) / [Docker 部署](docker.md)
-- [Tools Reference](../reference/tools.md) / [工具参考](../reference/tools.zh-cn.md)
+- [Docker Deployment](docker.zh-cn.md) / [Docker 部署](docker.zh-cn.md)
+- [Tools Reference](../reference/tools.zh-cn.md) / [工具参考](../reference/tools.zh-cn.md)
