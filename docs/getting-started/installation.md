@@ -1,4 +1,4 @@
-# JADX-AI-MCP Installation Guide / 安装指南
+# JADX-AI-MCP Installation Guide
 
 > 🤖 This document is for AI agents to guide users through installation.
 > 本文档供 AI 智能体读取，用于指导用户安装。

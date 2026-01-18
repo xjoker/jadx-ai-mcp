@@ -1,4 +1,4 @@
-# AI Integration Guide / AI 集成指南
+# AI Integration Guide
 
 **English** | [简体中文](ai-integration.zh-cn.md)
 

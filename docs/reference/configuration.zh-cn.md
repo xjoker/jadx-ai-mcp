@@ -1,3 +1,5 @@
+# 配置参考
+
 [English](configuration.md) | **简体中文**
 
 ---

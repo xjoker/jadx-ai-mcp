@@ -1,4 +1,4 @@
-# 📚 Getting Started / 入门指南
+# 📚 Getting Started
 
 **English** | [简体中文](index.zh-cn.md)
 

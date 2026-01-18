@@ -1,3 +1,5 @@
+# AI 集成指南
+
 [English](ai-integration.md) | **简体中文**
 
 ---

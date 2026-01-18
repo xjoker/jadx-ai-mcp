@@ -1,4 +1,4 @@
-# Local Deployment / 本地部署
+# Local Deployment
 
 **English** | [简体中文](local.zh-cn.md)
 

@@ -1,4 +1,4 @@
-# 快速开始指南 / Quick Start Guide
+# Quick Start Guide
 
 [English](#english) | [简体中文](#简体中文)
 

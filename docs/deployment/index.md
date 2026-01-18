@@ -1,4 +1,4 @@
-# 🚀 Deployment / 部署指南
+# 🚀 Deployment
 
 **English** | [简体中文](index.zh-cn.md)
 

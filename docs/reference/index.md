@@ -1,4 +1,4 @@
-# 📋 Reference / 参考文档
+# 📋 Reference
 
 **English** | [简体中文](index.zh-cn.md)
 

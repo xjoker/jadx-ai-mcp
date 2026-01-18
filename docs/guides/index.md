@@ -1,4 +1,4 @@
-# 📖 Guides / 使用指南
+# 📖 Guides
 
 **English** | [简体中文](index.zh-cn.md)
 

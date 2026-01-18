@@ -1,4 +1,4 @@
-# ❓ Troubleshooting / 问题排查
+# ❓ Troubleshooting
 
 **English** | [简体中文](index.zh-cn.md)
 

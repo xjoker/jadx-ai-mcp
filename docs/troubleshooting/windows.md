@@ -1,4 +1,4 @@
-# Windows Troubleshooting / Windows 问题排查
+# Windows Troubleshooting
 
 **English** | [简体中文](windows.zh-cn.md)
 

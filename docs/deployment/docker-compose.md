@@ -1,4 +1,4 @@
-# Docker Compose Deployment / 多实例部署
+# Docker Compose Deployment
 
 [English](#english) | [简体中文](docker-compose.zh-cn.md)
 

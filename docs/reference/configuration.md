@@ -1,4 +1,4 @@
-# Configuration Reference / 配置参考
+# Configuration Reference
 
 **English** | [简体中文](configuration.zh-cn.md)
 
