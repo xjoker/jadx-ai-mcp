@@ -167,8 +167,8 @@ All-in-One Docker 镜像默认不需要认证，适合本地开发使用。
 **⚠️ For public/network deployment, configure authentication:**  
 **⚠️ 如果在网络上公开部署，请配置认证：**
 
-See [SECURITY.md](SECURITY.md) for production security configuration.  
-生产环境安全配置请参考 [SECURITY.md](SECURITY.md)。
+See [SECURITY.md](../security/security.md) for production security configuration.  
+生产环境安全配置请参考 [SECURITY.md](../security/security.md)。
 
 ---
 

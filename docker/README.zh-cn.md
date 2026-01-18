@@ -1,21 +1,21 @@
-# JADX-AI-MCP Docker Deployment
+# JADX-AI-MCP Docker 部署指南
 
-English | [简体中文](README.zh-cn.md)
+**简体中文** | [English](README.md)
 
-Two Docker images are available for different use cases.
+提供两种 Docker 镜像以满足不同场景需求。
 
-## Images
+## 镜像
 
-| Image | Description | Size |
-|-------|-------------|------|
+| 镜像 | 描述 | 大小 |
+|------|------|------|
 | `xjoker/jadx-ai-mcp` | All-in-One (JADX GUI + noVNC + MCP Server) | ~800MB |
-| `xjoker/jadx-mcp-server` | Standalone MCP Server only | ~100MB |
+| `xjoker/jadx-mcp-server` | 独立 MCP Server | ~100MB |
 
-## Architecture (All-in-One)
+## 架构 (All-in-One)
 
 ```mermaid
 flowchart LR
-    subgraph Docker["Docker Container"]
+    subgraph Docker["Docker 容器"]
         Xvfb["Xvfb :99"]
         VNC["x11vnc :5900"]
         noVNC["noVNC :6080"]
@@ -29,15 +29,15 @@ flowchart LR
         MCP --> API
     end
     
-    Browser["🌐 Browser"] --> noVNC
-    LLM["🤖 LLM Client"] --> MCP
+    Browser["🌐 浏览器"] --> noVNC
+    LLM["🤖 LLM 客户端"] --> MCP
 ```
 
-## Quick Start
+## 快速开始
 
-### All-in-One Image
+### All-in-One 镜像
 
-**Basic Usage:**
+**基本用法：**
 
 ```bash
 docker pull xjoker/jadx-ai-mcp:latest
@@ -48,13 +48,13 @@ docker run -d --name jadx-ai-mcp \
   -v $(pwd)/apks:/apks \
   xjoker/jadx-ai-mcp
 
-# Access
+# 访问地址
 # - noVNC: http://localhost:6080
 # - Plugin API: http://localhost:8650
 # - MCP Server: http://localhost:8651
 ```
 
-**With Cache and Config (Recommended):**
+**挂载缓存和配置（推荐）：**
 
 ```bash
 docker run -d --name jadx-ai-mcp \
@@ -68,25 +68,25 @@ docker run -d --name jadx-ai-mcp \
   xjoker/jadx-ai-mcp
 ```
 
-### Volume Reference
+### 卷挂载说明
 
-| Volume | Path | Purpose |
-|--------|------|---------|
-| APK Files | `/apks` | Mount APK files for analysis |
-| Config | `/app/data/config` | Configuration files (jadx-config.toml) |
-| Cache | `/root/.cache` | JADX decompilation cache (10-50x faster) |
-| GUI Settings | `/root/.jadx-gui` | GUI preferences persistence |
+| 卷 | 路径 | 用途 |
+|----|------|------|
+| APK 文件 | `/apks` | 挂载待分析的 APK 文件 |
+| 配置 | `/app/data/config` | 配置文件 (jadx-config.toml) |
+| 缓存 | `/root/.cache` | JADX 反编译缓存 (提速 10-50 倍) |
+| GUI 设置 | `/root/.jadx-gui` | GUI 偏好设置持久化 |
 
-> **Tip**: First code search on large APK triggers decompilation (slow). Subsequent searches are fast due to cache.
+> **提示**：首次对大型 APK 进行代码搜索会触发反编译（较慢），后续搜索会利用缓存快速响应。
 
-### Standalone MCP Server
+### 独立 MCP Server
 
-For production environments connecting to external JADX instances:
+用于生产环境连接外部 JADX 实例：
 
-**Option 1: With Config File**
+**方式 1：使用配置文件**
 
 ```bash
-# Create config
+# 创建配置
 mkdir -p config
 cat > config/jadx-config.toml << 'EOF'
 [server]
@@ -100,14 +100,14 @@ port = 8650
 enabled = true
 EOF
 
-# Run
+# 运行
 docker run -d --name jadx-mcp-server \
   -p 8651:8651 \
   -v $(pwd)/config:/app/data/config \
   xjoker/jadx-mcp-server
 ```
 
-**Option 2: With Environment Variables**
+**方式 2：使用环境变量**
 
 ```bash
 docker run -d --name jadx-mcp-server \
@@ -118,7 +118,7 @@ docker run -d --name jadx-mcp-server \
   xjoker/jadx-mcp-server
 ```
 
-**Option 3: CLI Arguments**
+**方式 3：命令行参数**
 
 ```bash
 docker run -d --name jadx-mcp-server \
@@ -128,19 +128,19 @@ docker run -d --name jadx-mcp-server \
     --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
 
-## Ports
+## 端口说明
 
-| Port | Service | Description |
-|------|---------|-------------|
-| 6080 | noVNC | Web-based VNC desktop (All-in-One only) |
-| 8650 | Plugin API | JADX plugin HTTP API |
-| 8651 | MCP Server | LLM client connection endpoint |
+| 端口 | 服务 | 描述 |
+|------|------|------|
+| 6080 | noVNC | Web VNC 桌面 (仅 All-in-One) |
+| 8650 | Plugin API | JADX 插件 HTTP API |
+| 8651 | MCP Server | LLM 客户端连接端点 |
 
-## Configuration
+## 配置
 
-### Multi-user Authentication
+### 多用户认证
 
-Create `config/jadx-config.toml`:
+创建 `config/jadx-config.toml`：
 
 ```toml
 [server]
@@ -165,7 +165,7 @@ host = "127.0.0.1"
 port = 8650
 ```
 
-Run with config:
+运行：
 
 ```bash
 docker run -d -p 8651:8651 \
@@ -174,35 +174,35 @@ docker run -d -p 8651:8651 \
   uv run jadx_mcp_server --http --host 0.0.0.0 --config /app/data/config/jadx-config.toml
 ```
 
-## Build from Source
+## 从源码构建
 
-### Base Image (System Dependencies)
+### 基础镜像（系统依赖）
 
-The All-in-One image uses a pre-built base image for faster CI builds:
+All-in-One 镜像使用预构建的基础镜像以加速 CI 构建：
 
 ```bash
-# Build base image (only needed when system deps change)
+# 构建基础镜像（仅在系统依赖变更时需要）
 docker build -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
 
-# Push to registry (maintainers only)
+# 推送到仓库（仅维护者）
 docker push xjoker/jadx-ai-mcp-base:1.0
 ```
 
-### Application Images
+### 应用镜像
 
 ```bash
-# All-in-One (uses base image)
+# All-in-One（使用基础镜像）
 docker build -t jadx-ai-mcp -f docker/Dockerfile .
 
-# MCP Server only (standalone, no base image needed)
+# 仅 MCP Server（独立构建，不需要基础镜像）
 docker build -t jadx-mcp-server -f docker/Dockerfile.mcp .
 ```
 
 ---
 
-## Multi-Instance Deployment
+## 多实例部署
 
-Deploy multiple JADX instances for parallel APK analysis:
+部署多个 JADX 实例实现并行分析：
 
 ```mermaid
 flowchart TB
@@ -211,25 +211,25 @@ flowchart TB
     MCP --> J3[JADX #3 :8670<br/>dev.apk]
 ```
 
-### Example Setup
+### 示例配置
 
 ```bash
-# Terminal 1: JADX instance for app-v1
+# 终端 1: app-v1 的 JADX 实例
 docker run -d --name jadx-v1 -p 8650:8650 -p 6080:6080 \
   -v $(pwd)/app-v1.apk:/apks/app.apk \
   xjoker/jadx-ai-mcp
 
-# Terminal 2: JADX instance for app-v2  
+# 终端 2: app-v2 的 JADX 实例
 docker run -d --name jadx-v2 -p 8660:8650 -p 6081:6080 \
   -v $(pwd)/app-v2.apk:/apks/app.apk \
   xjoker/jadx-ai-mcp
 
-# Terminal 3: MCP Server connecting both
+# 终端 3: 连接两个实例的 MCP Server
 docker run -d --name mcp -p 8651:8651 \
   -v $(pwd)/config:/app/data/config \
   xjoker/jadx-mcp-server
 
-# Configure instances in config/jadx-config.toml
+# 在 config/jadx-config.toml 中配置实例
 ```
 
 **config/jadx-config.toml:**
@@ -237,7 +237,7 @@ docker run -d --name mcp -p 8651:8651 \
 ```toml
 [[jadx_instances]]
 name = "app-v1"
-host = "host.docker.internal"  # or container IP
+host = "host.docker.internal"  # 或容器 IP
 port = 8650
 
 [[jadx_instances]]
@@ -246,16 +246,15 @@ host = "host.docker.internal"
 port = 8660
 ```
 
-## Troubleshooting
+## 故障排查
 
 ```bash
-# Check logs
+# 查看日志
 docker logs jadx-ai-mcp
 
-# Access shell
+# 进入容器
 docker exec -it jadx-ai-mcp bash
 
-# Check services (All-in-One)
+# 检查服务状态 (All-in-One)
 docker exec jadx-ai-mcp supervisorctl status
 ```
-

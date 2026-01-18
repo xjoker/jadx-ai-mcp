@@ -115,8 +115,8 @@
 
 ---
 
-## Related / 相关
+## 相关文档
 
-- [Configuration Reference](../reference/configuration.zh-cn.md)
-- [Docker Deployment](../deployment/docker.zh-cn.md)
-- [FAQ](../troubleshooting/faq.zh-cn.md)
+- [配置参考](../reference/configuration.zh-cn.md)
+- [Docker 部署](../deployment/docker.zh-cn.md)
+- [常见问题](../troubleshooting/faq.zh-cn.md)

@@ -1,54 +1,54 @@
 # JADX-AI-MCP Docker Compose Quick Start
 
-English | [简体中文](../docs/QUICK_START_ZH.md)
+English | [简体中文](QUICK_START.zh-cn.md)
 
-## 📦 一键启动
+## 📦 One-Click Start
 
 ```bash
-# 1. 进入 docker 目录
+# 1. Enter docker directory
 cd docker
 
-# 2. 启动所有服务
+# 2. Start all services
 docker compose up -d
 
-# 3. 查看服务状态
+# 3. Check service status
 docker compose ps
 ```
 
-## 🌐 访问地址
+## 🌐 Access URLs
 
-| 服务 | 地址 | 说明 |
-|:-----|:-----|:-----|
-| **MCP Server** | http://localhost:8651/mcp | 连接 Claude/LLM |
-| **JADX #1** | http://localhost:6080 | noVNC 桌面 |
-| **JADX #2** | http://localhost:6081 | noVNC 桌面 |
-| **JADX #3** | http://localhost:6082 | noVNC 桌面 |
+| Service | URL | Description |
+|:--------|:----|:------------|
+| **MCP Server** | http://localhost:8651/mcp | Connect Claude/LLM |
+| **JADX #1** | http://localhost:6080 | noVNC Desktop |
+| **JADX #2** | http://localhost:6081 | noVNC Desktop |
+| **JADX #3** | http://localhost:6082 | noVNC Desktop |
 
-## 📱 加载 APK
+## 📱 Load APK
 
-### 方式 1: 自动加载（推荐）
+### Method 1: Auto-load (Recommended)
 
-将 APK 命名为 `target.apk` 放入对应目录，JADX 启动时自动加载：
+Name your APK as `target.apk` and place it in the corresponding directory. JADX will load it automatically on startup:
 
 ```bash
-apks/jadx-1/target.apk  → JADX #1 自动打开
-apks/jadx-2/target.apk  → JADX #2 自动打开
-apks/jadx-3/target.apk  → JADX #3 自动打开
+apks/jadx-1/target.apk  → JADX #1 auto-opens
+apks/jadx-2/target.apk  → JADX #2 auto-opens
+apks/jadx-3/target.apk  → JADX #3 auto-opens
 ```
 
-### 方式 2: 手动加载
+### Method 2: Manual Load
 
-1. 访问 JADX 的 noVNC 页面
-2. 在 JADX GUI 中: File → Open → `/apks/your-app.apk`
+1. Access JADX's noVNC page
+2. In JADX GUI: File → Open → `/apks/your-app.apk`
 
-## 🤖 连接 Claude
+## 🤖 Connect Claude
 
 ```bash
 # Claude CLI
 claude mcp add --transport http jadx http://localhost:8651/mcp
 ```
 
-或在 `claude_desktop_config.json` 中添加:
+Or add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -61,7 +61,7 @@ claude mcp add --transport http jadx http://localhost:8651/mcp
 }
 ```
 
-## 📊 架构图
+## 📊 Architecture
 
 ```mermaid
 flowchart TB
@@ -76,7 +76,7 @@ flowchart TB
             J3["JADX #3<br/>:6082 / :8670"]
         end
         
-        subgraph Volume["./apks/ (共享)"]
+        subgraph Volume["./apks/ (shared)"]
             APK1["jadx-1/target.apk"]
             APK2["jadx-2/target.apk"]
             APK3["jadx-3/target.apk"]
@@ -92,35 +92,35 @@ flowchart TB
     J3 -.-> APK3
 ```
 
-## 🎯 使用场景
+## 🎯 Use Cases
 
-### 场景 1: 比较 APP 版本
+### Scenario 1: Compare APP Versions
 ```
-将 app-v1.apk 在 JADX #1 打开
-将 app-v2.apk 在 JADX #2 打开
-让 AI: "比较 jadx-1 和 jadx-2 中 MainActivity 的差异"
-```
-
-### 场景 2: 团队协作
-```
-Alice 用 JADX #1 分析登录模块
-Bob 用 JADX #2 分析支付模块
-Admin 用 JADX #3 做整体审计
+Open app-v1.apk in JADX #1
+Open app-v2.apk in JADX #2
+Ask AI: "Compare MainActivity differences between jadx-1 and jadx-2"
 ```
 
-## 🛑 停止服务
+### Scenario 2: Team Collaboration
+```
+Alice uses JADX #1 for login module
+Bob uses JADX #2 for payment module
+Admin uses JADX #3 for overall audit
+```
+
+## 🛑 Stop Services
 
 ```bash
-# 停止所有服务
+# Stop all services
 docker compose down
 
-# 停止并删除数据卷（清理缓存）
+# Stop and remove volumes (clear cache)
 docker compose down -v
 ```
 
-## ⚙️ 自定义配置
+## ⚙️ Custom Configuration
 
-编辑 `config/jadx-config.toml` 可以:
-- 添加用户认证
-- 修改超时时间
-- 添加更多 JADX 实例
+Edit `config/jadx-config.toml` to:
+- Add user authentication
+- Modify timeout settings
+- Add more JADX instances
