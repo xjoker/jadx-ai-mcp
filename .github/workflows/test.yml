@@ -109,9 +109,10 @@ jobs:
           docker run -d --name jadx \
             -p 8650:8650 \
             -p 8651:8651 \
+            -v ${{ github.workspace }}/tests/fixtures:/fixtures:ro \
             xjoker/jadx-ai-mcp:latest
           
-          echo "Container started, waiting for services..."
+          echo "Container started with fixtures mounted, waiting for services..."
       
       - name: Wait for JADX to be ready
         run: |
