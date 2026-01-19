@@ -90,5 +90,6 @@ htmlcov/
 
 ### APK Files ###
 *.apk
+!tests/fixtures/*.apk
 docker/apks/*/
 !docker/apks/.gitkeep

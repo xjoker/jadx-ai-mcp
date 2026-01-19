@@ -125,6 +125,13 @@ jobs:
       - name: Wait for JADX to be ready
         run: |
           echo "⏳ Waiting for JADX to load JAR..."
+          echo "📋 Initial container logs:"
+          sleep 10
+          docker logs jadx-jar 2>&1 | tail -30
+          echo ""
+          echo "🔍 Checking container ports..."
+          docker ps
+          
           MAX_ATTEMPTS=60
           for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
             # Check if JADX Plugin API responds (needs file loaded)
@@ -134,11 +141,18 @@ jobs:
               curl -s http://localhost:8650/apk-info | head -100
               exit 0
             fi
+            
+            # Show logs every 20 attempts
+            if [ $((ATTEMPT % 20)) -eq 0 ]; then
+              echo "📋 Container logs (attempt $ATTEMPT):"
+              docker logs jadx-jar 2>&1 | tail -20
+            fi
+            
             echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: waiting... (HTTP $HTTP_CODE)"
             sleep 3
           done
           echo "❌ JADX failed to load JAR"
-          docker logs jadx-jar 2>&1 | tail -50
+          docker logs jadx-jar 2>&1 | tail -100
           exit 1
       
       - name: Set up Python
