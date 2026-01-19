@@ -31,10 +31,24 @@ open http://localhost:6080
 
 > 💡 **Auto-load**: Name your file `target.apk` (or `target.jar`) and JADX will load it automatically on startup.
 
-> 💡 **Let AI guide your installation?** Send this to Claude/ChatGPT:
-> ```
-> Guide me through installing JADX-AI-MCP using: https://raw.githubusercontent.com/xjoker/jadx-ai-mcp/jadx-ai/docs/getting-started/installation.md
-> ```
+<details>
+<summary>💡 <strong>Let AI guide your installation?</strong></summary>
+
+Send this to Claude/ChatGPT:
+
+```
+Guide me through installing JADX-AI-MCP step by step using this document:
+https://raw.githubusercontent.com/xjoker/jadx-ai-mcp/jadx-ai/docs/getting-started/installation.md
+
+Rules:
+1. Ask me one question at a time, wait for my response before proceeding
+2. Only use commands from the document, do not invent new ones
+3. After each step, ask me to paste the output before continuing
+4. If something fails, help me troubleshoot before moving on
+```
+
+> **If AI cannot access URLs**: Copy the content from [installation.md](docs/getting-started/installation.md) and paste it directly into the chat.
+</details>
 
 ---
 

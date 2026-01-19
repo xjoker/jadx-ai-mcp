@@ -5,17 +5,18 @@
 
 ---
 
-## Step 0: Language Detection / 语言检测
+## Step 0: Language / 语言选择
 
-**⚠️ IMPORTANT: Detect user's language first!**
+**Ask the user directly / 直接询问用户：**
 
-1. Check the user's system language or previous conversation language
-2. If Chinese (中文), respond in **Simplified Chinese** throughout
-3. Otherwise, respond in **English** by default
+> "Would you prefer English or 中文 for this installation guide?"  
+> "你希望使用 English 还是中文进行安装指导？"
+
+Then respond in the user's chosen language throughout.
 
 ---
 
-## Step 1: Understand User Environment / 了解用户环境
+## Step 1: User Environment / 了解用户环境
 
 Ask the user / 询问用户：
 
@@ -32,7 +33,7 @@ Ask the user / 询问用户：
 
 ---
 
-## Step 1: Check Docker / 检查 Docker
+## Step 2: Check Docker / 检查 Docker
 
 **Unix (macOS/Linux):**
 ```bash
@@ -84,17 +85,19 @@ Put any APK in `apks` folder, then in JADX Desktop: **File → Open → `/apks/y
 
 ---
 
-## Step 3: Start Container / 启动容器
+## Step 4: Start Container / 启动容器
 
 **⚠️ Adapt the volume path to user's chosen installation directory!**  
 **⚠️ 请根据用户选择的安装目录调整卷映射路径！**
 
+**⚠️ SECURITY: Default binds to localhost only. For network access, see Security section.**  
+**⚠️ 安全提示：默认仅绑定 localhost。如需网络访问，请参阅安全章节。**
+
 **Unix (macOS/Linux):**
 ```bash
 docker run -d --name jadx \
-  -p 6080:6080 \
-  -p 8650:8650 \
-  -p 8651:8651 \
+  -p 127.0.0.1:6080:6080 \
+  -p 127.0.0.1:8651:8651 \
   -v "$(pwd)/apks:/apks" \
   -v jadx-cache:/root/.cache \
   xjoker/jadx-ai-mcp:latest
@@ -103,9 +106,8 @@ docker run -d --name jadx \
 **Windows (PowerShell):**
 ```powershell
 docker run -d --name jadx `
-  -p 6080:6080 `
-  -p 8650:8650 `
-  -p 8651:8651 `
+  -p 127.0.0.1:6080:6080 `
+  -p 127.0.0.1:8651:8651 `
   -v "${PWD}\apks:/apks" `
   -v jadx-cache:/root/.cache `
   xjoker/jadx-ai-mcp:latest
@@ -113,17 +115,16 @@ docker run -d --name jadx `
 
 **Windows (CMD):**
 ```cmd
-docker run -d --name jadx -p 6080:6080 -p 8650:8650 -p 8651:8651 -v "%cd%\apks:/apks" -v jadx-cache:/root/.cache xjoker/jadx-ai-mcp:latest
+docker run -d --name jadx -p 127.0.0.1:6080:6080 -p 127.0.0.1:8651:8651 -v "%cd%\apks:/apks" -v jadx-cache:/root/.cache xjoker/jadx-ai-mcp:latest
 ```
 
 **Ports / 端口说明：**
 - `6080`: noVNC Desktop (浏览器访问 JADX 桌面)
-- `8650`: JADX Plugin API
-- `8651`: MCP Server
+- `8651`: MCP Server (AI 客户端连接端口)
 
 ---
 
-## Step 4: Access JADX Desktop / 访问 JADX 桌面
+## Step 5: Access JADX Desktop / 访问 JADX 桌面
 
 Tell user / 告诉用户：
 
@@ -138,21 +139,25 @@ Tell user / 告诉用户：
 
 ---
 
-## Step 5: Verify Services / 验证服务
+## Step 6: Verify Services / 验证服务
 
 **Unix (macOS/Linux):**
 ```bash
 docker ps | grep jadx
-curl http://localhost:8650/health   # Expected: {"status":"ok"}
-curl http://localhost:8651/health   # Expected: {"status":"ok"}
 ```
+```bash
+curl http://localhost:8651/health
+```
+Expected / 预期输出: `{"status":"ok"}`
 
 **Windows (PowerShell):**
 ```powershell
 docker ps | Select-String jadx
-Invoke-RestMethod http://localhost:8650/health   # Expected: @{status=ok}
-Invoke-RestMethod http://localhost:8651/health   # Expected: @{status=ok}
 ```
+```powershell
+Invoke-RestMethod http://localhost:8651/health
+```
+Expected / 预期输出: `@{status=ok}`
 
 ---
 
