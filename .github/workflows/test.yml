@@ -105,8 +105,10 @@ jobs:
       
       - name: Prepare fixtures
         run: |
+          echo "Workspace: ${{ github.workspace }}"
+          ls -la ${{ github.workspace }}/tests/fixtures/ || echo "No fixtures dir"
           mkdir -p /tmp/apks
-          cp tests/fixtures/jadx-test-library-1.0.0.jar /tmp/apks/target.jar
+          cp ${{ github.workspace }}/tests/fixtures/jadx-test-library-1.0.0.jar /tmp/apks/target.jar
           ls -la /tmp/apks/
       
       - name: Start JADX container with JAR
@@ -190,8 +192,10 @@ jobs:
       
       - name: Prepare fixtures
         run: |
+          echo "Workspace: ${{ github.workspace }}"
+          ls -la ${{ github.workspace }}/tests/fixtures/ || echo "No fixtures dir"
           mkdir -p /tmp/apks
-          cp tests/fixtures/jadx-test-app-1.0.0.apk /tmp/apks/target.apk
+          cp ${{ github.workspace }}/tests/fixtures/jadx-test-app-1.0.0.apk /tmp/apks/target.apk
           ls -la /tmp/apks/
       
       - name: Start JADX container with APK
