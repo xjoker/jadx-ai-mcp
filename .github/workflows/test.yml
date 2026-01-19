@@ -36,13 +36,43 @@ jobs:
       - name: Run unit tests
         run: |
           cd jadx-mcp-server
-          python -m pytest tests/ -v --tb=short
+          python -m pytest tests/ -v --tb=short --junit-xml=test-results.xml 2>&1 | tee test-output.txt
       
       - name: Test summary
         if: always()
         run: |
-          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "Layer 1+2 unit tests completed." >> $GITHUB_STEP_SUMMARY
+          cd jadx-mcp-server
+          echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract test statistics
+          if [ -f test-output.txt ]; then
+            # Get summary line (e.g., "57 passed, 1 error in 0.34s")
+            SUMMARY=$(grep -E "^(=+.*=+|passed|failed|error)" test-output.txt | tail -1)
+            echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Show passed tests
+            echo "### ✅ Passed Tests" >> $GITHUB_STEP_SUMMARY
+            grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_No passed tests found_" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Show failed tests if any
+            if grep -q "FAILED" test-output.txt; then
+              echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
+              grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Show errors if any
+            if grep -q "ERROR" test-output.txt; then
+              echo "### ⚠️ Errors" >> $GITHUB_STEP_SUMMARY
+              grep "ERROR" test-output.txt | sed 's/ERROR//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⚠️ Test output file not found" >> $GITHUB_STEP_SUMMARY
+          fi
 
   # Optional: Integration tests with JADX container
   # Disabled by default to save CI costs
