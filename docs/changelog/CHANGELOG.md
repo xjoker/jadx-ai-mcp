@@ -8,6 +8,33 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.0.54] - 2026-01-19
+
+### Added
+- **Response Chunking System** for large outputs (>8KB)
+  - `SmartChunker` utility class for automatic content splitting
+  - Prevents MCP client truncation (Gemini 16KB, Codex 10KB limits)
+  - Backward compatible: small responses (<8KB) unchanged
+  
+### Changed
+- **6 tools now support chunking**:
+  - `get_class_source` — Large class sources split into chunks
+  - `get_smali_of_class` — Large Smali code split into chunks
+  - `get_android_manifest` — Large manifests split into chunks
+  - `fetch_current_class` — Current class chunking support
+  - `get_main_activity_class` —Main activity chunking support
+  - `get_resource_file` — Resource file chunking support
+- All tools add `chunk` parameter (default: 0)
+- Responses >8KB include `_chunking` metadata with navigation info
+
+### Technical
+- **SmartChunker tested**: 5 unit tests pass (small/large/chunk/error/null)
+- Chunk size: 8KB (8000 bytes)
+- Metadata includes: `total_chunks`, `current_chunk`, `has_more`, `next_chunk`
+- Documentation updated: `docs/reference/tools.md` Response Chunking section
+
+---
+
 ## [6.1.1] - 2026-01-18
 
 ### 📚 Documentation Restructure

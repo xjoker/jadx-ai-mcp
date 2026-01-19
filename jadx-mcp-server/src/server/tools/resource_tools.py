@@ -13,20 +13,29 @@ from src.server.config import get_from_jadx
 from src.PaginationUtils import PaginationUtils
 
 
-async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
+async def get_android_manifest(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """
     Retrieve and return the AndroidManifest.xml content.
 
+    CHUNKING SUPPORT: Large manifests (>8KB) are automatically chunked.
+    - If response contains `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+
     Args:
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Parsed AndroidManifest.xml with permissions, activities, and metadata
+        dict: Contains:
+            - content: AndroidManifest.xml content (or chunk of it)
+            - _chunking: (only for large responses) {enabled, total_chunks, current_chunk, has_more}
 
     MCP Tool: get_android_manifest
     Description: Extracts app configuration, permissions, and component declarations
     """
-    return await get_from_jadx("manifest", instance_id=instance_id)
+    params = {}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+    return await get_from_jadx("manifest", params, instance_id=instance_id)
 
 
 async def get_strings(
@@ -97,25 +106,34 @@ async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_
     )
 
 
-async def get_resource_file(resource_name: str, instance_id: Optional[str] = None) -> dict:
+async def get_resource_file(resource_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """
     Retrieve resource file content.
 
+    CHUNKING SUPPORT: Large resource files (>8KB) are automatically chunked.
+    - If response contains `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+
     NOTE: Some APKs use resource obfuscation (e.g., ResourceGuard), which may remove or rename
     resource files like res/layout/*.xml. Use get_all_resource_file_names first to check
-    which resources exist. Very large files (e.g., strings.xml with 15000+ entries) may timeout.
+    which resources exist.
 
     Args:
         resource_name: Path to the resource file (e.g., res/layout/activity_main.xml)
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Contents of the specified resource file
+        dict: Contains:
+            - content: Resource file content (or chunk of it)
+            - _chunking: (only for large responses) {enabled, total_chunks, current_chunk, has_more}
 
     MCP Tool: get_resource_file
     Description: Fetches content of any resource file by path
     """
-    return await get_from_jadx("get-resource-file", {"file_name": resource_name}, instance_id=instance_id)
+    params = {"file_name": resource_name}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+    return await get_from_jadx("get-resource-file", params, instance_id=instance_id)
 
 
 # ============================================================================

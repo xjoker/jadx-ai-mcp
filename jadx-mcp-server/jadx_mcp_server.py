@@ -72,16 +72,16 @@ from typing import Optional
 
 @mcp.tool()
 @with_busy_check
-async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
+async def fetch_current_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """Fetch the currently selected class and its code from the JADX-GUI.
     
-    Args:
-        instance_id: Target JADX instance name.
+    CHUNKING: Large classes (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
     
-    Returns:
-        dict: {class_name: str, source: str, package: str}
+    Args:
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
+        instance_id: Target JADX instance name.
     """
-    return await tools.class_tools.fetch_current_class(instance_id=instance_id)
+    return await tools.class_tools.fetch_current_class(chunk=chunk, instance_id=instance_id)
 
 
 @mcp.tool()
@@ -124,14 +124,18 @@ async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional
 
 @mcp.tool()
 @with_busy_check
-async def get_class_source(class_name: str, instance_id: Optional[str] = None) -> dict:
+async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """Fetch the Java source of a specific class.
+    
+    CHUNKING: Large classes (>8KB) are automatically chunked. If response contains
+    `_chunking.has_more=true`, call again with chunk=N to get remaining content.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.class_tools.get_class_source(class_name, instance_id=instance_id)
+    return await tools.class_tools.get_class_source(class_name, chunk=chunk, instance_id=instance_id)
 
 
 @mcp.tool()
@@ -248,28 +252,33 @@ async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None
 
 @mcp.tool()
 @with_busy_check
-async def get_smali_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
+async def get_smali_of_class(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """Fetch the smali (Dalvik bytecode) representation of a class.
+    
+    CHUNKING: Large Smali output (>8KB) is automatically chunked. Classes with 40+ methods
+    often produce >40KB Smali. If response contains `_chunking.has_more=true`, call again
+    with chunk=N to get remaining content.
 
     Args:
         class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
-    return await tools.class_tools.get_smali_of_class(class_name, instance_id=instance_id)
+    return await tools.class_tools.get_smali_of_class(class_name, chunk=chunk, instance_id=instance_id)
 
 
 @mcp.tool()
 @with_busy_check
-async def get_android_manifest(instance_id: Optional[str] = None) -> dict:
+async def get_android_manifest(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """Retrieve and return the AndroidManifest.xml content.
     
-    Args:
-        instance_id: Target JADX instance name.
+    CHUNKING: Large manifests (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
     
-    Returns:
-        dict: {manifest: str, package: str, activities: [...], permissions: [...]}
+    Args:
+        chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
+        instance_id: Target JADX instance name.
     """
-    return await tools.resource_tools.get_android_manifest(instance_id=instance_id)
+    return await tools.resource_tools.get_android_manifest(chunk=chunk, instance_id=instance_id)
 
 
 @mcp.tool()
@@ -336,17 +345,17 @@ async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_
 
 @mcp.tool()
 @with_busy_check
-async def get_resource_file(resource_name: str, instance_id: Optional[str] = None) -> dict:
+async def get_resource_file(resource_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """Retrieve resource file content by name.
+    
+    CHUNKING: Large files (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
     
     Args:
         resource_name: Resource file path (e.g., 'res/layout/activity_main.xml').
+        chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
         instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {content: str, size: int, is_binary: bool}
     """
-    return await tools.resource_tools.get_resource_file(resource_name, instance_id=instance_id)
+    return await tools.resource_tools.get_resource_file(resource_name, chunk=chunk, instance_id=instance_id)
 
 
 # ============================================================================
@@ -542,16 +551,16 @@ async def get_main_application_classes_code(offset: int = 0, count: int = 0, ins
 
 @mcp.tool()
 @with_busy_check
-async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
+async def get_main_activity_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """Fetch the main activity class name from AndroidManifest.xml.
 
+    CHUNKING: Large activity classes (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
+
     Args:
+        chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
         instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {class_name: str, source: str, package: str}
     """
-    return await tools.class_tools.get_main_activity_class(instance_id=instance_id)
+    return await tools.class_tools.get_main_activity_class(chunk=chunk, instance_id=instance_id)
 
 
 @mcp.tool()

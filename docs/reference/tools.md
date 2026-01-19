@@ -83,7 +83,7 @@
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
 | `get_file_info()` | `instance_id?` | **Recommended first call**. Returns file type, class count, recommended tools |
-| `get_class_source(class_name)` | `class_name`, `instance_id?` | Get full class source |
+| `get_class_source(class_name)` | `class_name`, `chunk=0`, `instance_id?` | Get full class source. **Auto-chunks >8KB responses** |
 | `get_method_by_name(class_name, method_name)` | `class_name`, `method_name`, `instance_id?` | Get method source |
 | `get_class_info(class_name)` | `class_name`, `instance_id?` | Class structure: inheritance, interfaces, method/field count, native methods |
 | `get_method_signature(class_name, method_name)` | `class_name`, `method_name`, `instance_id?` | Returns Frida-compatible signature (`frida_overload`) |
@@ -126,7 +126,7 @@
 | `get_android_manifest()` | `instance_id?` | Get AndroidManifest.xml |
 | `get_main_activity_class()` | `instance_id?` | Get main Activity from Manifest |
 | `get_strings(mode, query, key)` | `mode="summary"`, `query?`, `key?`, `locale="values"`, `offset=0`, `limit=50`, `instance_id?` | Modes: `summary`/`list`/`search`/`get` |
-| `get_smali_of_class(class_name)` | `class_name`, `instance_id?` | Dalvik bytecode |
+| `get_smali_of_class(class_name)` | `class_name`, `chunk=0`, `instance_id?` | Dalvik bytecode. **Auto-chunks >8KB responses** |
 
 ### Rename Tools
 
@@ -161,6 +161,40 @@
 | Code search | Prefer `search_in="class"` or `"method"`, avoid `"code"` |
 | Many classes | Use `batch_get_class_source` to reduce request count |
 | Check status | Call `get_decompile_status()` to check cache hit rate |
+
+---
+
+## 🧩 Response Chunking
+
+Large responses (>8KB) are automatically chunked to prevent MCP client truncation.
+
+| Scenario | Behavior |
+|:---------|:---------|
+| Response ≤8KB | Returns full content directly |
+| Response >8KB | Returns first chunk + `_chunking` metadata |
+
+**Chunking Metadata Example:**
+```json
+{
+  "content": "...first 8KB...",
+  "_chunking": {
+    "enabled": true,
+    "total_size": 45000,
+    "total_chunks": 6,
+    "current_chunk": 1,
+    "has_more": true,
+    "next_chunk": 2
+  }
+}
+```
+
+**To get remaining chunks:**
+```python
+# If _chunking.has_more == true, call again with chunk=N
+result = get_smali_of_class(class_name="...", chunk=2)
+```
+
+**Affected Tools:** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `fetch_current_class`, `get_main_activity_class`, `get_resource_file`
 
 ---
 

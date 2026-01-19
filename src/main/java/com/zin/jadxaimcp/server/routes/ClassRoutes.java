@@ -122,16 +122,32 @@ public class ClassRoutes {
      *         the text from that UI component.
      * 
      *         After getting the code it returns it.
+     *         
+     *         Supports chunking for large responses (>8KB).
      */
     public void handleCurrentClass(Context ctx) {
         try {
+            // Parse chunk parameter
+            int chunk = 0;
+            String chunkParam = ctx.queryParam("chunk");
+            if (chunkParam != null && !chunkParam.isEmpty()) {
+                try {
+                    chunk = Integer.parseInt(chunkParam.trim());
+                } catch (NumberFormatException e) {
+                    JadxAIMCPPluginError.handleError(ctx, 400, "Invalid chunk parameter: " + chunkParam, logger);
+                    return;
+                }
+            }
+
             String className = getSelectedTabTitle();
             String code = extractTextFromCurrentTab();
 
-            Map<String, String> result = new HashMap<>();
+            // Use SmartChunker for large responses
+            Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                code != null ? code : "", chunk, "content");
+            
             result.put("name", className != null ? className.replace(".java", "") : "unknown");
             result.put("type", "code/java");
-            result.put("content", code != null ? code : "");
 
             ctx.json(result);
         } catch (Exception e) {
@@ -212,23 +228,48 @@ public class ClassRoutes {
      *         by fetching the classes one by one and compares it with the requested
      *         class name, if
      *         it matches returns the requested classe's code.
+     *         
+     *         Supports chunking for large responses:
+     *         - chunk=0 or not specified: Returns first chunk with metadata
+     *         - chunk=N: Returns the Nth chunk
+     *         
+     *         Responses larger than 8KB are automatically chunked to prevent
+     *         truncation by MCP clients.
      */
     public void handleClassSource(Context ctx) {
         String className = checkClassParam(ctx);
         if (className == null)
             return;
 
-        // Removing this line to solve issue #37 as raised and contributed by
-        // github@ljt270864457
-        // This solves following bug -> Bug: Inner classes with $ symbol cannot be
-        // retrieved via /class-source endpoint
-        // className = className.replace('$', '.');
+        // Parse chunk parameter (0 = first chunk with metadata, N = specific chunk)
+        int chunk = 0;
+        String chunkParam = ctx.queryParam("chunk");
+        if (chunkParam != null && !chunkParam.isEmpty()) {
+            try {
+                chunk = Integer.parseInt(chunkParam.trim());
+            } catch (NumberFormatException e) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Invalid chunk parameter: " + chunkParam, logger);
+                return;
+            }
+        }
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
-                    ctx.result(cls.getCode());
+                    String code = cls.getCode();
+                    
+                    // Use SmartChunker for automatic chunking of large responses
+                    Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                        code, chunk, "response");
+                    
+                    // Check for chunking errors
+                    if (result.containsKey("error")) {
+                        JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
+                        return;
+                    }
+                    
+                    ctx.json(result);
                     return;
                 }
             }
@@ -527,11 +568,30 @@ public class ClassRoutes {
      *         After finding that class it fetch smali of that class and returns it.
      *         
      *         Note: Smali is only available for APK/DEX files, not JAR files.
+     *         
+     *         Supports chunking for large responses:
+     *         - chunk=0 or not specified: Returns first chunk with metadata
+     *         - chunk=N: Returns the Nth chunk
+     *         
+     *         Smali output is typically large (>8KB for classes with 10+ methods).
+     *         Automatic chunking prevents truncation by MCP clients.
      */
     public void handleSmaliOfClass(Context ctx) {
         String className = checkClassParam(ctx);
         if (className == null)
             return;
+
+        // Parse chunk parameter (0 = first chunk with metadata, N = specific chunk)
+        int chunk = 0;
+        String chunkParam = ctx.queryParam("chunk");
+        if (chunkParam != null && !chunkParam.isEmpty()) {
+            try {
+                chunk = Integer.parseInt(chunkParam.trim());
+            } catch (NumberFormatException e) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Invalid chunk parameter: " + chunkParam, logger);
+                return;
+            }
+        }
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
@@ -555,7 +615,18 @@ public class ClassRoutes {
                             ". This may indicate the class was loaded from a non-DEX source.", logger);
                         return;
                     }
-                    ctx.result(smali);
+                    
+                    // Use SmartChunker for automatic chunking of large Smali responses
+                    Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                        smali, chunk, "response");
+                    
+                    // Check for chunking errors
+                    if (result.containsKey("error")) {
+                        JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
+                        return;
+                    }
+                    
+                    ctx.json(result);
                     return;
                 }
             }
@@ -704,6 +775,18 @@ public class ClassRoutes {
      */
     public void handleMainActivity(Context ctx) {
         try {
+            // Parse chunk parameter
+            int chunk = 0;
+            String chunkParam = ctx.queryParam("chunk");
+            if (chunkParam != null && !chunkParam.isEmpty()) {
+                try {
+                    chunk = Integer.parseInt(chunkParam.trim());
+                } catch (NumberFormatException e) {
+                    JadxAIMCPPluginError.handleError(ctx, 400, "Invalid chunk parameter: " + chunkParam, logger);
+                    return;
+                }
+            }
+
             JadxWrapper wrapper = mainWindow.getWrapper();
             
             // Check file type - Main Activity only available for Android files
@@ -744,8 +827,14 @@ public class ClassRoutes {
                 return;
             }
 
-            ctx.json(Map.of("name", mainActivityClass.getFullName(), "type", "code/java", "content",
-                    mainActivityClass.getCode()));
+            // Use SmartChunker for large responses
+            String code = mainActivityClass.getCode();
+            Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                code, chunk, "content");
+            result.put("name", mainActivityClass.getFullName());
+            result.put("type", "code/java");
+            
+            ctx.json(result);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx,
                     "Internal error occurred while trying to get the Main Activity class code: " + e.getMessage(), e,

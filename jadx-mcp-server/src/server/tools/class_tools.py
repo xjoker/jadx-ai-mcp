@@ -17,21 +17,30 @@ from src.server.logging_config import get_logger
 logger = get_logger("class_tools")
 
 
-async def fetch_current_class(instance_id: Optional[str] = None) -> dict:
+async def fetch_current_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """
-    Fetch the currently selected class and its code from the JADX-GUI plugin.
+    Retrieves the currently opened class in JADX-GUI.
+
+    CHUNKING SUPPORT: Large classes (>8KB) are automatically chunked.
+    - If response contains `_chunking.has_more=true`, call again with chunk=N to get remaining content.
 
     Args:
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Contains class name, package, and decompiled Java source code
+        dict: Contains:
+            - content: Current class source code (or chunk of it)
+            - _chunking: (only for large responses) {enabled, total_chunks, current_chunk, has_more}
 
     MCP Tool: fetch_current_class
-    Description: Retrieves the class currently open in JADX-GUI editor
+    Description: Gets code from the active JADX tab for context-aware analysis
     """
-    logger.info(f"fetch_current_class: instance={instance_id}")
-    result = await get_from_jadx("current-class", instance_id=instance_id)
+    params = {}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+    
+    result = await get_from_jadx("current-class", params, instance_id=instance_id)
     if "error" in result:
         logger.warning(f"fetch_current_class error: {result.get('error')}")
     elif not result.get("class_name"):
@@ -57,25 +66,35 @@ async def get_selected_text(instance_id: Optional[str] = None) -> dict:
     return await get_from_jadx("selected-text", instance_id=instance_id)
 
 
-async def get_class_source(class_name: str, instance_id: Optional[str] = None) -> dict:
+async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """
     Fetch the Java source of a specific class.
 
-    WARNING: Very large classes (e.g., R.class with 10000+ fields) may cause timeout.
+    CHUNKING SUPPORT: Large classes (>8KB) are automatically chunked.
+    - If response contains `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+    - Small classes are returned in full (no chunking).
+
+    WARNING: Very large classes (e.g., R.class) may require multiple chunk calls.
     For large classes, consider using get_method_by_name to fetch specific methods,
     or get_class_info to get class structure first.
 
     Args:
         class_name: Fully qualified class name (e.g., com.example.MainActivity)
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Contains complete decompiled Java source code for the class
+        dict: Contains:
+            - response: Java source code (or chunk of it)
+            - _chunking: (only for large responses) {enabled, total_chunks, current_chunk, has_more}
 
     MCP Tool: get_class_source
     Description: Retrieves decompiled Java source for any class in the APK
     """
-    return await get_from_jadx("class-source", {"class_name": class_name}, instance_id=instance_id)
+    params = {"class_name": class_name}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+    return await get_from_jadx("class-source", params, instance_id=instance_id)
 
 
 async def batch_get_class_source(class_names: list[str], instance_id: Optional[str] = None) -> dict:
@@ -202,25 +221,39 @@ async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None
     return await get_from_jadx("fields-of-class", {"class_name": class_name}, instance_id=instance_id)
 
 
-async def get_smali_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
+async def get_smali_of_class(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """
     Fetch the smali representation of a class.
 
+    CHUNKING SUPPORT: Large Smali output (>8KB, typical for classes with 10+ methods)
+    is automatically chunked to prevent MCP client truncation.
+    - If response contains `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+    - Small classes are returned in full (no chunking).
+
+    IMPORTANT: Classes with 40+ methods often produce Smali >40KB, requiring 5+ chunk calls.
+    Consider using get_method_by_name for specific methods if only partial analysis is needed.
+
     Args:
         class_name: Fully qualified class name (for inner classes use $ syntax: OuterClass$InnerClass)
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Smali/Dalvik bytecode representation of the class
+        dict: Contains:
+            - response: Smali/Dalvik bytecode (or chunk of it)
+            - _chunking: (only for large responses) {enabled, total_chunks, current_chunk, has_more, warning}
 
     MCP Tool: get_smali_of_class
     Description: Retrieves low-level smali bytecode for advanced analysis
     """
-    # Auto-convert dot to $ for inner classes if needed
     normalized_name = class_name
-    logger.info(f"get_smali_of_class: class={class_name}, instance={instance_id}")
+    logger.info(f"get_smali_of_class: class={class_name}, chunk={chunk}, instance={instance_id}")
     
-    result = await get_from_jadx("smali-of-class", {"class_name": normalized_name}, instance_id=instance_id)
+    params = {"class_name": normalized_name}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+    
+    result = await get_from_jadx("smali-of-class", params, instance_id=instance_id)
     if "error" in result:
         logger.warning(f"get_smali_of_class error: {result.get('error')}")
     return result
@@ -270,20 +303,29 @@ async def get_main_application_classes_code(offset: int = 0, count: int = 0, ins
     )
 
 
-async def get_main_activity_class(instance_id: Optional[str] = None) -> dict:
+async def get_main_activity_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
     """
     Fetch the main activity class as defined in the AndroidManifest.xml.
 
+    CHUNKING SUPPORT: Large activity classes (>8KB) are automatically chunked.
+    - If response contains `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+
     Args:
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Main launcher activity class name and source code
+        dict: Contains:
+            - content: Main activity class source code (or chunk of it)
+            - _chunking: (only for large responses) {enabled, total_chunks, current_chunk, has_more}
 
     MCP Tool: get_main_activity_class
     Description: Identifies and retrieves the app's entry point activity
     """
-    return await get_from_jadx("main-activity", instance_id=instance_id)
+    params = {}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+    return await get_from_jadx("main-activity", params, instance_id=instance_id)
 
 
 async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> dict:

@@ -8,6 +8,33 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.0.54] - 2026-01-19
+
+### 新增
+- **响应分片系统** 适用于大型输出 (>8KB)
+  - `SmartChunker` 工具类实现自动内容分片
+  - 防止 MCP 客户端截断（Gemini 16KB、Codex 10KB 限制）
+  - 向后兼容：小响应（<8KB）保持不变
+  
+### 变更
+- **6 个工具现已支持分片**：
+  - `get_class_source` — 大类源码自动分片
+  - `get_smali_of_class` — 大型 Smali 代码自动分片
+  - `get_android_manifest` — 大型清单文件自动分片
+  - `fetch_current_class` — 当前类分片支持
+  - `get_main_activity_class` — 主活动分片支持
+  - `get_resource_file` — 资源文件分片支持
+- 所有工具添加 `chunk` 参数（默认值：0）
+- 响应 >8KB 时包含 `_chunking` 元数据与导航信息
+
+### 技术细节
+- **SmartChunker 测试通过**：5 个单元测试（小/大/分片/错误/空）
+- 分片大小：8KB (8000 字节)
+- 元数据包含：`total_chunks`、`current_chunk`、`has_more`、`next_chunk`
+- 文档已更新：`docs/reference/tools.md` 响应分片章节
+
+---
+
 ## [6.1.1] - 2026-01-18
 
 ### 📚 文档结构重构

@@ -85,6 +85,18 @@ public class ResourceRoutes {
      */
     public void handleManifest(Context ctx) {
         try {
+            // Parse chunk parameter
+            int chunk = 0;
+            String chunkParam = ctx.queryParam("chunk");
+            if (chunkParam != null && !chunkParam.isEmpty()) {
+                try {
+                    chunk = Integer.parseInt(chunkParam.trim());
+                } catch (NumberFormatException e) {
+                    JadxAIMCPPluginError.handleError(ctx, 400, "Invalid chunk parameter: " + chunkParam, logger);
+                    return;
+                }
+            }
+
             // Check file type - Manifest only available for Android files
             JadxWrapper wrapper = mainWindow.getWrapper();
             com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
@@ -102,7 +114,14 @@ public class ResourceRoutes {
             }
             ResContainer container = manifest.loadContent();
             String content = container.getText().getCodeStr();
-            ctx.json(Map.of("name", manifest.getOriginalName(), "type", "manifest/xml", "content", content));
+            
+            // Use SmartChunker for large manifests
+            Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                content, chunk, "content");
+            result.put("name", manifest.getOriginalName());
+            result.put("type", "manifest/xml");
+            
+            ctx.json(result);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to fetch the AndroidManifest.xml file: " + e.getMessage(), e, logger);
         }
@@ -585,15 +604,37 @@ public class ResourceRoutes {
             return;
         }
 
+        // Parse chunk parameter
+        int chunk = 0;
+        String chunkParam = ctx.queryParam("chunk");
+        if (chunkParam != null && !chunkParam.isEmpty()) {
+            try {
+                chunk = Integer.parseInt(chunkParam.trim());
+            } catch (NumberFormatException e) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Invalid chunk parameter: " + chunkParam, logger);
+                return;
+            }
+        }
+
         try {
             // 1. Try reading from GUI tabs first (instant, non-blocking)
             List<Map<String, String>> openedFiles = getOpenedResourceTabs(fileName);
             if (!openedFiles.isEmpty()) {
+                String content = openedFiles.get(0).get("content");
+                
+                // Use SmartChunker for large resource files
+                Map<String, Object> chunkedResult = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                    content, chunk, "content");
+                
                 Map<String, Object> result = new HashMap<>();
                 result.put("type", "resource/text");
                 result.put("status", "success");
                 result.put("source", "gui_tabs");
-                result.put("file", Map.of("file_name", openedFiles.get(0).get("name"), "content", openedFiles.get(0).get("content")));
+                result.put("file_name", openedFiles.get(0).get("name"));
+                
+                // Merge chunking info
+                result.putAll(chunkedResult);
+                
                 ctx.json(result);
                 return;
             }
@@ -603,11 +644,21 @@ public class ResourceRoutes {
             Map<String, Object> edtResult = loadResourceViaEDT(fileName);
             
             if ("success".equals(edtResult.get("status"))) {
+                String content = (String) edtResult.get("content");
+                
+                // Use SmartChunker for large resource files
+                Map<String, Object> chunkedResult = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                    content, chunk, "content");
+                
                 Map<String, Object> result = new HashMap<>();
                 result.put("type", "resource/text");
                 result.put("status", "success");
                 result.put("source", "edt_loading");
-                result.put("file", Map.of("file_name", fileName, "content", edtResult.get("content")));
+                result.put("file_name", fileName);
+                
+                // Merge chunking info
+                result.putAll(chunkedResult);
+                
                 ctx.json(result);
                 return;
             }
