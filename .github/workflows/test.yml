@@ -99,22 +99,49 @@ jobs:
     # Only run when manually triggered with layer3 or all
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.test_layer == 'layer3' || github.event.inputs.test_layer == 'all')
     
-    services:
-      jadx:
-        image: xjoker/jadx-ai-mcp:latest
-        ports:
-          - 8650:8650
-          - 8651:8651
-        options: >-
-          --health-cmd "supervisorctl status mcp-server | grep RUNNING || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 15
-          --health-start-period 90s
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Start JADX container
+        run: |
+          echo "🚀 Starting JADX-AI-MCP container..."
+          docker run -d --name jadx \
+            -p 8650:8650 \
+            -p 8651:8651 \
+            xjoker/jadx-ai-mcp:latest
+          
+          echo "Container started, waiting for services..."
+      
+      - name: Wait for JADX to be ready
+        run: |
+          echo "⏳ Waiting for JADX services to start..."
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            
+            # Check if MCP server is responding
+            if curl -sf http://localhost:8651/health > /dev/null 2>&1; then
+              echo "✅ MCP Server is ready!"
+              
+              # Also verify JADX Plugin API
+              if curl -sf http://localhost:8650/health > /dev/null 2>&1; then
+                echo "✅ JADX Plugin API is ready!"
+                echo "🎉 All services are healthy!"
+                exit 0
+              fi
+            fi
+            
+            echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: services starting..."
+            sleep 3
+          done
+          
+          echo "❌ Services failed to start in time"
+          echo "📋 Container logs:"
+          docker logs jadx
+          exit 1
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -127,19 +154,19 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx respx
       
-      - name: Wait for JADX service
-        run: |
-          echo "Waiting for JADX to be ready..."
-          for i in {1..30}; do
-            if curl -s http://localhost:8650/health; then
-              echo "JADX is ready!"
-              break
-            fi
-            echo "Attempt $i: waiting..."
-            sleep 2
-          done
-      
       - name: Run integration tests
         run: |
           cd jadx-mcp-server
           python -m pytest tests/integration/ -v --tb=short || echo "No integration tests found"
+      
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "📋 JADX Container Logs:"
+          docker logs jadx
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop jadx || true
+          docker rm jadx || true
