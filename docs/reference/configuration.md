@@ -63,11 +63,24 @@ port = 8650
 
 ### Environment Variables
 
+#### JADX Plugin (Java) Environment Variables
+
 | Variable | Description | Default |
 |:---------|:------------|:--------|
-| `JADX_MCP_AUTH_TOKEN` | Authentication token for MCP | (none) |
-| `JADX_HOST` | Default JADX host | `127.0.0.1` |
-| `JADX_PORT` | Default JADX port | `8650` |
+| `JADX_MCP_BIND_ADDRESS` | Plugin HTTP server bind address | `127.0.0.1` |
+| `JADX_MCP_PORT` | Plugin HTTP server port | `8650` |
+| `JADX_MCP_AUTH_TOKEN` | Plugin authentication token | (none) |
+| `JADX_MCP_AUTH_ENABLED` | Enable authentication | `false` |
+
+> 💡 Set `JADX_MCP_BIND_ADDRESS=0.0.0.0` to allow remote connections (Docker required).
+
+#### MCP Server (Python) Environment Variables
+
+| Variable | Description | Default |
+|:---------|:------------|:--------|
+| `JADX_MCP_HOST` | MCP Server bind address | `0.0.0.0` |
+| `JADX_HOST` | Default JADX plugin host | `127.0.0.1` |
+| `JADX_PORT` | Default JADX plugin port | `8650` |
 
 ### Configuration Priority
 

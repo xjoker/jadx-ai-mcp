@@ -63,11 +63,24 @@ port = 8650
 
 ### 环境变量
 
+#### JADX 插件 (Java) 环境变量
+
 | 变量 | 说明 | 默认值 |
 |:-----|:-----|:-------|
-| `JADX_MCP_AUTH_TOKEN` | MCP 认证 Token | (无) |
-| `JADX_HOST` | 默认 JADX 主机 | `127.0.0.1` |
-| `JADX_PORT` | 默认 JADX 端口 | `8650` |
+| `JADX_MCP_BIND_ADDRESS` | 插件 HTTP 服务绑定地址 | `127.0.0.1` |
+| `JADX_MCP_PORT` | 插件 HTTP 服务端口 | `8650` |
+| `JADX_MCP_AUTH_TOKEN` | 插件认证 Token | (无) |
+| `JADX_MCP_AUTH_ENABLED` | 启用认证 | `false` |
+
+> 💡 设置 `JADX_MCP_BIND_ADDRESS=0.0.0.0` 允许远程连接（Docker 部署必需）。
+
+#### MCP Server (Python) 环境变量
+
+| 变量 | 说明 | 默认值 |
+|:-----|:-----|:-------|
+| `JADX_MCP_HOST` | MCP Server 绑定地址 | `0.0.0.0` |
+| `JADX_HOST` | 默认 JADX 插件主机 | `127.0.0.1` |
+| `JADX_PORT` | 默认 JADX 插件端口 | `8650` |
 
 ### 配置优先级
 
@@ -78,7 +91,7 @@ port = 8650
 
 ---
 
-## Related / 相关
+## 相关文档
 
-- [Security](../security/security.zh-cn.md)
-- [Multi-Instance Deployment](../deployment/docker-compose.zh-cn.md)
+- [安全配置](../security/security.zh-cn.md)
+- [多实例部署](../deployment/docker-compose.zh-cn.md)

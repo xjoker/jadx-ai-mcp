@@ -29,6 +29,8 @@ open http://localhost:6080
 
 **That's it!** Put your APK or JAR in `~/apks/`, open it in JADX, and let AI analyze it.
 
+> 💡 **Auto-load**: Name your file `target.apk` (or `target.jar`) and JADX will load it automatically on startup.
+
 > 💡 **Let AI guide your installation?** Send this to Claude/ChatGPT:
 > ```
 > Guide me through installing JADX-AI-MCP using: https://raw.githubusercontent.com/xjoker/jadx-ai-mcp/jadx-ai/docs/getting-started/installation.md

@@ -79,6 +79,27 @@ docker run -d --name jadx-ai-mcp \
 
 > **Tip**: First code search on large APK triggers decompilation (slow). Subsequent searches are fast due to cache.
 
+### Environment Variables Reference
+
+#### JADX Plugin (Java)
+
+| Variable | Description | Default |
+|:---------|:------------|:--------|
+| `JADX_MCP_BIND_ADDRESS` | HTTP server bind address | `127.0.0.1` |
+| `JADX_MCP_PORT` | HTTP server port | `8650` |
+| `JADX_MCP_AUTH_TOKEN` | Authentication token | (none) |
+| `JADX_MCP_AUTH_ENABLED` | Enable authentication | `false` |
+
+> **Important**: Set `JADX_MCP_BIND_ADDRESS=0.0.0.0` for Docker multi-container deployments.
+
+#### MCP Server (Python)
+
+| Variable | Description | Default |
+|:---------|:------------|:--------|
+| `JADX_MCP_HOST` | MCP Server bind address | `0.0.0.0` |
+| `JADX_HOST` | Default JADX plugin host | `127.0.0.1` |
+| `JADX_PORT` | Default JADX plugin port | `8650` |
+
 ### Standalone MCP Server
 
 For production environments connecting to external JADX instances:

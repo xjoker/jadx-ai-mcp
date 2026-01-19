@@ -79,6 +79,27 @@ docker run -d --name jadx-ai-mcp \
 
 > **提示**：首次对大型 APK 进行代码搜索会触发反编译（较慢），后续搜索会利用缓存快速响应。
 
+### 环境变量参考
+
+#### JADX 插件 (Java)
+
+| 变量 | 说明 | 默认值 |
+|:-----|:-----|:-------|
+| `JADX_MCP_BIND_ADDRESS` | HTTP 服务绑定地址 | `127.0.0.1` |
+| `JADX_MCP_PORT` | HTTP 服务端口 | `8650` |
+| `JADX_MCP_AUTH_TOKEN` | 认证 Token | (无) |
+| `JADX_MCP_AUTH_ENABLED` | 启用认证 | `false` |
+
+> **重要**：多容器部署时需设置 `JADX_MCP_BIND_ADDRESS=0.0.0.0`。
+
+#### MCP Server (Python)
+
+| 变量 | 说明 | 默认值 |
+|:-----|:-----|:-------|
+| `JADX_MCP_HOST` | MCP Server 绑定地址 | `0.0.0.0` |
+| `JADX_HOST` | 默认 JADX 插件主机 | `127.0.0.1` |
+| `JADX_PORT` | 默认 JADX 插件端口 | `8650` |
+
 ### 独立 MCP Server
 
 用于生产环境连接外部 JADX 实例：
