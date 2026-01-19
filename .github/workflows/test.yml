@@ -93,54 +93,50 @@ jobs:
   # Optional: Integration tests with JADX container
   # Disabled by default to save CI costs
   # Manually trigger via workflow_dispatch
-  integration:
-    name: Integration Tests (Layer 3)
+  # Layer 3 - JAR Integration Tests
+  integration-jar:
+    name: Integration Tests - JAR (Layer 3)
     runs-on: ubuntu-latest
-    # Only run when manually triggered with layer3 or all
     if: github.event_name == 'workflow_dispatch' && (github.event.inputs.test_layer == 'layer3' || github.event.inputs.test_layer == 'all')
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Start JADX container
+      - name: Prepare fixtures
         run: |
-          echo "🚀 Starting JADX-AI-MCP container..."
-          docker run -d --name jadx \
+          mkdir -p /tmp/apks
+          cp tests/fixtures/jadx-test-library-1.0.0.jar /tmp/apks/target.jar
+          ls -la /tmp/apks/
+      
+      - name: Start JADX container with JAR
+        run: |
+          echo "🚀 Starting JADX container with JAR file..."
+          docker run -d --name jadx-jar \
             -p 8650:8650 \
             -p 8651:8651 \
-            -v ${{ github.workspace }}/tests/fixtures:/fixtures:ro \
+            -v /tmp/apks:/apks:ro \
             xjoker/jadx-ai-mcp:latest
           
-          echo "Container started with fixtures mounted, waiting for services..."
+          echo "Container started, waiting for JAR to load..."
       
       - name: Wait for JADX to be ready
         run: |
-          echo "⏳ Waiting for MCP Server to start..."
+          echo "⏳ Waiting for JADX to load JAR..."
           MAX_ATTEMPTS=60
-          ATTEMPT=0
-          
-          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            
-            # Check if MCP server is responding
-            # Remove -f to get actual HTTP status code (404 is acceptable - server is running)
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8651/ 2>/dev/null || echo "000")
-            
-            # Accept any HTTP response (200, 404, etc.) as success - server is running
-            if [ "$HTTP_CODE" != "000" ]; then
-              echo "✅ MCP Server is responding (HTTP $HTTP_CODE)"
-              echo "🎉 Container is ready for testing!"
+          for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
+            # Check if JADX Plugin API responds (needs file loaded)
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8650/apk-info 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ JADX Plugin API is ready (JAR loaded)"
+              curl -s http://localhost:8650/apk-info | head -100
               exit 0
             fi
-            
             echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: waiting... (HTTP $HTTP_CODE)"
             sleep 3
           done
-          
-          echo "❌ MCP Server failed to start in time"
-          echo "📋 Container logs:"
-          docker logs jadx 2>&1 | tail -100
+          echo "❌ JADX failed to load JAR"
+          docker logs jadx-jar 2>&1 | tail -50
           exit 1
       
       - name: Set up Python
@@ -154,60 +150,114 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx respx
       
-      - name: Run integration tests
+      - name: Run JAR integration tests
         run: |
           cd jadx-mcp-server
-          python -m pytest tests/integration/ -v --tb=short --junit-xml=test-results.xml 2>&1 | tee test-output.txt || echo "Tests completed with errors"
+          python -m pytest tests/integration/test_jar_integration.py -v --tb=short 2>&1 | tee test-output.txt || true
       
-      - name: Integration test summary
+      - name: JAR test summary
         if: always()
         run: |
           cd jadx-mcp-server
-          echo "## 🧪 Layer 3 Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧪 Layer 3 - JAR Integration Tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
           if [ -f test-output.txt ]; then
-            # Extract test statistics
-            SUMMARY=$(grep -E "^(=+.*=+|passed|failed|error)" test-output.txt | tail -1)
+            SUMMARY=$(grep -E "^=+.*=+$" test-output.txt | tail -1 || echo "No summary")
             echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
-            # Show passed tests
             echo "### ✅ Passed Tests" >> $GITHUB_STEP_SUMMARY
-            grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_No integration tests found_" >> $GITHUB_STEP_SUMMARY
+            grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_None_" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
-            # Show failed tests if any
             if grep -q "FAILED" test-output.txt; then
               echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
               grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
             fi
-            
-            # Show errors if any
-            if grep -q "ERROR" test-output.txt; then
-              echo "### ⚠️ Errors" >> $GITHUB_STEP_SUMMARY
-              grep "ERROR" test-output.txt | sed 's/ERROR//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            # Add container info
-            echo "### 🐳 Container Information" >> $GITHUB_STEP_SUMMARY
-            echo "- **Image:** xjoker/jadx-ai-mcp:latest" >> $GITHUB_STEP_SUMMARY
-            echo "- **MCP Server:** http://localhost:8651" >> $GITHUB_STEP_SUMMARY
-            echo "- **JADX Plugin API:** http://localhost:8650" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ Test output file not found" >> $GITHUB_STEP_SUMMARY
           fi
-      
-      - name: Show container logs on failure
-        if: failure()
-        run: |
-          echo "📋 JADX Container Logs:"
-          docker logs jadx
       
       - name: Cleanup
         if: always()
+        run: docker stop jadx-jar && docker rm jadx-jar || true
+
+  # Layer 3 - APK Integration Tests
+  integration-apk:
+    name: Integration Tests - APK (Layer 3)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.test_layer == 'layer3' || github.event.inputs.test_layer == 'all')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Prepare fixtures
         run: |
-          docker stop jadx || true
-          docker rm jadx || true
+          mkdir -p /tmp/apks
+          cp tests/fixtures/jadx-test-app-1.0.0.apk /tmp/apks/target.apk
+          ls -la /tmp/apks/
+      
+      - name: Start JADX container with APK
+        run: |
+          echo "🚀 Starting JADX container with APK file..."
+          docker run -d --name jadx-apk \
+            -p 8650:8650 \
+            -p 8651:8651 \
+            -v /tmp/apks:/apks:ro \
+            xjoker/jadx-ai-mcp:latest
+          
+          echo "Container started, waiting for APK to load..."
+      
+      - name: Wait for JADX to be ready
+        run: |
+          echo "⏳ Waiting for JADX to load APK..."
+          MAX_ATTEMPTS=60
+          for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8650/apk-info 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ JADX Plugin API is ready (APK loaded)"
+              curl -s http://localhost:8650/apk-info | head -100
+              exit 0
+            fi
+            echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: waiting... (HTTP $HTTP_CODE)"
+            sleep 3
+          done
+          echo "❌ JADX failed to load APK"
+          docker logs jadx-apk 2>&1 | tail -50
+          exit 1
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          cd jadx-mcp-server
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx respx
+      
+      - name: Run APK integration tests
+        run: |
+          cd jadx-mcp-server
+          python -m pytest tests/integration/test_apk_integration.py -v --tb=short 2>&1 | tee test-output.txt || true
+      
+      - name: APK test summary
+        if: always()
+        run: |
+          cd jadx-mcp-server
+          echo "## 🧪 Layer 3 - APK Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f test-output.txt ]; then
+            SUMMARY=$(grep -E "^=+.*=+$" test-output.txt | tail -1 || echo "No summary")
+            echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Passed Tests" >> $GITHUB_STEP_SUMMARY
+            grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_None_" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if grep -q "FAILED" test-output.txt; then
+              echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
+              grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+      
+      - name: Cleanup
+        if: always()
+        run: docker stop jadx-apk && docker rm jadx-apk || true
