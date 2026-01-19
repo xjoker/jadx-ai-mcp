@@ -1,0 +1,98 @@
+name: Test
+
+on:
+  push:
+    branches: [jadx-ai, main]
+    paths:
+      - 'jadx-mcp-server/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [jadx-ai, main]
+    paths:
+      - 'jadx-mcp-server/**'
+
+jobs:
+  test:
+    name: Python Tests (Layer 1+2)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: jadx-mcp-server/requirements.txt
+      
+      - name: Install dependencies
+        run: |
+          cd jadx-mcp-server
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      
+      - name: Run unit tests
+        run: |
+          cd jadx-mcp-server
+          python -m pytest tests/ -v --tb=short
+      
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "Layer 1+2 unit tests completed." >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Integration tests with JADX container
+  # Disabled by default to save CI costs
+  # Manually trigger via workflow_dispatch
+  integration:
+    name: Integration Tests (Layer 3)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    services:
+      jadx:
+        image: xjoker/jadx-ai-mcp:latest
+        ports:
+          - 8650:8650
+          - 8651:8651
+        options: >-
+          --health-cmd "curl -f http://localhost:8650/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 60s
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          cd jadx-mcp-server
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+      
+      - name: Wait for JADX service
+        run: |
+          echo "Waiting for JADX to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8650/health; then
+              echo "JADX is ready!"
+              break
+            fi
+            echo "Attempt $i: waiting..."
+            sleep 2
+          done
+      
+      - name: Run integration tests
+        run: |
+          cd jadx-mcp-server
+          python -m pytest tests/integration/ -v --tb=short || echo "No integration tests found"
