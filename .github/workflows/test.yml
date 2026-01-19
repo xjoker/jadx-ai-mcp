@@ -117,6 +117,7 @@ jobs:
           docker run -d --name jadx-jar \
             -p 8650:8650 \
             -p 8651:8651 \
+            -e JADX_MCP_BIND_ADDRESS=0.0.0.0 \
             -v /tmp/apks:/apks:ro \
             xjoker/jadx-ai-mcp:latest
           
@@ -218,6 +219,7 @@ jobs:
           docker run -d --name jadx-apk \
             -p 8650:8650 \
             -p 8651:8651 \
+            -e JADX_MCP_BIND_ADDRESS=0.0.0.0 \
             -v /tmp/apks:/apks:ro \
             xjoker/jadx-ai-mcp:latest
           
