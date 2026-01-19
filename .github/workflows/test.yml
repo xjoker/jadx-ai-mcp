@@ -31,7 +31,7 @@ jobs:
         run: |
           cd jadx-mcp-server
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+          pip install pytest pytest-asyncio respx
       
       - name: Run unit tests
         run: |
@@ -78,7 +78,7 @@ jobs:
         run: |
           cd jadx-mcp-server
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
+          pip install pytest pytest-asyncio httpx respx
       
       - name: Wait for JADX service
         run: |
