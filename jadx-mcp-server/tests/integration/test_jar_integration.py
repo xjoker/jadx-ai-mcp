@@ -4,11 +4,11 @@ Layer 3 Integration Tests - JAR File Testing
 Tests real JADX container with jadx-test-library-1.0.0.jar
 Note: Container must be started with target.jar mounted to /apks/
 
-JADX Plugin API Endpoints:
+JADX Plugin API Reference:
 - /all-classes?count=N - List classes
-- /class-source?class_name=X - Get class source
+- /class-source?class_name=X - Returns {"response": "code..."} or chunked
 - /methods-of-class?class_name=X - Get methods of class
-- /search-classes-by-keyword?keyword=X - Search classes
+- /search-classes-by-keyword?search_term=X - Search classes (NOT 'keyword')
 - /decompile-status - Get decompile status
 """
 
@@ -61,8 +61,9 @@ class TestJARIntegration:
         assert resp.status_code == 200, f"Failed to get source for class: {class_name}"
         
         data = resp.json()
-        source = data.get("source", data.get("code", ""))
-        assert len(source) > 50, f"Source code should be substantial, got {len(source)} chars"
+        # SmartChunker returns "response" field
+        source = data.get("response", data.get("content", data.get("source", data.get("code", ""))))
+        assert len(source) > 50, f"Source code should be substantial, got {len(source)} chars. Response: {list(data.keys())}"
     
     async def test_jar_get_methods(self, jadx_base_url, http_client):
         """Get methods of a class"""
@@ -83,11 +84,12 @@ class TestJARIntegration:
     
     async def test_jar_search_by_keyword(self, jadx_base_url, http_client):
         """Search classes by keyword in JAR"""
+        # Note: Parameter is 'search_term', not 'keyword'
         resp = await http_client.get(
             f"{jadx_base_url}/search-classes-by-keyword",
-            params={"keyword": "Calculator", "count": 10}
+            params={"search_term": "Calculator", "count": 10}
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Search failed with status {resp.status_code}: {resp.text}"
         
         data = resp.json()
         # Should return classes list

@@ -4,14 +4,14 @@ Layer 3 Integration Tests - APK File Testing
 Tests real JADX container with jadx-test-app-1.0.0.apk
 Note: Container must be started with target.apk mounted to /apks/
 
-JADX Plugin API Endpoints:
+JADX Plugin API Reference:
 - /apk-info - File info
 - /manifest - AndroidManifest.xml
 - /all-classes?count=N - List classes
-- /class-source?class_name=X - Get class source
+- /class-source?class_name=X - Returns {"response": "code..."} or chunked
 - /methods-of-class?class_name=X - Get methods of class
-- /smali-of-class?class_name=X - Get Smali code
-- /search-classes-by-keyword?keyword=X - Search classes
+- /smali-of-class?class_name=X - Returns {"response": "smali..."} or chunked
+- /search-classes-by-keyword?search_term=X - Search classes (NOT 'keyword')
 - /decompile-status - Get decompile status
 """
 
@@ -70,8 +70,9 @@ class TestAPKIntegration:
         assert resp.status_code == 200, f"Failed to get source for class: {class_name}"
         
         data = resp.json()
-        source = data.get("source", data.get("code", ""))
-        assert len(source) > 30, f"Source code should be substantial, got {len(source)} chars"
+        # SmartChunker returns "response" field
+        source = data.get("response", data.get("content", data.get("source", data.get("code", ""))))
+        assert len(source) > 30, f"Source code should be substantial, got {len(source)} chars. Keys: {list(data.keys())}"
     
     async def test_apk_get_methods(self, jadx_base_url, http_client):
         """Get methods of a class"""
@@ -88,11 +89,12 @@ class TestAPKIntegration:
     
     async def test_apk_search_by_keyword(self, jadx_base_url, http_client):
         """Search classes by keyword in APK"""
+        # Note: Parameter is 'search_term', not 'keyword'
         resp = await http_client.get(
             f"{jadx_base_url}/search-classes-by-keyword",
-            params={"keyword": "Activity", "count": 10}
+            params={"search_term": "Activity", "count": 10}
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Search failed with status {resp.status_code}: {resp.text}"
         
         data = resp.json()
         assert "classes" in data, f"Expected 'classes' in response, got: {list(data.keys())}"
@@ -111,8 +113,9 @@ class TestAPKIntegration:
         assert resp.status_code == 200, f"Failed to get Smali for class: {class_name}"
         
         data = resp.json()
-        smali = data.get("smali", data.get("code", ""))
-        assert len(smali) > 20, f"Smali code should be substantial, got {len(smali)} chars"
+        # SmartChunker returns "response" field
+        smali = data.get("response", data.get("content", data.get("smali", data.get("code", ""))))
+        assert len(smali) > 20, f"Smali code should be substantial, got {len(smali)} chars. Keys: {list(data.keys())}"
     
     async def test_apk_decompile_status(self, jadx_base_url, http_client):
         """Check decompile status"""
