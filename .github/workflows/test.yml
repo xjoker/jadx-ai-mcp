@@ -122,16 +122,13 @@ jobs:
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             ATTEMPT=$((ATTEMPT + 1))
             
-            # Check if MCP server is responding (root path returns FastMCP info)
-            # Note: JADX Plugin API (8650) requires APK to be loaded, so we only check MCP Server
-            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:8651/ 2>/dev/null || echo "000")
+            # Check if MCP server is responding
+            # Remove -f to get actual HTTP status code (404 is acceptable - server is running)
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8651/ 2>/dev/null || echo "000")
             
-            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ]; then
+            # Accept any HTTP response (200, 404, etc.) as success - server is running
+            if [ "$HTTP_CODE" != "000" ]; then
               echo "✅ MCP Server is responding (HTTP $HTTP_CODE)"
-              
-              # Additional check: see if the /mcp endpoint exists
-              MCP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:8651/mcp 2>/dev/null || echo "000")
-              echo "  MCP endpoint status: HTTP $MCP_CODE"
               echo "🎉 Container is ready for testing!"
               exit 0
             fi
