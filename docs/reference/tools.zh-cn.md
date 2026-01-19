@@ -163,3 +163,37 @@
 | 检查状态 | 调用 `get_decompile_status()` 检查缓存命中率 |
 
 ---
+
+## 🧩 响应分片
+
+大响应（>8KB）会自动分片，防止 MCP 客户端截断。
+
+| 场景 | 行为 |
+|:-----|:-----|
+| 响应 ≤8KB | 直接返回完整内容 |
+| 响应 >8KB | 返回首片 + `_chunking` 元数据 |
+
+**分片元数据示例：**
+```json
+{
+  "content": "...前 8KB...",
+  "_chunking": {
+    "enabled": true,
+    "total_size": 45000,
+    "total_chunks": 6,
+    "current_chunk": 1,
+    "has_more": true,
+    "next_chunk": 2
+  }
+}
+```
+
+**获取剩余分片：**
+```python
+# 如果 _chunking.has_more == true，使用 chunk=N 继续调用
+result = get_smali_of_class(class_name="...", chunk=2)
+```
+
+**受影响的工具：** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `fetch_current_class`, `get_main_activity_class`, `get_resource_file`
+
+---
