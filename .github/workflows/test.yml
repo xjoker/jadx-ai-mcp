@@ -156,7 +156,48 @@ jobs:
       - name: Run integration tests
         run: |
           cd jadx-mcp-server
-          python -m pytest tests/integration/ -v --tb=short || echo "No integration tests found"
+          python -m pytest tests/integration/ -v --tb=short --junit-xml=test-results.xml 2>&1 | tee test-output.txt || echo "Tests completed with errors"
+      
+      - name: Integration test summary
+        if: always()
+        run: |
+          cd jadx-mcp-server
+          echo "## 🧪 Layer 3 Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f test-output.txt ]; then
+            # Extract test statistics
+            SUMMARY=$(grep -E "^(=+.*=+|passed|failed|error)" test-output.txt | tail -1)
+            echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Show passed tests
+            echo "### ✅ Passed Tests" >> $GITHUB_STEP_SUMMARY
+            grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_No integration tests found_" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Show failed tests if any
+            if grep -q "FAILED" test-output.txt; then
+              echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
+              grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Show errors if any
+            if grep -q "ERROR" test-output.txt; then
+              echo "### ⚠️ Errors" >> $GITHUB_STEP_SUMMARY
+              grep "ERROR" test-output.txt | sed 's/ERROR//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Add container info
+            echo "### 🐳 Container Information" >> $GITHUB_STEP_SUMMARY
+            echo "- **Image:** xjoker/jadx-ai-mcp:latest" >> $GITHUB_STEP_SUMMARY
+            echo "- **MCP Server:** http://localhost:8651" >> $GITHUB_STEP_SUMMARY
+            echo "- **JADX Plugin API:** http://localhost:8650" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Test output file not found" >> $GITHUB_STEP_SUMMARY
+          fi
       
       - name: Show container logs on failure
         if: failure()
