@@ -10,6 +10,13 @@ on:
     branches: [jadx-ai, main]
     paths:
       - 'jadx-mcp-server/**'
+  workflow_dispatch:
+    inputs:
+      run_layer3:
+        description: 'Run Layer 3 Integration Tests'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -80,7 +87,7 @@ jobs:
   integration:
     name: Integration Tests (Layer 3)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_layer3 == 'true'
     
     services:
       jadx:
