@@ -169,6 +169,7 @@ jobs:
       
       - name: Run JAR integration tests
         run: |
+          set -o pipefail
           cd jadx-mcp-server
           python -m pytest tests/integration/test_jar_integration.py -v --tb=short 2>&1 | tee test-output.txt
       
@@ -189,6 +190,23 @@ jobs:
               echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
               grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
             fi
+          fi
+      
+      - name: Run MCP Server tests (JAR)
+        run: |
+          set -o pipefail
+          cd jadx-mcp-server
+          python -m pytest tests/integration/test_mcp_server.py -v --tb=short 2>&1 | tee mcp-test-output.txt
+      
+      - name: MCP Server test summary
+        if: always()
+        run: |
+          cd jadx-mcp-server
+          echo "## 🔌 MCP Server Tests (JAR)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f mcp-test-output.txt ]; then
+            SUMMARY=$(grep -E "^=+.*=+$" mcp-test-output.txt | tail -1 || echo "No summary")
+            echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
           fi
       
       - name: Cleanup
@@ -256,6 +274,7 @@ jobs:
       
       - name: Run APK integration tests
         run: |
+          set -o pipefail
           cd jadx-mcp-server
           python -m pytest tests/integration/test_apk_integration.py -v --tb=short 2>&1 | tee test-output.txt
       
@@ -276,6 +295,23 @@ jobs:
               echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
               grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
             fi
+          fi
+      
+      - name: Run MCP Server tests (APK)
+        run: |
+          set -o pipefail
+          cd jadx-mcp-server
+          python -m pytest tests/integration/test_mcp_server.py -v --tb=short 2>&1 | tee mcp-test-output.txt
+      
+      - name: MCP Server test summary
+        if: always()
+        run: |
+          cd jadx-mcp-server
+          echo "## 🔌 MCP Server Tests (APK)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f mcp-test-output.txt ]; then
+            SUMMARY=$(grep -E "^=+.*=+$" mcp-test-output.txt | tail -1 || echo "No summary")
+            echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
           fi
       
       - name: Cleanup
