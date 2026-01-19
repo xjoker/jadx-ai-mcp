@@ -158,7 +158,7 @@ async def health_ping() -> Union[str, Dict[str, Any]]:
         return resp.text
     except Exception as e:
         logger.error(f"Health check failed: {type(e).__name__}: {e}")
-        # 安全审计: 仅返回异常类型，不暴露连接详情
+        # Security: return only exception type, don't expose connection details
         return {"error": f"Health check failed: {type(e).__name__}"}
 
 
@@ -243,7 +243,7 @@ async def get_from_jadx(
         return {"error": error_msg}
 
     except Exception as e:
-        # 安全审计: 日志保留完整信息，外部返回仅含异常类型
+        # Security: log keeps full details, external returns only exception type
         error_detail = str(e) if str(e) else "(no message)"
         logger.error(f"JADX request failed: {type(e).__name__}: {error_detail}")
         return {"error": f"Request failed: {type(e).__name__}"}

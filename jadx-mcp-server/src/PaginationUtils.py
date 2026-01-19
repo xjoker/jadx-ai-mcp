@@ -108,7 +108,7 @@ class PaginationUtils:
         try:
             offset, count = PaginationUtils.validate_pagination_params(offset, count)
         except ValueError as e:
-            # 安全审计: 参数校验错误无敏感信息，保留完整消息便于调试
+            # Security: param validation error has no sensitive info, keep full message for debugging
             return {"error": f"Invalid pagination parameters: {str(e)}"}
 
         # Build query parameters
@@ -168,13 +168,13 @@ class PaginationUtils:
                 return PaginationUtils._build_standardized_response(response, items)
 
             except json.JSONDecodeError as e:
-                # 安全审计: 仅返回异常类型，日志保留完整信息
+                # Security: return only exception type, log keeps full details
                 error_msg = str(e) or "(no details)"
                 logger.error(f"Failed to parse JSON response from JADX: {type(e).__name__}: {error_msg}")
                 return {"error": f"Invalid JSON response from JADX server: {type(e).__name__}"}
 
         except Exception as e:
-            # 安全审计: 仅返回异常类型，日志保留完整信息
+            # Security: return only exception type, log keeps full details
             error_msg = str(e) or "(no details)"
             logger.error(f"Error in paginated request to {endpoint}: {type(e).__name__}: {error_msg}")
             return {"error": f"Failed to fetch data from {endpoint}: {type(e).__name__}"}

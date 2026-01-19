@@ -167,7 +167,7 @@ class InstanceRegistry:
                 return result
                 
             except Exception as e:
-                # 安全审计: 日志保留完整信息，外部返回仅含异常类型
+                # Security: log keeps full details, external returns only exception type
                 logger.error(f"Failed to add instance: {type(e).__name__}: {e}")
                 return {
                     "success": False,

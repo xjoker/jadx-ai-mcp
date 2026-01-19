@@ -326,7 +326,7 @@ def register_instance_tools(mcp):
         except httpx.HTTPStatusError as e:
             return {"error": f"HTTP error {e.response.status_code}: {e.response.text}"}
         except Exception as e:
-            # 安全审计: 日志保留完整信息，外部返回通用消息
+            # Security: log keeps full details, external returns generic message
             logger.error(f"Failed to clear cache: {type(e).__name__}: {e}")
             return {"error": f"Failed to clear cache: {type(e).__name__}"}
 
