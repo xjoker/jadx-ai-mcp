@@ -28,8 +28,10 @@ class TestAPKIntegration:
         assert resp.status_code == 200
         
         data = resp.json()
+        assert data.get("loaded") == True, "APK file should be loaded"
         # Verify it's an APK with package info
-        assert "apk_package" in data or "jadxtest" in str(data).lower()
+        assert "apk_package" in data or "android" in str(data.get("file_type", "")).lower(), \
+            f"Expected APK file type, got: {data}"
     
     async def test_apk_get_manifest(self, jadx_base_url, http_client):
         """Get AndroidManifest.xml"""
@@ -39,8 +41,9 @@ class TestAPKIntegration:
         data = resp.json()
         manifest = data.get("manifest", str(data))
         
-        # Verify manifest content
-        assert "android" in manifest.lower() or "manifest" in manifest.lower()
+        # Verify manifest content has Android-specific tags
+        assert "android" in manifest.lower() or "manifest" in manifest.lower(), \
+            f"Expected Android manifest content, got: {manifest[:200]}"
     
     async def test_apk_list_classes(self, jadx_base_url, http_client):
         """List all classes in APK"""
@@ -60,14 +63,15 @@ class TestAPKIntegration:
         data = resp.json()
         classes = data.get("classes", [])
         
-        if classes:
-            class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/class-source", params={"class_name": class_name})
-            assert resp.status_code == 200
-            
-            data = resp.json()
-            source = data.get("source", data.get("code", ""))
-            assert len(source) > 30
+        assert len(classes) > 0, "Should have at least one class to test"
+        
+        class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
+        resp = await http_client.get(f"{jadx_base_url}/class-source", params={"class_name": class_name})
+        assert resp.status_code == 200, f"Failed to get source for class: {class_name}"
+        
+        data = resp.json()
+        source = data.get("source", data.get("code", ""))
+        assert len(source) > 30, f"Source code should be substantial, got {len(source)} chars"
     
     async def test_apk_get_methods(self, jadx_base_url, http_client):
         """Get methods of a class"""
@@ -76,18 +80,22 @@ class TestAPKIntegration:
         data = resp.json()
         classes = data.get("classes", [])
         
-        if classes:
-            class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/methods-of-class", params={"class_name": class_name})
-            assert resp.status_code == 200
+        assert len(classes) > 0, "Should have at least one class to test"
+        
+        class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
+        resp = await http_client.get(f"{jadx_base_url}/methods-of-class", params={"class_name": class_name})
+        assert resp.status_code == 200, f"Failed to get methods for class: {class_name}"
     
-    async def test_apk_search_by_code(self, jadx_base_url, http_client):
+    async def test_apk_search_by_keyword(self, jadx_base_url, http_client):
         """Search classes by keyword in APK"""
         resp = await http_client.get(
             f"{jadx_base_url}/search-classes-by-keyword",
             params={"keyword": "Activity", "count": 10}
         )
         assert resp.status_code == 200
+        
+        data = resp.json()
+        assert "classes" in data, f"Expected 'classes' in response, got: {list(data.keys())}"
     
     async def test_apk_get_smali(self, jadx_base_url, http_client):
         """Get Smali code for a class"""
@@ -96,12 +104,20 @@ class TestAPKIntegration:
         data = resp.json()
         classes = data.get("classes", [])
         
-        if classes:
-            class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/smali-of-class", params={"class_name": class_name})
-            assert resp.status_code == 200
+        assert len(classes) > 0, "Should have at least one class to test"
+        
+        class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
+        resp = await http_client.get(f"{jadx_base_url}/smali-of-class", params={"class_name": class_name})
+        assert resp.status_code == 200, f"Failed to get Smali for class: {class_name}"
+        
+        data = resp.json()
+        smali = data.get("smali", data.get("code", ""))
+        assert len(smali) > 20, f"Smali code should be substantial, got {len(smali)} chars"
     
     async def test_apk_decompile_status(self, jadx_base_url, http_client):
         """Check decompile status"""
         resp = await http_client.get(f"{jadx_base_url}/decompile-status")
         assert resp.status_code == 200
+        
+        data = resp.json()
+        assert "total_classes" in data, f"Expected 'total_classes' in response, got: {list(data.keys())}"

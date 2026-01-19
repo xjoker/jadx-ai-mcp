@@ -25,11 +25,13 @@ class TestJARIntegration:
         assert resp.status_code == 200
         
         data = resp.json()
+        assert data.get("loaded") == True, "JAR file should be loaded"
         # Verify it's a JAR file
-        assert "jadx-test-library" in str(data) or "jar" in str(data).lower()
+        file_type = data.get("file_type", "").lower()
+        assert "jar" in file_type or "jar" in str(data).lower(), f"Expected JAR file type, got: {file_type}"
     
     async def test_jar_list_classes(self, jadx_base_url, http_client):
-        """List all classes in JAR (expects 5 classes)"""
+        """List all classes in JAR (expects at least 5 classes)"""
         resp = await http_client.get(f"{jadx_base_url}/all-classes", params={"count": 0})
         assert resp.status_code == 200
         
@@ -41,7 +43,8 @@ class TestJARIntegration:
         
         # Verify expected classes exist
         class_names = str(classes)
-        assert "Calculator" in class_names or "jadxtest" in class_names
+        assert "Calculator" in class_names or "jadxtest" in class_names.lower(), \
+            f"Expected 'Calculator' or 'jadxtest' in class names, got: {class_names[:200]}"
     
     async def test_jar_get_class_source(self, jadx_base_url, http_client):
         """Get source code of a class"""
@@ -51,14 +54,15 @@ class TestJARIntegration:
         data = resp.json()
         classes = data.get("classes", [])
         
-        if classes:
-            class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/class-source", params={"class_name": class_name})
-            assert resp.status_code == 200
-            
-            data = resp.json()
-            source = data.get("source", data.get("code", ""))
-            assert len(source) > 50  # Should have substantial content
+        assert len(classes) > 0, "Should have at least one class to test"
+        
+        class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
+        resp = await http_client.get(f"{jadx_base_url}/class-source", params={"class_name": class_name})
+        assert resp.status_code == 200, f"Failed to get source for class: {class_name}"
+        
+        data = resp.json()
+        source = data.get("source", data.get("code", ""))
+        assert len(source) > 50, f"Source code should be substantial, got {len(source)} chars"
     
     async def test_jar_get_methods(self, jadx_base_url, http_client):
         """Get methods of a class"""
@@ -67,16 +71,17 @@ class TestJARIntegration:
         data = resp.json()
         classes = data.get("classes", [])
         
-        if classes:
-            class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/methods-of-class", params={"class_name": class_name})
-            assert resp.status_code == 200
-            
-            data = resp.json()
-            methods = data.get("methods", [])
-            assert len(methods) >= 0  # May be 0 for some classes
+        assert len(classes) > 0, "Should have at least one class to test"
+        
+        class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
+        resp = await http_client.get(f"{jadx_base_url}/methods-of-class", params={"class_name": class_name})
+        assert resp.status_code == 200, f"Failed to get methods for class: {class_name}"
+        
+        data = resp.json()
+        # Verify response structure is valid
+        assert "methods" in data or "error" not in data, f"Unexpected response: {data}"
     
-    async def test_jar_search_by_code(self, jadx_base_url, http_client):
+    async def test_jar_search_by_keyword(self, jadx_base_url, http_client):
         """Search classes by keyword in JAR"""
         resp = await http_client.get(
             f"{jadx_base_url}/search-classes-by-keyword",
@@ -85,8 +90,8 @@ class TestJARIntegration:
         assert resp.status_code == 200
         
         data = resp.json()
-        # May or may not find results depending on code content
-        assert "classes" in data or "results" in data or "error" not in data
+        # Should return classes list
+        assert "classes" in data, f"Expected 'classes' in response, got: {list(data.keys())}"
     
     async def test_jar_decompile_status(self, jadx_base_url, http_client):
         """Check decompile status"""
@@ -94,4 +99,5 @@ class TestJARIntegration:
         assert resp.status_code == 200
         
         data = resp.json()
-        assert "total_classes" in data or "cached" in str(data).lower()
+        assert "total_classes" in data, f"Expected 'total_classes' in response, got: {list(data.keys())}"
+        assert data["total_classes"] >= 5, f"Expected at least 5 classes, got {data['total_classes']}"

@@ -170,7 +170,7 @@ jobs:
       - name: Run JAR integration tests
         run: |
           cd jadx-mcp-server
-          python -m pytest tests/integration/test_jar_integration.py -v --tb=short 2>&1 | tee test-output.txt || true
+          python -m pytest tests/integration/test_jar_integration.py -v --tb=short 2>&1 | tee test-output.txt
       
       - name: JAR test summary
         if: always()
@@ -257,7 +257,7 @@ jobs:
       - name: Run APK integration tests
         run: |
           cd jadx-mcp-server
-          python -m pytest tests/integration/test_apk_integration.py -v --tb=short 2>&1 | tee test-output.txt || true
+          python -m pytest tests/integration/test_apk_integration.py -v --tb=short 2>&1 | tee test-output.txt
       
       - name: APK test summary
         if: always()
