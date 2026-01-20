@@ -579,60 +579,58 @@ async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
 
 @mcp.tool()
 @with_busy_check
-async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a specific class.
+async def rename(
+    target_type: str,
+    old_name: str,
+    new_name: str,
+    class_name: str = "",
+    instance_id: Optional[str] = None
+) -> dict:
+    """Unified rename tool for classes, methods, fields, and packages.
     
     Args:
-        class_name: Fully qualified class name to rename.
-        new_name: New class name (simple name, not fully qualified).
-        instance_id: Target JADX instance name.
+        target_type: Type of target to rename: "class" | "method" | "field" | "package"
+        old_name: Current name (fully qualified for class/package, simple name for method/field)
+        new_name: New name (simple name)
+        class_name: Required for method/field - the class containing the member
+        instance_id: Target JADX instance name
     
     Returns:
-        dict: {success: bool, message: str}
+        dict: {success: bool, message: str, renamed_count: int (for package only)}
+    
+    Examples:
+        # Rename class
+        rename("class", "com.example.OldClass", "NewClass")
+        
+        # Rename method
+        rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
+        
+        # Rename field
+        rename("field", "oldField", "newField", class_name="com.example.MyClass")
+        
+        # Rename package
+        rename("package", "com.example.old", "com.example.new")
     
     Note:
         Triggers 30s class cache cooldown.
     """
-    return await tools.refactor_tools.rename_class(class_name, new_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def rename_method(method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a specific method.
+    target_type = target_type.lower()
     
-    Args:
-        method_name: Method name to rename.
-        new_name: New method name.
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {success: bool, message: str}
-    
-    Note:
-        Triggers 30s class cache cooldown.
-    """
-    return await tools.refactor_tools.rename_method(method_name, new_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a specific field.
-    
-    Args:
-        class_name: Fully qualified class name containing the field.
-        field_name: Field name to rename.
-        new_name: New field name.
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {success: bool, message: str}
-    
-    Note:
-        Triggers 30s class cache cooldown.
-    """
-    return await tools.refactor_tools.rename_field(class_name, field_name, new_name, instance_id=instance_id)
+    if target_type == "class":
+        return await tools.refactor_tools.rename_class(old_name, new_name, instance_id=instance_id)
+    elif target_type == "method":
+        if not class_name:
+            return {"success": False, "error": "class_name required for method rename"}
+        # Note: refactor_tools.rename_method only takes method_name and new_name
+        return await tools.refactor_tools.rename_method(old_name, new_name, instance_id=instance_id)
+    elif target_type == "field":
+        if not class_name:
+            return {"success": False, "error": "class_name required for field rename"}
+        return await tools.refactor_tools.rename_field(class_name, old_name, new_name, instance_id=instance_id)
+    elif target_type == "package":
+        return await tools.refactor_tools.rename_package(old_name, new_name, instance_id=instance_id)
+    else:
+        return {"success": False, "error": f"Invalid target_type: {target_type}. Use: class, method, field, package"}
 
 
 @mcp.tool()
@@ -648,7 +646,6 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.get_method_signature(class_name, method_name, instance_id=instance_id)
-
 
 
 @mcp.tool()
@@ -686,85 +683,55 @@ async def search_native_methods(
     return await tools.search_tools.search_native_methods(package, offset, count, instance_id=instance_id)
 
 
-@mcp.tool()
-@with_busy_check
-async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a package and all its classes.
-    
-    Args:
-        old_package_name: Current package name (e.g., 'com.example.old').
-        new_package_name: New package name (e.g., 'com.example.new').
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {success: bool, renamed_count: int, message: str}
-    
-    Note:
-        Triggers 30s class cache cooldown.
-    """
-    return await tools.refactor_tools.rename_package(old_package_name, new_package_name, instance_id=instance_id)
-
-
 
 @mcp.tool()
 @with_busy_check
-async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
-    """Find all cross-references (xrefs) to a class.
-
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.Helper').
-        offset: Pagination offset. Default: 0
-        count: Max results. Default: 20
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
-    """
-    return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_xrefs_to_method(
-    class_name: str, method_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
+async def get_xrefs(
+    target_type: str,
+    class_name: str,
+    member_name: str = "",
+    offset: int = 0,
+    count: int = 20,
+    instance_id: Optional[str] = None
 ) -> dict:
-    """Find all references to a method.
+    """Unified cross-reference (xrefs) finder for classes, methods, and fields.
     
     Args:
-        class_name: Fully qualified class name.
-        method_name: Method name to find references for.
+        target_type: Type of target to find xrefs for: "class" | "method" | "field"
+        class_name: Fully qualified class name (e.g., 'com.example.Helper')
+        member_name: Method or field name (required for method/field, ignored for class)
         offset: Pagination offset. Default: 0
         count: Max results. Default: 20
-        instance_id: Target JADX instance name.
+        instance_id: Target JADX instance name
     
     Returns:
         dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
-    """
-    return await tools.xrefs_tools.get_xrefs_to_method(
-        class_name, method_name, offset, count, instance_id=instance_id
-    )
-
-
-@mcp.tool()
-@with_busy_check
-async def get_xrefs_to_field(
-    class_name: str, field_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
-) -> dict:
-    """Find all references to a field.
     
-    Args:
-        class_name: Fully qualified class name.
-        field_name: Field name to find references for.
-        offset: Pagination offset. Default: 0
-        count: Max results. Default: 20
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
+    Examples:
+        # Find references to a class
+        get_xrefs("class", "com.example.Helper")
+        
+        # Find references to a method
+        get_xrefs("method", "com.example.MyClass", "myMethod")
+        
+        # Find references to a field
+        get_xrefs("field", "com.example.MyClass", "myField")
     """
-    return await tools.xrefs_tools.get_xrefs_to_field(
-        class_name, field_name, offset, count, instance_id=instance_id
-    )
+    target_type = target_type.lower()
+    
+    if target_type == "class":
+        return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
+    elif target_type == "method":
+        if not member_name:
+            return {"error": "member_name required for method xrefs"}
+        return await tools.xrefs_tools.get_xrefs_to_method(class_name, member_name, offset, count, instance_id=instance_id)
+    elif target_type == "field":
+        if not member_name:
+            return {"error": "member_name required for field xrefs"}
+        return await tools.xrefs_tools.get_xrefs_to_field(class_name, member_name, offset, count, instance_id=instance_id)
+    else:
+        return {"error": f"Invalid target_type: {target_type}. Use: class, method, field"}
+
 
 
 @mcp.tool()
