@@ -72,10 +72,19 @@ from src.server import tools
 
 # Transfer API imports
 from src.server.tools import transfer_tools
-from src.server.transfer_server import transfer_app
+from src.server import transfer_server
 
-# Mount Transfer API routes (绕过 MCP 消息大小限制)
-mcp.mount("/transfer", transfer_app)
+# Register Transfer API custom routes
+# Using @mcp.custom_route() to add HTTP endpoints alongside MCP
+@mcp.custom_route("/transfer/download/batch-classes", methods=["GET"])
+async def transfer_download_batch_classes(request):
+    """Transfer API: Download batch classes bypassing MCP size limits"""
+    return await transfer_server.download_batch_classes(request)
+
+@mcp.custom_route("/transfer/health", methods=["GET"])
+async def transfer_health(request):
+    """Transfer API: Health check endpoint"""
+    return await transfer_server.download_health(request)
 
 logger = get_logger("main")
 
