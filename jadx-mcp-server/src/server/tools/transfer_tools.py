@@ -10,6 +10,7 @@ from ..transfer_store import get_token_store, Operation, ResourceType
 from ..logging_config import get_logger
 from ..rate_limiter import get_token_limiter
 from ..param_validator import ValidationError
+from ..mcp_server_config import get_mcp_server_url
 
 logger = get_logger("transfer_tools")
 
@@ -94,9 +95,8 @@ async def create_transfer_token(
     store = get_token_store()
     token = store.create(op, rt, timeout_seconds, params)
     
-    # TODO: 从配置读取实际的服务器 URL
-    # 暂时硬编码为 localhost:8765
-    transfer_base_url = "http://localhost:8765"
+    # 从配置获取 MCP Server URL
+    transfer_base_url = get_mcp_server_url()
     
     expires_at = datetime.fromtimestamp(token.expires_at, tz=timezone.utc).isoformat()
     
