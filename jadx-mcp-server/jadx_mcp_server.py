@@ -53,8 +53,7 @@ For detailed guidance, use the 'status-check' or 'search-code' prompts.
 
 
 mcp = FastMCP(
-    "JADX-AI-MCP Plugin Reverse Engineering Server", 
-    stateless_http=True,
+    "JADX-AI-MCP Plugin Reverse Engineering Server",
     instructions=MCP_INSTRUCTIONS
 )
 
