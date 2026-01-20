@@ -41,8 +41,16 @@ RECOMMENDED WORKFLOW:
 3. Use code search only when cache is ready (cached_percentage > 50%)
 4. Use package filter to narrow search scope for better performance
 
+⚡ TRANSFER API - Bypass MCP Size Limits:
+When batch operations might exceed MCP message limits (~16KB):
+1. Call create_transfer_token(resource_type="batch_classes")
+2. Use HTTP client to download directly from transfer_url
+3. Supports JSON and ZIP formats, Brotli/GZIP compression
+4. Example: GET {transfer_url}/download/batch-classes?classes=A,B&token=xxx&format=zip
+
 For detailed guidance, use the 'status-check' or 'search-code' prompts.
 """
+
 
 mcp = FastMCP(
     "JADX-AI-MCP Plugin Reverse Engineering Server", 
@@ -61,6 +69,13 @@ from src.server.auth_middleware import BearerAuthMiddleware
 from src.server.health_monitor import HealthMonitor
 from src.server.logging_config import configure_logging, get_logger
 from src.server import tools
+
+# Transfer API imports
+from src.server.tools import transfer_tools
+from src.server.transfer_server import transfer_app
+
+# Mount Transfer API routes (绕过 MCP 消息大小限制)
+mcp.mount("/transfer", transfer_app)
 
 logger = get_logger("main")
 
@@ -867,6 +882,61 @@ async def check_instance_status(instance_name: str = None) -> dict:
         All instances: {"busy_instances": [...], "count": N}
     """
     return await InstanceBusyTracker.get_status(instance_name)
+
+
+# ==================== Transfer API Tools ====================
+
+@mcp.tool()
+async def create_transfer_token(
+    operation: str = "download",
+    resource_type: str = "batch_classes",
+    timeout_seconds: int = 120,
+    params: Optional[dict] = None,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Create a transfer token for large file download bypassing MCP size limits.
+    
+    Use this when batch operations might exceed MCP message size limits (~16KB).
+    Supports JSON and ZIP formats, with Brotli/GZIP compression.
+    
+    Supported resource_type: batch_classes, batch_methods, project_export
+    Supported format (query param): json (default), zip
+    Supported compression (query param): br (default), gzip, none, auto
+    
+    Returns token and transfer_url for direct HTTP download.
+    """
+    return await transfer_tools.create_transfer_token(
+        operation, resource_type, timeout_seconds, params, instance_id
+    )
+
+
+@mcp.tool()
+async def get_transfer_token_status(token: str) -> dict:
+    """Get the status of a transfer token.
+    
+    Args:
+        token: Transfer token string
+    
+    Returns:
+        Status including exists, used, expires_in, resource_type, operation
+    """
+    return await transfer_tools.get_transfer_token_status(token)
+
+
+@mcp.tool()
+async def revoke_transfer_token(token: str) -> dict:
+    """Revoke a transfer token immediately.
+    
+    Optional - tokens auto-expire, but call this to free resources early.
+    
+    Args:
+        token: Transfer token string
+    
+    Returns:
+        Success status and message
+    """
+    return await transfer_tools.revoke_transfer_token(token)
+
 
 
 def main():
