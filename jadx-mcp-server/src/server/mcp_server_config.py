@@ -1,27 +1,34 @@
 """
 MCP Server Configuration - 全局服务器配置
-存储 MCP Server 的 host 和 port 信息供其他模块使用
+存储 MCP Server 的 URL 信息供 Transfer API 使用
+
+配置优先级:
+1. 环境变量 MCP_SERVER_URL
+2. 配置文件 [server] mcp_url
 """
 
 import os
 from typing import Optional
 
-# 全局 MCP Server 配置
-_MCP_SERVER_HOST: Optional[str] = None
-_MCP_SERVER_PORT: Optional[int] = None
+from .logging_config import get_logger
+
+logger = get_logger("mcp_server_config")
+
+# 全局配置的 MCP Server URL
+_MCP_SERVER_URL_FROM_CONFIG: Optional[str] = None
 
 
-def set_mcp_server_url(host: str, port: int):
+def set_mcp_server_url_from_config(url: str):
     """
-    设置 MCP Server 的 host 和 port
+    从配置文件设置 MCP Server URL
     
     Args:
-        host: MCP Server 监听的主机地址
-        port: MCP Server 监听的端口
+        url: MCP Server 的外部访问地址（如 http://192.168.1.100:8651）
     """
-    global _MCP_SERVER_HOST, _MCP_SERVER_PORT
-    _MCP_SERVER_HOST = host
-    _MCP_SERVER_PORT = port
+    global _MCP_SERVER_URL_FROM_CONFIG
+    _MCP_SERVER_URL_FROM_CONFIG = url
+    if url:
+        logger.info(f"MCP Server URL set from config: {url}")
 
 
 def get_mcp_server_url() -> str:
@@ -32,29 +39,22 @@ def get_mcp_server_url() -> str:
         完整的 MCP Server URL (如 http://192.168.1.100:8651)
     
     优先级:
-        1. 环境变量 MCP_SERVER_URL
-        2. 已设置的全局配置
-        3. 默认值 http://localhost:8765
+        1. 环境变量 MCP_SERVER_URL（最高）
+        2. 配置文件 [server] mcp_url
+        3. 默认值 http://localhost:8651
     """
-    # 1. 优先使用环境变量
+    # 1. 最高优先级：环境变量
     env_url = os.getenv("MCP_SERVER_URL")
     if env_url:
         return env_url.rstrip("/")
     
-    # 2. 使用已设置的配置
-    if _MCP_SERVER_HOST and _MCP_SERVER_PORT:
-        # 处理特殊情况: 0.0.0.0 应该替换为 localhost 或实际 IP
-        host = _MCP_SERVER_HOST
-        if host == "0.0.0.0":
-            # Docker 环境下，使用 host.docker.internal 或 localhost
-            # 但这是服务器端代码，AI 访问时应该用外部地址
-            # 这里使用 localhost 作为回退
-            host = "localhost"
-        
-        return f"http://{host}:{_MCP_SERVER_PORT}"
+    # 2. 次优先级：配置文件
+    if _MCP_SERVER_URL_FROM_CONFIG:
+        return _MCP_SERVER_URL_FROM_CONFIG.rstrip("/")
     
-    # 3. 默认值（兼容旧代码）
-    return "http://localhost:8765"
+    # 3. 默认值
+    logger.warning("MCP Server URL not configured, using default http://localhost:8651")
+    return "http://localhost:8651"
 
 
 def get_transfer_base_url() -> str:

@@ -73,7 +73,7 @@ from src.server import tools
 # Transfer API imports
 from src.server.tools import transfer_tools
 from src.server import transfer_server
-from src.server.mcp_server_config import set_mcp_server_url
+from src.server.mcp_server_config import set_mcp_server_url_from_config
 
 # Register Transfer API custom routes
 # Using @mcp.custom_route() to add HTTP endpoints alongside MCP
@@ -1237,8 +1237,10 @@ def main():
         print(f"✓ Authentication middleware enabled (optional)")
     
     if args.http:
-        # 设置 MCP Server URL 供 Transfer API 使用
-        set_mcp_server_url(args.host, args.port)
+        # 设置 MCP Server URL 供 Transfer API 使用（从配置文件读取）
+        if loaded_config and loaded_config.server.mcp_url:
+            set_mcp_server_url_from_config(loaded_config.server.mcp_url)
+            print(f"✓ Transfer API URL: {loaded_config.server.mcp_url}")
         
         print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
         if args.mcp_auth_token or (loaded_config and loaded_config.users):

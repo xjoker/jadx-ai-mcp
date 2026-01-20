@@ -54,6 +54,7 @@ class ServerConfig:
     """MCP Server configuration"""
     host: str = "0.0.0.0"
     port: int = 8651
+    mcp_url: str = ""  # External URL for Transfer API (e.g., http://192.168.1.100:8651)
 
 
 @dataclass
@@ -92,6 +93,7 @@ class AppConfig:
         server = ServerConfig(
             host=server_data.get("host", "0.0.0.0"),
             port=server_data.get("port", 8651),
+            mcp_url=server_data.get("mcp_url", ""),
         )
         
         defaults = DefaultsConfig(
