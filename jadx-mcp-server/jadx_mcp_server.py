@@ -94,33 +94,6 @@ logger = get_logger("main")
 from typing import Optional
 
 
-@mcp.tool()
-@with_busy_check
-async def fetch_current_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch the currently selected class and its code from the JADX-GUI.
-    
-    CHUNKING: Large classes (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
-    
-    Args:
-        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
-        instance_id: Target JADX instance name.
-    """
-    return await tools.class_tools.fetch_current_class(chunk=chunk, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_selected_text(instance_id: Optional[str] = None) -> dict:
-    """Returns the currently selected text in the decompiled code view.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {selected_text: str, class_name: str, line_number: int}
-    """
-    return await tools.class_tools.get_selected_text(instance_id=instance_id)
-
 
 @mcp.tool()
 @with_busy_check
@@ -543,35 +516,6 @@ async def jar_get_bytecode(
     return await tools.resource_tools.jar_get_bytecode(class_name, instance_id=instance_id)
 
 
-@mcp.tool()
-@with_busy_check
-async def get_main_application_classes_names(instance_id: Optional[str] = None) -> dict:
-    """Fetch main application classes' names from Manifest package.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {classes: [str, ...], package: str, count: int}
-    """
-    return await tools.class_tools.get_main_application_classes_names(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_main_application_classes_code(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch main application classes' source code with pagination.
-    
-    Args:
-        offset: Pagination offset. Default: 0
-        count: Max results (0=all). Default: 0
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {classes: [{name, source}, ...], total: int, has_more: bool}
-    """
-    return await tools.class_tools.get_main_application_classes_code(offset, count, instance_id=instance_id)
-
 
 @mcp.tool()
 @with_busy_check
@@ -761,47 +705,6 @@ async def rename_package(old_package_name: str, new_package_name: str, instance_
     return await tools.refactor_tools.rename_package(old_package_name, new_package_name, instance_id=instance_id)
 
 
-@mcp.tool()
-@with_busy_check
-async def debug_get_stack_frames(instance_id: Optional[str] = None) -> dict:
-    """Get current stack frames (call stack) when debugger is attached.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {frames: [{class_name, method_name, line_number}, ...], thread_id: str}
-    """
-    return await tools.debug_tools.debug_get_stack_frames(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def debug_get_threads(instance_id: Optional[str] = None) -> dict:
-    """Get all threads in the debugged process.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {threads: [{id, name, state, is_suspended}, ...], count: int}
-    """
-    return await tools.debug_tools.debug_get_threads(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def debug_get_variables(instance_id: Optional[str] = None) -> dict:
-    """Get current variables when debugger is suspended at a breakpoint.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {variables: [{name, type, value}, ...], scope: str}
-    """
-    return await tools.debug_tools.debug_get_variables(instance_id=instance_id)
-
 
 @mcp.tool()
 @with_busy_check
@@ -876,21 +779,6 @@ async def batch_get_xrefs(targets: list[str], instance_id: Optional[str] = None)
     return await tools.xrefs_tools.batch_get_xrefs(targets, instance_id=instance_id)
 
 
-@mcp.tool()
-async def check_instance_status(instance_name: str = None) -> dict:
-    """Query the busy status of JADX instances.
-    
-    Use this to check if an instance is available before making requests.
-    If an instance is busy, the response will include what operation is running.
-    
-    Args:
-        instance_name: Optional. Specific instance to check. If not provided, returns all instances status.
-    
-    Returns:
-        Single instance: {"instance": "name", "available": true/false, "current_operation": "..."}
-        All instances: {"busy_instances": [...], "count": N}
-    """
-    return await InstanceBusyTracker.get_status(instance_name)
 
 
 # ==================== Transfer API Tools ====================
@@ -974,33 +862,6 @@ async def create_transfer_token(
         operation, resource_type, timeout_seconds, params, instance_id
     )
 
-
-@mcp.tool()
-async def get_transfer_token_status(token: str) -> dict:
-    """Get the status of a transfer token.
-    
-    Args:
-        token: Transfer token string
-    
-    Returns:
-        Status including exists, used, expires_in, resource_type, operation
-    """
-    return await transfer_tools.get_transfer_token_status(token)
-
-
-@mcp.tool()
-async def revoke_transfer_token(token: str) -> dict:
-    """Revoke a transfer token immediately.
-    
-    Optional - tokens auto-expire, but call this to free resources early.
-    
-    Args:
-        token: Transfer token string
-    
-    Returns:
-        Success status and message
-    """
-    return await transfer_tools.revoke_transfer_token(token)
 
 
 
