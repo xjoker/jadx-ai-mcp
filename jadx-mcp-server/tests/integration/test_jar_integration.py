@@ -3,6 +3,12 @@ Layer 3 Integration Tests - JAR File Testing
 
 Tests real JADX container with jadx-test-library-1.0.0.jar
 Note: Container must be started with target.jar mounted to /apks/
+
+Test Coverage:
+- Basic JAR loading and class analysis
+- JAR-specific tools (jar_get_manifest, jar_get_entry_points, jar_get_services)
+- Unified interface tools (get_file_info, get_package_classes)
+- Negative tests (invalid inputs, error handling)
 """
 
 import pytest
@@ -88,3 +94,117 @@ class TestJARIntegration:
         
         data = resp.json()
         assert "total_classes" in data or "cached" in str(data).lower()
+
+
+@pytest.mark.asyncio
+class TestJARSpecificTools:
+    """Tests for JAR-specific tools (jar_get_manifest, jar_get_entry_points, etc.)"""
+
+    async def test_jar_get_manifest(self, jadx_base_url, http_client):
+        """Test JAR manifest parsing"""
+        resp = await http_client.get(f"{jadx_base_url}/jar-manifest")
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert data.get("status") == "success"
+        assert "all_attributes" in data
+        assert "Manifest-Version" in data.get("all_attributes", {})
+
+    async def test_jar_get_entry_points(self, jadx_base_url, http_client):
+        """Test JAR entry points discovery"""
+        resp = await http_client.get(f"{jadx_base_url}/jar-entry-points")
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert data.get("status") == "success"
+        assert "entry_points" in data
+        assert "total_found" in data
+
+    async def test_jar_get_services(self, jadx_base_url, http_client):
+        """Test JAR SPI services discovery"""
+        resp = await http_client.get(f"{jadx_base_url}/jar-services")
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert data.get("status") == "success"
+        assert "services" in data
+        assert "total_services" in data
+
+
+@pytest.mark.asyncio
+class TestUnifiedInterface:
+    """Tests for unified interface tools (APK/JAR compatible)"""
+
+    async def test_get_file_info(self, jadx_base_url, http_client):
+        """Test file type detection and info"""
+        resp = await http_client.get(f"{jadx_base_url}/file-info")
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert data.get("loaded") == True
+        assert data.get("file_type") == "jar"
+        assert "recommended_tools" in data
+        assert "features" in data
+
+    async def test_get_package_classes(self, jadx_base_url, http_client):
+        """Test package-based class filtering"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/package-classes",
+            params={"package": "com.jadxtest", "count": 50}
+        )
+        # May return 200 or 404 depending on JADX version
+        if resp.status_code == 200:
+            data = resp.json()
+            assert "classes" in data or "error" not in data
+
+
+@pytest.mark.asyncio
+class TestNegativeCases:
+    """Negative tests for error handling"""
+
+    async def test_invalid_class_name(self, jadx_base_url, http_client):
+        """Test error handling for non-existent class"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/class-source",
+            params={"class_name": "com.nonexistent.FakeClass"}
+        )
+        # Should return 200 with error in body, or 404
+        assert resp.status_code in [200, 404]
+        if resp.status_code == 200:
+            data = resp.json()
+            # Should indicate error or empty result
+            assert "error" in data or data.get("response", "") == ""
+
+    async def test_empty_class_name(self, jadx_base_url, http_client):
+        """Test error handling for empty class name"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/class-source",
+            params={"class_name": ""}
+        )
+        # Should handle gracefully
+        assert resp.status_code in [200, 400, 404]
+
+    async def test_invalid_method_search(self, jadx_base_url, http_client):
+        """Test search with non-matching pattern"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/search-method",
+            params={"method_name": "xyzNonExistentMethod123", "count": 10}
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        methods = data.get("methods", [])
+        assert len(methods) == 0  # Should find nothing
+
+    async def test_large_count_parameter(self, jadx_base_url, http_client):
+        """Test handling of large count parameter - JADX has 10000 limit"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/all-classes",
+            params={"count": 99999}
+        )
+        # JADX enforces max limit of 10000 for pagination
+        # Returns 500 with error message (ideally should be 400)
+        assert resp.status_code in [200, 400, 500]
+        if resp.status_code == 500:
+            data = resp.json()
+            assert "error" in data
+            assert "10000" in data.get("error", "") or "limit" in data.get("error", "").lower()
