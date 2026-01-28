@@ -621,8 +621,7 @@ async def rename(
     elif target_type == "method":
         if not class_name:
             return {"success": False, "error": "class_name required for method rename"}
-        # Note: refactor_tools.rename_method only takes method_name and new_name
-        return await tools.refactor_tools.rename_method(old_name, new_name, instance_id=instance_id)
+        return await tools.refactor_tools.rename_method(class_name, old_name, new_name, instance_id=instance_id)
     elif target_type == "field":
         if not class_name:
             return {"success": False, "error": "class_name required for field rename"}
@@ -920,10 +919,10 @@ def main():
             set_config_loader(config_loader)
             print(f"✓ Loaded configuration from {config_path}")
             
-            # Override CLI args with config file values (config file takes precedence)
-            if loaded_config.server.host and args.host == "127.0.0.1":
+            # Apply config file values only when CLI uses defaults (CLI takes precedence)
+            if loaded_config.server.host and args.host == parser.get_default("host"):
                 args.host = loaded_config.server.host
-            if loaded_config.server.port and args.port == 8651:
+            if loaded_config.server.port and args.port == parser.get_default("port"):
                 args.port = loaded_config.server.port
             if loaded_config.defaults.request_timeout:
                 args.request_timeout = loaded_config.defaults.request_timeout

@@ -34,14 +34,15 @@ async def rename_class(class_name: str, new_name: str, instance_id: Optional[str
     return await get_from_jadx("rename-class", {"class_name": class_name, "new_name": new_name}, instance_id=instance_id)
 
 
-async def rename_method(method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+async def rename_method(class_name: str, method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a specific method.
-    
+
     NOTE: This operation triggers ClassCacheManager reload with 30s global cooldown.
     Rapid successive renames will be debounced.
 
     Args:
+        class_name: Fully qualified class name containing the method
         method_name: Current method name (can include signature)
         new_name: New name for the method
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
@@ -52,7 +53,11 @@ async def rename_method(method_name: str, new_name: str, instance_id: Optional[s
     MCP Tool: rename_method
     Description: Refactors method name and updates all call sites
     """
-    return await get_from_jadx("rename-method", {"method_name": method_name, "new_name": new_name}, instance_id=instance_id)
+    return await get_from_jadx("rename-method", {
+        "class_name": class_name,
+        "method_name": method_name,
+        "new_name": new_name
+    }, instance_id=instance_id)
 
 
 async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
