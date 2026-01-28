@@ -917,7 +917,7 @@ def main():
             config_loader = ConfigLoader(config_path)
             loaded_config = config_loader.load()
             set_config_loader(config_loader)
-            print(f"✓ Loaded configuration from {config_path}")
+            print(f"[OK] Loaded configuration from {config_path}")
             
             # Apply config file values only when CLI uses defaults (CLI takes precedence)
             if loaded_config.server.host and args.host == parser.get_default("host"):
@@ -929,15 +929,15 @@ def main():
             if loaded_config.defaults.busy_timeout:
                 args.max_busy_timeout = loaded_config.defaults.busy_timeout
         else:
-            print(f"⚠ Config file not found: {config_path}, using CLI arguments")
+            print(f"[WARN] Config file not found: {config_path}, using CLI arguments")
 
     # Configure busy timeout
     InstanceBusyTracker.set_timeout(args.max_busy_timeout)
-    print(f"✓ Busy timeout set to {args.max_busy_timeout} seconds")
+    print(f"[OK] Busy timeout set to {args.max_busy_timeout} seconds")
 
     # Configure request timeout
     config.set_request_timeout(args.request_timeout)
-    print(f"✓ Request timeout set to {args.request_timeout} seconds")
+    print(f"[OK] Request timeout set to {args.request_timeout} seconds")
 
     # Configure JADX connection (for backward compatibility)
     config.set_jadx_config(host=args.jadx_host, port=args.jadx_port)
@@ -956,9 +956,9 @@ def main():
     if default_jadx_token:
         config.set_auth_token(default_jadx_token)
         InstanceRegistry.set_auth_token(default_jadx_token)
-        print(f"✓ Default JADX plugin token configured")
+        print(f"[OK] Default JADX plugin token configured")
     else:
-        print("⚠ No default JADX plugin token (instances may need individual tokens)")
+        print("[WARN] No default JADX plugin token (instances may need individual tokens)")
     
     # Configure multi-user authentication
     allow_anonymous = True  # Allow anonymous if no users configured
@@ -968,7 +968,7 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=False  # Require auth if users are configured
         )
-        print(f"✓ Multi-user authentication enabled ({len(loaded_config.users)} users)")
+        print(f"[OK] Multi-user authentication enabled ({len(loaded_config.users)} users)")
         for user in loaded_config.users:
             role = "admin" if user.is_admin else "user"
             print(f"  - {user.name} ({role})")
@@ -980,7 +980,7 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=True
         )
-        print(f"✓ Single-token authentication mode")
+        print(f"[OK] Single-token authentication mode")
     else:
         # No authentication
         UserAuthManager.configure(
@@ -988,7 +988,7 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=True
         )
-        print("⚠ No MCP authentication configured")
+        print("[WARN] No MCP authentication configured")
         print("  Add [[users]] to config or use --mcp-auth-token")
 
     # Banner & Health Check
@@ -1012,7 +1012,7 @@ def main():
             print(f"\nRegistering JADX instances from config file...")
             for inst_cfg in loaded_config.jadx_instances:
                 if not inst_cfg.enabled:
-                    print(f"  ⊘ Skipped (disabled): {inst_cfg.name}")
+                    print(f"  [-] Skipped (disabled): {inst_cfg.name}")
                     continue
                 
                 # Register as pending - health monitor will attempt connection
@@ -1023,10 +1023,10 @@ def main():
                     token=inst_cfg.token if inst_cfg.token else None,
                 )
                 if result["success"]:
-                    print(f"  ✓ Registered: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port}) [pending]")
+                    print(f"  [OK] Registered: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port}) [pending]")
                     instances_added += 1
                 else:
-                    print(f"  ✗ Failed: {inst_cfg.name}: {result['message']}")
+                    print(f"  [FAIL] Failed: {inst_cfg.name}: {result['message']}")
         
         # 2. Load instances from CLI --jadx-instances
         if args.jadx_instances:
@@ -1040,14 +1040,14 @@ def main():
                         name = parts[2] if len(parts) > 2 else None
                         result = await InstanceRegistry.add_instance(host, port, name)
                         if result["success"]:
-                            print(f"  ✓ Added: {result['instance']['name']} ({host}:{port})")
+                            print(f"  [OK] Added: {result['instance']['name']} ({host}:{port})")
                             instances_added += 1
                         else:
-                            print(f"  ✗ Failed: {host}:{port}: {result['message']}")
+                            print(f"  [FAIL] Failed: {host}:{port}: {result['message']}")
                     except ValueError:
-                        print(f"  ✗ Invalid port: {inst_str}")
+                        print(f"  [FAIL] Invalid port: {inst_str}")
                 else:
-                    print(f"  ✗ Invalid format: {inst_str}")
+                    print(f"  [FAIL] Invalid format: {inst_str}")
         
         # 3. If no instances configured, try default connection
         if instances_added == 0 and not args.jadx_instances and not (loaded_config and loaded_config.jadx_instances):
@@ -1055,7 +1055,7 @@ def main():
             try:
                 result = await InstanceRegistry.add_instance(args.jadx_host, args.jadx_port)
                 if result["success"]:
-                    print(f"✓ Default JADX instance connected")
+                    print(f"[OK] Default JADX instance connected")
                     instances_added += 1
                 else:
                     print(f"⚠ Could not connect to default JADX: {result['message']}")
@@ -1066,7 +1066,7 @@ def main():
     
     try:
         instance_count = asyncio.run(init_all_instances())
-        print(f"\n✓ Total JADX instances: {instance_count}")
+        print(f"\n[OK] Total JADX instances: {instance_count}")
     except Exception as e:
         print(f"⚠ Instance initialization error: {e}")
 
@@ -1114,15 +1114,15 @@ def main():
     auth_middleware = BearerAuthMiddleware(require_auth=require_auth)
     mcp.add_middleware(auth_middleware)
     if require_auth:
-        print(f"✓ Authentication middleware enabled (required)")
+        print(f"[OK] Authentication middleware enabled (required)")
     else:
-        print(f"✓ Authentication middleware enabled (optional)")
+        print(f"[OK] Authentication middleware enabled (optional)")
     
     if args.http:
         # 设置 MCP Server URL 供 Transfer API 使用（从配置文件读取）
         if loaded_config and loaded_config.server.mcp_url:
             set_mcp_server_url_from_config(loaded_config.server.mcp_url)
-            print(f"✓ Transfer API URL: {loaded_config.server.mcp_url}")
+            print(f"[OK] Transfer API URL: {loaded_config.server.mcp_url}")
         
         print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
         if args.mcp_auth_token or (loaded_config and loaded_config.users):
