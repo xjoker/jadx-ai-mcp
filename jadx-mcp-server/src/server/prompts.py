@@ -122,7 +122,7 @@ else:
         """
         return f"""You want to search for "{keyword}" in the codebase.
 
-**⚠️ CRITICAL: Check Status First!**
+**CRITICAL: Check Status First!**
 ```python
 status = get_decompile_status()
 ```

@@ -137,20 +137,20 @@ jobs:
       - name: Generate Release Notes
         run: |
           cat > release_notes.md << 'EOF'
-          ## 📦 Downloads
+          ## Downloads
 
           | File | Description |
           |------|-------------|
           | `jadx-ai-mcp-${{ steps.tag_version.outputs.version }}.jar` | JADX Plugin |
           | `jadx-mcp-server-${{ steps.tag_version.outputs.version }}.zip` | MCP Server |
 
-          ## 🚀 Quick Install
+          ## Quick Install
 
           ```bash
           jadx plugins --install "github:xjoker:jadx-ai-mcp"
           ```
 
-          ## 🐳 Docker
+          ## Docker
 
           ```bash
           docker pull xjoker/jadx-ai-mcp:latest

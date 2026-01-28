@@ -41,7 +41,7 @@ RECOMMENDED WORKFLOW:
 3. Use code search only when cache is ready (cached_percentage > 50%)
 4. Use package filter to narrow search scope for better performance
 
-⚡ TRANSFER API - Bypass MCP Size Limits:
+TRANSFER API - Bypass MCP Size Limits:
 When batch operations might exceed MCP message limits (~16KB):
 1. Call create_transfer_token(resource_type="batch_classes")
 2. Use HTTP client to download directly from transfer_url
@@ -1058,9 +1058,9 @@ def main():
                     print(f"[OK] Default JADX instance connected")
                     instances_added += 1
                 else:
-                    print(f"⚠ Could not connect to default JADX: {result['message']}")
+                    print(f"[WARN] Could not connect to default JADX: {result['message']}")
             except Exception as e:
-                print(f"⚠ Default connection failed: {e}")
+                print(f"[WARN] Default connection failed: {e}")
         
         return instances_added
     
@@ -1068,7 +1068,7 @@ def main():
         instance_count = asyncio.run(init_all_instances())
         print(f"\n[OK] Total JADX instances: {instance_count}")
     except Exception as e:
-        print(f"⚠ Instance initialization error: {e}")
+        print(f"[WARN] Instance initialization error: {e}")
 
     # ========== Config Hot-Reload Callback ==========
     async def on_config_change(new_config: AppConfig):
