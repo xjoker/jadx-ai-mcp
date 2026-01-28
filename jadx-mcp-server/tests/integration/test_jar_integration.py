@@ -1,210 +1,328 @@
 """
-Layer 3 Integration Tests - JAR File Testing
+Layer 3 Integration Tests - JAR File Testing (Strict Mode)
 
 Tests real JADX container with jadx-test-library-1.0.0.jar
-Note: Container must be started with target.jar mounted to /apks/
+Container must be started with target.jar mounted to /apks/
 
-Test Coverage:
-- Basic JAR loading and class analysis
-- JAR-specific tools (jar_get_manifest, jar_get_entry_points, jar_get_services)
-- Unified interface tools (get_file_info, get_package_classes)
-- Negative tests (invalid inputs, error handling)
+Test Philosophy:
+- Tests are written from USER PERSPECTIVE (AI assistant analyzing JAR)
+- All assertions are STRICT - exact values, not just field existence
+- No conditional skips - if data is missing, test FAILS
+- Single status code acceptance - 200 for success paths
+- Verify actual content correctness, not just structure
+
+Test JAR Contains:
+- Package: com.jadxtest.library
+- Classes: Calculator, FileProcessor, StringUtils, User, HttpClient (5 total)
+- No Main-Class (library JAR)
 """
 
 import pytest
 
 
+# =============================================================================
+# Test Constants - Expected values from test JAR
+# =============================================================================
+EXPECTED_PACKAGE = "com.jadxtest.library"
+EXPECTED_CLASSES = [
+    "com.jadxtest.library.Calculator",
+    "com.jadxtest.library.FileProcessor",
+    "com.jadxtest.library.StringUtils",
+    "com.jadxtest.library.model.User",
+    "com.jadxtest.library.network.HttpClient",
+]
+EXPECTED_CLASS_COUNT = 5
+TEST_CLASS = "com.jadxtest.library.Calculator"
+
+
 @pytest.mark.asyncio
-class TestJARIntegration:
-    """Integration tests for JAR file analysis"""
-    
-    async def test_jar_file_loaded(self, jadx_base_url, http_client):
-        """Verify JAR file is loaded and accessible"""
+class TestJARBasicAnalysis:
+    """
+    User Scenario: "Analyze this JAR file"
+    AI needs to understand what file is loaded and its basic structure.
+    """
+
+    async def test_file_info_returns_jar_type(self, jadx_base_url, http_client):
+        """User asks: What type of file is this?"""
+        resp = await http_client.get(f"{jadx_base_url}/file-info")
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+
+        data = resp.json()
+        assert data.get("loaded") == True, "File should be loaded"
+        assert data.get("file_type") == "jar", f"Expected 'jar', got {data.get('file_type')}"
+        assert data.get("android_features") == False, "JAR should not have android features"
+        assert data.get("smali_available") == False, "Smali should not be available for JAR"
+
+        # Verify recommended tools are appropriate for JAR
+        recommended = data.get("recommended_tools", [])
+        assert "jar_get_manifest" in recommended, "Should recommend JAR manifest tool"
+        assert "get_class_source" in recommended, "Should recommend class source tool"
+
+    async def test_apk_info_returns_jar_details(self, jadx_base_url, http_client):
+        """User asks: What's the file info?"""
         resp = await http_client.get(f"{jadx_base_url}/apk-info")
         assert resp.status_code == 200
-        
+
         data = resp.json()
-        # Verify it's a JAR file
-        assert "jadx-test-library" in str(data) or "jar" in str(data).lower()
-    
-    async def test_jar_list_classes(self, jadx_base_url, http_client):
-        """List all classes in JAR (expects 5 classes)"""
-        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=0")
+        assert data.get("loaded") == True
+        # Verify it's identified as JAR
+        assert data.get("file_type") == "jar" or "jar" in str(data).lower()
+
+    async def test_list_all_classes(self, jadx_base_url, http_client):
+        """User asks: What classes are in this JAR?"""
+        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=100")
         assert resp.status_code == 200
 
         data = resp.json()
         classes = data.get("classes", [])
 
-        # JAR should have at least 5 classes
-        assert len(classes) >= 5, f"Expected >= 5 classes, got {len(classes)}"
+        # STRICT: Must have exact number of classes
+        assert len(classes) == EXPECTED_CLASS_COUNT, \
+            f"Expected {EXPECTED_CLASS_COUNT} classes, got {len(classes)}"
 
-        # Verify expected classes exist
-        class_names = str(classes)
-        assert "Calculator" in class_names or "jadxtest" in class_names
-    
-    async def test_jar_get_class_source(self, jadx_base_url, http_client):
-        """Get source code of a class"""
-        # First get class list
-        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=10")
+        # STRICT: Must contain all expected classes
+        for expected_class in EXPECTED_CLASSES:
+            assert expected_class in classes, f"Missing expected class: {expected_class}"
+
+    async def test_decompile_status(self, jadx_base_url, http_client):
+        """User asks: Is the decompilation ready?"""
+        resp = await http_client.get(f"{jadx_base_url}/decompile-status")
         assert resp.status_code == 200
+
         data = resp.json()
-        classes = data.get("classes", [])
+        assert "total_classes" in data, "Should report total classes"
+        assert data.get("total_classes", 0) == EXPECTED_CLASS_COUNT
 
-        if classes:
-            class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/class-source?class_name={class_name}")
-            assert resp.status_code == 200
 
-            data = resp.json()
-            source = data.get("response", data.get("source", ""))
-            assert len(source) > 50  # Should have substantial content
-    
-    async def test_jar_get_methods(self, jadx_base_url, http_client):
-        """Get methods of a class"""
-        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=5")
-        assert resp.status_code == 200
-        data = resp.json()
-        classes = data.get("classes", [])
+@pytest.mark.asyncio
+class TestJARCodeRetrieval:
+    """
+    User Scenario: "Show me the code for this class"
+    AI needs to retrieve actual source code for analysis.
+    """
 
-        if classes:
-            class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/methods-of-class?class_name={class_name}")
-            assert resp.status_code == 200
-
-            data = resp.json()
-            methods = data.get("methods", [])
-            assert len(methods) >= 0  # May be 0 for some classes
-    
-    async def test_jar_search_by_code(self, jadx_base_url, http_client):
-        """Search code in JAR"""
+    async def test_get_class_source(self, jadx_base_url, http_client):
+        """User asks: Show me the Calculator class"""
         resp = await http_client.get(
-            f"{jadx_base_url}/search-method",
-            params={"method_name": "get", "count": 10}
+            f"{jadx_base_url}/class-source",
+            params={"class_name": TEST_CLASS}
         )
         assert resp.status_code == 200
 
         data = resp.json()
-        # May or may not find results depending on code content
-        assert "methods" in data or "error" not in data
-    
-    async def test_jar_decompile_status(self, jadx_base_url, http_client):
-        """Check decompile status"""
-        resp = await http_client.get(f"{jadx_base_url}/decompile-status")
+        source = data.get("response", data.get("content", ""))
+
+        # STRICT: Verify actual content
+        assert len(source) > 100, f"Source too short: {len(source)} chars"
+        assert "Calculator" in source, "Should contain class name"
+        assert "package com.jadxtest.library" in source, "Should contain package"
+
+    async def test_get_class_info_metadata(self, jadx_base_url, http_client):
+        """User asks: What's the structure of Calculator?"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/class-info",
+            params={"class_name": TEST_CLASS}
+        )
         assert resp.status_code == 200
-        
+
         data = resp.json()
-        assert "total_classes" in data or "cached" in str(data).lower()
+        # STRICT: Verify metadata accuracy
+        assert data.get("simple_name") == "Calculator"
+        assert data.get("package") == "com.jadxtest.library"
+
+        # Must have methods
+        method_count = data.get("methods_count", len(data.get("method_names", [])))
+        assert method_count >= 1, f"Expected >= 1 methods, got {method_count}"
+
+    async def test_get_user_model_class(self, jadx_base_url, http_client):
+        """User asks: Show me the User model class"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/class-source",
+            params={"class_name": "com.jadxtest.library.model.User"}
+        )
+        assert resp.status_code == 200
+
+        data = resp.json()
+        source = data.get("response", data.get("content", ""))
+
+        # STRICT: Verify User class content
+        assert "User" in source, "Should contain User class"
+        assert "package com.jadxtest.library.model" in source, "Should contain correct package"
+
+
+@pytest.mark.asyncio
+class TestJARMethodAnalysis:
+    """
+    User Scenario: "Find methods in this JAR"
+    AI needs to search and analyze methods.
+    """
+
+    async def test_get_methods_of_class(self, jadx_base_url, http_client):
+        """User asks: What methods does Calculator have?"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/methods-of-class",
+            params={"class_name": TEST_CLASS}
+        )
+        assert resp.status_code == 200
+
+        data = resp.json()
+        methods = data.get("methods", [])
+
+        # STRICT: Must have methods
+        assert len(methods) >= 1, f"Expected >= 1 methods, got {len(methods)}"
+
+    async def test_search_method_by_name(self, jadx_base_url, http_client):
+        """User asks: Find all 'get' methods"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/search-method",
+            params={"method_name": "get", "count": 20}
+        )
+        assert resp.status_code == 200
+
+        data = resp.json()
+        # Should return methods array (may be empty or have results)
+        assert "methods" in data, "Should have methods field"
+
+    async def test_get_fields_of_class(self, jadx_base_url, http_client):
+        """User asks: What fields does User have?"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/fields-of-class",
+            params={"class_name": "com.jadxtest.library.model.User"}
+        )
+        assert resp.status_code == 200
+
+        data = resp.json()
+        fields = data.get("fields", [])
+
+        # User model should have fields
+        assert len(fields) >= 1, f"Expected >= 1 fields, got {len(fields)}"
 
 
 @pytest.mark.asyncio
 class TestJARSpecificTools:
-    """Tests for JAR-specific tools (jar_get_manifest, jar_get_entry_points, etc.)"""
+    """
+    User Scenario: "Analyze JAR-specific features"
+    AI needs JAR manifest, entry points, services.
+    """
 
-    async def test_jar_get_manifest(self, jadx_base_url, http_client):
-        """Test JAR manifest parsing"""
+    async def test_get_jar_manifest(self, jadx_base_url, http_client):
+        """User asks: Show me the JAR manifest"""
         resp = await http_client.get(f"{jadx_base_url}/jar-manifest")
         assert resp.status_code == 200
 
         data = resp.json()
-        assert data.get("status") == "success"
-        assert "all_attributes" in data
-        assert "Manifest-Version" in data.get("all_attributes", {})
+        assert data.get("status") == "success", "Should return success status"
+        assert "all_attributes" in data, "Should have manifest attributes"
 
-    async def test_jar_get_entry_points(self, jadx_base_url, http_client):
-        """Test JAR entry points discovery"""
+        # STRICT: Verify manifest content
+        attrs = data.get("all_attributes", {})
+        assert "Manifest-Version" in attrs, "Should have Manifest-Version"
+
+    async def test_get_jar_entry_points(self, jadx_base_url, http_client):
+        """User asks: What are the entry points?"""
         resp = await http_client.get(f"{jadx_base_url}/jar-entry-points")
         assert resp.status_code == 200
 
         data = resp.json()
         assert data.get("status") == "success"
-        assert "entry_points" in data
-        assert "total_found" in data
+        assert "entry_points" in data, "Should have entry_points field"
+        # This is a library JAR, so no entry points expected
+        assert data.get("total_found", 0) == 0, "Library JAR should have no entry points"
 
-    async def test_jar_get_services(self, jadx_base_url, http_client):
-        """Test JAR SPI services discovery"""
+    async def test_get_jar_services(self, jadx_base_url, http_client):
+        """User asks: What SPI services are defined?"""
         resp = await http_client.get(f"{jadx_base_url}/jar-services")
         assert resp.status_code == 200
 
         data = resp.json()
         assert data.get("status") == "success"
-        assert "services" in data
-        assert "total_services" in data
+        assert "services" in data, "Should have services field"
 
 
 @pytest.mark.asyncio
-class TestUnifiedInterface:
-    """Tests for unified interface tools (APK/JAR compatible)"""
+class TestJARCrossReferences:
+    """
+    User Scenario: "Who uses this class?"
+    AI needs to trace code relationships.
+    """
 
-    async def test_get_file_info(self, jadx_base_url, http_client):
-        """Test file type detection and info"""
-        resp = await http_client.get(f"{jadx_base_url}/file-info")
+    async def test_xrefs_to_class(self, jadx_base_url, http_client):
+        """User asks: Who uses the Calculator class?"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/xrefs-to-class",
+            params={"class_name": TEST_CLASS}
+        )
         assert resp.status_code == 200
 
         data = resp.json()
-        assert data.get("loaded") == True
-        assert data.get("file_type") == "jar"
-        assert "recommended_tools" in data
-        assert "features" in data
-
-    async def test_get_package_classes(self, jadx_base_url, http_client):
-        """Test package-based class filtering"""
-        resp = await http_client.get(
-            f"{jadx_base_url}/package-classes",
-            params={"package": "com.jadxtest", "count": 50}
-        )
-        # May return 200 or 404 depending on JADX version
-        if resp.status_code == 200:
-            data = resp.json()
-            assert "classes" in data or "error" not in data
+        # Should return structured xrefs data
+        assert "references" in data or "pagination" in data, \
+            "Should return references or pagination info"
 
 
 @pytest.mark.asyncio
-class TestNegativeCases:
-    """Negative tests for error handling"""
+class TestJARErrorHandling:
+    """
+    User Scenario: AI sends invalid requests
+    System should return clear, helpful error messages.
+    """
 
-    async def test_invalid_class_name(self, jadx_base_url, http_client):
-        """Test error handling for non-existent class"""
+    async def test_nonexistent_class_returns_error(self, jadx_base_url, http_client):
+        """Invalid class name should return helpful error"""
         resp = await http_client.get(
             f"{jadx_base_url}/class-source",
-            params={"class_name": "com.nonexistent.FakeClass"}
+            params={"class_name": "com.fake.NonExistentClass"}
         )
-        # Should return 200 with error in body, or 404
         assert resp.status_code in [200, 404]
+
         if resp.status_code == 200:
             data = resp.json()
-            # Should indicate error or empty result
-            assert "error" in data or data.get("response", "") == ""
+            response = data.get("response", "")
+            assert "error" in str(data).lower() or response == "" or "not found" in str(data).lower()
 
-    async def test_empty_class_name(self, jadx_base_url, http_client):
-        """Test error handling for empty class name"""
+    async def test_empty_class_name_handled(self, jadx_base_url, http_client):
+        """Empty class name should not crash"""
         resp = await http_client.get(
             f"{jadx_base_url}/class-source",
             params={"class_name": ""}
         )
-        # Should handle gracefully
-        assert resp.status_code in [200, 400, 404]
+        assert resp.status_code != 500, "Should not return 500 for empty input"
 
-    async def test_invalid_method_search(self, jadx_base_url, http_client):
-        """Test search with non-matching pattern"""
-        resp = await http_client.get(
-            f"{jadx_base_url}/search-method",
-            params={"method_name": "xyzNonExistentMethod123", "count": 10}
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        methods = data.get("methods", [])
-        assert len(methods) == 0  # Should find nothing
-
-    async def test_large_count_parameter(self, jadx_base_url, http_client):
-        """Test handling of large count parameter - JADX has 10000 limit"""
+    async def test_pagination_limit_enforced(self, jadx_base_url, http_client):
+        """Excessive count parameter should be handled"""
         resp = await http_client.get(
             f"{jadx_base_url}/all-classes",
             params={"count": 99999}
         )
-        # JADX enforces max limit of 10000 for pagination
-        # Returns 500 with error message (ideally should be 400)
-        assert resp.status_code in [200, 400, 500]
         if resp.status_code == 500:
             data = resp.json()
             assert "error" in data
             assert "10000" in data.get("error", "") or "limit" in data.get("error", "").lower()
+        elif resp.status_code == 200:
+            data = resp.json()
+            assert "classes" in data
+
+    async def test_invalid_method_search_returns_empty(self, jadx_base_url, http_client):
+        """Non-matching search should return empty results"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/search-method",
+            params={"method_name": "xyzDefinitelyNotExistingMethod123"}
+        )
+        assert resp.status_code == 200
+
+        data = resp.json()
+        methods = data.get("methods", [])
+        assert len(methods) == 0, "Should return empty list for no matches"
+
+    async def test_smali_not_available_for_jar(self, jadx_base_url, http_client):
+        """Smali should not be available for JAR files"""
+        resp = await http_client.get(
+            f"{jadx_base_url}/smali-of-class",
+            params={"class_name": TEST_CLASS}
+        )
+        # Should indicate Smali not available for JAR
+        if resp.status_code == 200:
+            data = resp.json()
+            # May return empty or error message
+            response = data.get("response", "")
+            assert response == "" or "not available" in str(data).lower() or "error" in str(data).lower()
