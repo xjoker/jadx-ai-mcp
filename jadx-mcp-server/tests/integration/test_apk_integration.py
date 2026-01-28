@@ -34,61 +34,61 @@ class TestAPKIntegration:
     
     async def test_apk_list_classes(self, jadx_base_url, http_client):
         """List all classes in APK"""
-        resp = await http_client.get(f"{jadx_base_url}/classes?count=0")
+        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=0")
         assert resp.status_code == 200
-        
+
         data = resp.json()
         classes = data.get("classes", [])
-        
+
         # APK should have at least some classes
         assert len(classes) >= 3, f"Expected >= 3 classes, got {len(classes)}"
     
     async def test_apk_get_class_source(self, jadx_base_url, http_client):
         """Get source code of a class"""
-        resp = await http_client.get(f"{jadx_base_url}/classes?count=10")
+        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=10")
         assert resp.status_code == 200
         data = resp.json()
         classes = data.get("classes", [])
-        
+
         if classes:
             class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/class/{class_name}/source")
+            resp = await http_client.get(f"{jadx_base_url}/class-source?class_name={class_name}")
             assert resp.status_code == 200
-            
+
             data = resp.json()
-            source = data.get("source", "")
+            source = data.get("response", data.get("source", ""))
             assert len(source) > 30
     
     async def test_apk_get_methods(self, jadx_base_url, http_client):
         """Get methods of a class"""
-        resp = await http_client.get(f"{jadx_base_url}/classes?count=5")
+        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=5")
         assert resp.status_code == 200
         data = resp.json()
         classes = data.get("classes", [])
-        
+
         if classes:
             class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/class/{class_name}/methods")
+            resp = await http_client.get(f"{jadx_base_url}/methods-of-class?class_name={class_name}")
             assert resp.status_code == 200
     
     async def test_apk_search_by_code(self, jadx_base_url, http_client):
         """Search code in APK"""
         resp = await http_client.get(
-            f"{jadx_base_url}/search",
-            params={"q": "onCreate", "search_in": "code", "count": 10}
+            f"{jadx_base_url}/search-method",
+            params={"method_name": "onCreate", "count": 10}
         )
         assert resp.status_code == 200
     
     async def test_apk_get_smali(self, jadx_base_url, http_client):
         """Get Smali code for a class"""
-        resp = await http_client.get(f"{jadx_base_url}/classes?count=5")
+        resp = await http_client.get(f"{jadx_base_url}/all-classes?count=5")
         assert resp.status_code == 200
         data = resp.json()
         classes = data.get("classes", [])
-        
+
         if classes:
             class_name = classes[0].get("class_name", classes[0]) if isinstance(classes[0], dict) else classes[0]
-            resp = await http_client.get(f"{jadx_base_url}/class/{class_name}/smali")
+            resp = await http_client.get(f"{jadx_base_url}/smali-of-class?class_name={class_name}")
             assert resp.status_code == 200
     
     async def test_apk_decompile_status(self, jadx_base_url, http_client):
