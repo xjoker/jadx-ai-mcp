@@ -42,10 +42,6 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 - 基础镜像 `xjoker/jadx-ai-mcp-base:1.1` 升级到 Java 25 + Ubuntu 24.04 Noble
 - 主镜像 `xjoker/jadx-ai-mcp:latest` 支持 linux/amd64 和 linux/arm64
 
-**镜像信息**
-- `xjoker/jadx-ai-mcp:latest` - SHA256: `409c6923d654dcea9baf0d172978564aa2343516f89eb2e87d68b5a00e5f6abd`
-- `xjoker/jadx-ai-mcp-base:1.1` - SHA256: `3d2d270af24e4c051044eae72d634cc820bb2b0cb53e4c30f3437d921310b24e`
-
 ### 📦 变更文件
 
 - `README.md` / `README.zh-cn.md` - 文档改进

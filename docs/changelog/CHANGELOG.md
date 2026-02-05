@@ -42,10 +42,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Base image `xjoker/jadx-ai-mcp-base:1.1` upgraded to Java 25 + Ubuntu 24.04 Noble
 - Main image `xjoker/jadx-ai-mcp:latest` supports linux/amd64 and linux/arm64
 
-**Images**
-- `xjoker/jadx-ai-mcp:latest` - SHA256: `409c6923d654dcea9baf0d172978564aa2343516f89eb2e87d68b5a00e5f6abd`
-- `xjoker/jadx-ai-mcp-base:1.1` - SHA256: `3d2d270af24e4c051044eae72d634cc820bb2b0cb53e4c30f3437d921310b24e`
-
 ### 📦 Changed Files
 
 - `README.md` / `README.zh-cn.md` - Documentation improvements
