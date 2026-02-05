@@ -81,12 +81,12 @@ class TestInstanceRegistryEdgeCases:
     def test_unicode_instance_name(self):
         """Unicode characters in instance name"""
         result = InstanceRegistry.register_pending_instance(
-            name="测试实例-🔧",
+            name="测试实例-tools",
             host="127.0.0.1",
             port=8650
         )
         assert result["success"] == True
-        assert InstanceRegistry.get_instance("测试实例-🔧") is not None
+        assert InstanceRegistry.get_instance("测试实例-tools") is not None
 
     def test_very_large_port(self):
         """Very large port number"""

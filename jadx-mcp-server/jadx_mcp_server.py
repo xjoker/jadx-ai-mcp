@@ -41,12 +41,19 @@ RECOMMENDED WORKFLOW:
 3. Use code search only when cache is ready (cached_percentage > 50%)
 4. Use package filter to narrow search scope for better performance
 
+TRANSFER API - Bypass MCP Size Limits:
+When batch operations might exceed MCP message limits (~16KB):
+1. Call create_transfer_token(resource_type="batch_classes")
+2. Use HTTP client to download directly from transfer_url
+3. Supports JSON and ZIP formats, Brotli/GZIP compression
+4. Example: GET {transfer_url}/download/batch-classes?classes=A,B&token=xxx&format=zip
+
 For detailed guidance, use the 'status-check' or 'search-code' prompts.
 """
 
+
 mcp = FastMCP(
-    "JADX-AI-MCP Plugin Reverse Engineering Server", 
-    stateless_http=True,
+    "JADX-AI-MCP Plugin Reverse Engineering Server",
     instructions=MCP_INSTRUCTIONS
 )
 
@@ -62,6 +69,23 @@ from src.server.health_monitor import HealthMonitor
 from src.server.logging_config import configure_logging, get_logger
 from src.server import tools
 
+# Transfer API imports
+from src.server.tools import transfer_tools
+from src.server import transfer_server
+from src.server.mcp_server_config import set_mcp_server_url_from_config
+
+# Register Transfer API custom routes
+# Using @mcp.custom_route() to add HTTP endpoints alongside MCP
+@mcp.custom_route("/transfer/download/batch-classes", methods=["GET"])
+async def transfer_download_batch_classes(request):
+    """Transfer API: Download batch classes bypassing MCP size limits"""
+    return await transfer_server.download_batch_classes(request)
+
+@mcp.custom_route("/transfer/health", methods=["GET"])
+async def transfer_health(request):
+    """Transfer API: Health check endpoint"""
+    return await transfer_server.download_health(request)
+
 logger = get_logger("main")
 
 
@@ -69,33 +93,6 @@ logger = get_logger("main")
 # All tools support optional instance_id for multi-instance targeting
 from typing import Optional
 
-
-@mcp.tool()
-@with_busy_check
-async def fetch_current_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch the currently selected class and its code from the JADX-GUI.
-    
-    CHUNKING: Large classes (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
-    
-    Args:
-        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
-        instance_id: Target JADX instance name.
-    """
-    return await tools.class_tools.fetch_current_class(chunk=chunk, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_selected_text(instance_id: Optional[str] = None) -> dict:
-    """Returns the currently selected text in the decompiled code view.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {selected_text: str, class_name: str, line_number: int}
-    """
-    return await tools.class_tools.get_selected_text(instance_id=instance_id)
 
 
 @mcp.tool()
@@ -519,35 +516,6 @@ async def jar_get_bytecode(
     return await tools.resource_tools.jar_get_bytecode(class_name, instance_id=instance_id)
 
 
-@mcp.tool()
-@with_busy_check
-async def get_main_application_classes_names(instance_id: Optional[str] = None) -> dict:
-    """Fetch main application classes' names from Manifest package.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {classes: [str, ...], package: str, count: int}
-    """
-    return await tools.class_tools.get_main_application_classes_names(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_main_application_classes_code(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch main application classes' source code with pagination.
-    
-    Args:
-        offset: Pagination offset. Default: 0
-        count: Max results (0=all). Default: 0
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {classes: [{name, source}, ...], total: int, has_more: bool}
-    """
-    return await tools.class_tools.get_main_application_classes_code(offset, count, instance_id=instance_id)
-
 
 @mcp.tool()
 @with_busy_check
@@ -611,60 +579,57 @@ async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
 
 @mcp.tool()
 @with_busy_check
-async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a specific class.
+async def rename(
+    target_type: str,
+    old_name: str,
+    new_name: str,
+    class_name: str = "",
+    instance_id: Optional[str] = None
+) -> dict:
+    """Unified rename tool for classes, methods, fields, and packages.
     
     Args:
-        class_name: Fully qualified class name to rename.
-        new_name: New class name (simple name, not fully qualified).
-        instance_id: Target JADX instance name.
+        target_type: Type of target to rename: "class" | "method" | "field" | "package"
+        old_name: Current name (fully qualified for class/package, simple name for method/field)
+        new_name: New name (simple name)
+        class_name: Required for method/field - the class containing the member
+        instance_id: Target JADX instance name
     
     Returns:
-        dict: {success: bool, message: str}
+        dict: {success: bool, message: str, renamed_count: int (for package only)}
+    
+    Examples:
+        # Rename class
+        rename("class", "com.example.OldClass", "NewClass")
+        
+        # Rename method
+        rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
+        
+        # Rename field
+        rename("field", "oldField", "newField", class_name="com.example.MyClass")
+        
+        # Rename package
+        rename("package", "com.example.old", "com.example.new")
     
     Note:
         Triggers 30s class cache cooldown.
     """
-    return await tools.refactor_tools.rename_class(class_name, new_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def rename_method(method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a specific method.
+    target_type = target_type.lower()
     
-    Args:
-        method_name: Method name to rename.
-        new_name: New method name.
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {success: bool, message: str}
-    
-    Note:
-        Triggers 30s class cache cooldown.
-    """
-    return await tools.refactor_tools.rename_method(method_name, new_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a specific field.
-    
-    Args:
-        class_name: Fully qualified class name containing the field.
-        field_name: Field name to rename.
-        new_name: New field name.
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {success: bool, message: str}
-    
-    Note:
-        Triggers 30s class cache cooldown.
-    """
-    return await tools.refactor_tools.rename_field(class_name, field_name, new_name, instance_id=instance_id)
+    if target_type == "class":
+        return await tools.refactor_tools.rename_class(old_name, new_name, instance_id=instance_id)
+    elif target_type == "method":
+        if not class_name:
+            return {"success": False, "error": "class_name required for method rename"}
+        return await tools.refactor_tools.rename_method(class_name, old_name, new_name, instance_id=instance_id)
+    elif target_type == "field":
+        if not class_name:
+            return {"success": False, "error": "class_name required for field rename"}
+        return await tools.refactor_tools.rename_field(class_name, old_name, new_name, instance_id=instance_id)
+    elif target_type == "package":
+        return await tools.refactor_tools.rename_package(old_name, new_name, instance_id=instance_id)
+    else:
+        return {"success": False, "error": f"Invalid target_type: {target_type}. Use: class, method, field, package"}
 
 
 @mcp.tool()
@@ -680,7 +645,6 @@ async def get_method_signature(class_name: str, method_name: str, instance_id: O
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
     """
     return await tools.search_tools.get_method_signature(class_name, method_name, instance_id=instance_id)
-
 
 
 @mcp.tool()
@@ -718,126 +682,55 @@ async def search_native_methods(
     return await tools.search_tools.search_native_methods(package, offset, count, instance_id=instance_id)
 
 
-@mcp.tool()
-@with_busy_check
-async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
-    """Renames a package and all its classes.
-    
-    Args:
-        old_package_name: Current package name (e.g., 'com.example.old').
-        new_package_name: New package name (e.g., 'com.example.new').
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {success: bool, renamed_count: int, message: str}
-    
-    Note:
-        Triggers 30s class cache cooldown.
-    """
-    return await tools.refactor_tools.rename_package(old_package_name, new_package_name, instance_id=instance_id)
-
 
 @mcp.tool()
 @with_busy_check
-async def debug_get_stack_frames(instance_id: Optional[str] = None) -> dict:
-    """Get current stack frames (call stack) when debugger is attached.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {frames: [{class_name, method_name, line_number}, ...], thread_id: str}
-    """
-    return await tools.debug_tools.debug_get_stack_frames(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def debug_get_threads(instance_id: Optional[str] = None) -> dict:
-    """Get all threads in the debugged process.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {threads: [{id, name, state, is_suspended}, ...], count: int}
-    """
-    return await tools.debug_tools.debug_get_threads(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def debug_get_variables(instance_id: Optional[str] = None) -> dict:
-    """Get current variables when debugger is suspended at a breakpoint.
-    
-    Args:
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {variables: [{name, type, value}, ...], scope: str}
-    """
-    return await tools.debug_tools.debug_get_variables(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
-    """Find all cross-references (xrefs) to a class.
-
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.Helper').
-        offset: Pagination offset. Default: 0
-        count: Max results. Default: 20
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
-    """
-    return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_xrefs_to_method(
-    class_name: str, method_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
+async def get_xrefs(
+    target_type: str,
+    class_name: str,
+    member_name: str = "",
+    offset: int = 0,
+    count: int = 20,
+    instance_id: Optional[str] = None
 ) -> dict:
-    """Find all references to a method.
+    """Unified cross-reference (xrefs) finder for classes, methods, and fields.
     
     Args:
-        class_name: Fully qualified class name.
-        method_name: Method name to find references for.
+        target_type: Type of target to find xrefs for: "class" | "method" | "field"
+        class_name: Fully qualified class name (e.g., 'com.example.Helper')
+        member_name: Method or field name (required for method/field, ignored for class)
         offset: Pagination offset. Default: 0
         count: Max results. Default: 20
-        instance_id: Target JADX instance name.
+        instance_id: Target JADX instance name
     
     Returns:
         dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
-    """
-    return await tools.xrefs_tools.get_xrefs_to_method(
-        class_name, method_name, offset, count, instance_id=instance_id
-    )
-
-
-@mcp.tool()
-@with_busy_check
-async def get_xrefs_to_field(
-    class_name: str, field_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None
-) -> dict:
-    """Find all references to a field.
     
-    Args:
-        class_name: Fully qualified class name.
-        field_name: Field name to find references for.
-        offset: Pagination offset. Default: 0
-        count: Max results. Default: 20
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
+    Examples:
+        # Find references to a class
+        get_xrefs("class", "com.example.Helper")
+        
+        # Find references to a method
+        get_xrefs("method", "com.example.MyClass", "myMethod")
+        
+        # Find references to a field
+        get_xrefs("field", "com.example.MyClass", "myField")
     """
-    return await tools.xrefs_tools.get_xrefs_to_field(
-        class_name, field_name, offset, count, instance_id=instance_id
-    )
+    target_type = target_type.lower()
+    
+    if target_type == "class":
+        return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
+    elif target_type == "method":
+        if not member_name:
+            return {"error": "member_name required for method xrefs"}
+        return await tools.xrefs_tools.get_xrefs_to_method(class_name, member_name, offset, count, instance_id=instance_id)
+    elif target_type == "field":
+        if not member_name:
+            return {"error": "member_name required for field xrefs"}
+        return await tools.xrefs_tools.get_xrefs_to_field(class_name, member_name, offset, count, instance_id=instance_id)
+    else:
+        return {"error": f"Invalid target_type: {target_type}. Use: class, method, field"}
+
 
 
 @mcp.tool()
@@ -852,21 +745,90 @@ async def batch_get_xrefs(targets: list[str], instance_id: Optional[str] = None)
     return await tools.xrefs_tools.batch_get_xrefs(targets, instance_id=instance_id)
 
 
+
+
+# ==================== Transfer API Tools ====================
+
 @mcp.tool()
-async def check_instance_status(instance_name: str = None) -> dict:
-    """Query the busy status of JADX instances.
+async def create_transfer_token(
+    operation: str = "download",
+    resource_type: str = "batch_classes",
+    timeout_seconds: int = 120,
+    params: Optional[dict] = None,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Create a transfer token for large file download bypassing MCP size limits.
     
-    Use this to check if an instance is available before making requests.
-    If an instance is busy, the response will include what operation is running.
+    Use this when batch operations might exceed MCP message size limits (~16KB).
+    Supports JSON and ZIP formats, with Brotli/GZIP compression.
     
     Args:
-        instance_name: Optional. Specific instance to check. If not provided, returns all instances status.
+        operation: "download" (currently only download supported)
+        resource_type: "batch_classes" | "batch_methods" | "project_export"
+        timeout_seconds: Token validity period in seconds (default: 120)
+        params: Optional request parameters
+        instance_id: JADX instance ID
     
     Returns:
-        Single instance: {"instance": "name", "available": true/false, "current_operation": "..."}
-        All instances: {"busy_instances": [...], "count": N}
+        dict with token, mcp_server_url, transfer_url, expires_in, etc.
+    
+    Python Usage Example:
+        ```python
+        import httpx
+        
+        # Step 1: Create token
+        result = await create_transfer_token(
+            resource_type="batch_classes",
+            timeout_seconds=300
+        )
+        token = result["token"]
+        mcp_url = result["mcp_server_url"]  # Use this, not transfer_url
+        
+        # Step 2: Download data via HTTP
+        async with httpx.AsyncClient() as client:
+            # JSON format (default)
+            response = await client.get(
+                f"{mcp_url}/transfer/download/batch-classes",
+                params={
+                    "classes": "com.example.ClassA,com.example.ClassB",
+                    "token": token,
+                    "format": "json"
+                }
+            )
+            data = response.json()
+            print(f"Downloaded {data['found']} classes")
+            
+            # ZIP format
+            response = await client.get(
+                f"{mcp_url}/transfer/download/batch-classes",
+                params={
+                    "classes": "com.example.ClassA",
+                    "token": token,
+                    "format": "zip"
+                }
+            )
+            with open("classes.zip", "wb") as f:
+                f.write(response.content)
+        
+        # Step 3: Clean up (optional, token auto-expires)
+        await revoke_transfer_token(token)
+        ```
+    
+    Supported Formats (query param 'format'):
+        - json: Returns JSON data (default)
+        - zip: Returns ZIP archive with .java files
+    
+    Supported Compressions (query param 'compression'):
+        - auto: Automatic based on Accept-Encoding (default)
+        - br: Brotli compression (best ratio)
+        - gzip: GZIP compression
+        - none: No compression
     """
-    return await InstanceBusyTracker.get_status(instance_name)
+    return await transfer_tools.create_transfer_token(
+        operation, resource_type, timeout_seconds, params, instance_id
+    )
+
+
 
 
 def main():
@@ -955,27 +917,27 @@ def main():
             config_loader = ConfigLoader(config_path)
             loaded_config = config_loader.load()
             set_config_loader(config_loader)
-            print(f"✓ Loaded configuration from {config_path}")
+            print(f"[OK] Loaded configuration from {config_path}")
             
-            # Override CLI args with config file values (config file takes precedence)
-            if loaded_config.server.host and args.host == "127.0.0.1":
+            # Apply config file values only when CLI uses defaults (CLI takes precedence)
+            if loaded_config.server.host and args.host == parser.get_default("host"):
                 args.host = loaded_config.server.host
-            if loaded_config.server.port and args.port == 8651:
+            if loaded_config.server.port and args.port == parser.get_default("port"):
                 args.port = loaded_config.server.port
             if loaded_config.defaults.request_timeout:
                 args.request_timeout = loaded_config.defaults.request_timeout
             if loaded_config.defaults.busy_timeout:
                 args.max_busy_timeout = loaded_config.defaults.busy_timeout
         else:
-            print(f"⚠ Config file not found: {config_path}, using CLI arguments")
+            print(f"[WARN] Config file not found: {config_path}, using CLI arguments")
 
     # Configure busy timeout
     InstanceBusyTracker.set_timeout(args.max_busy_timeout)
-    print(f"✓ Busy timeout set to {args.max_busy_timeout} seconds")
+    print(f"[OK] Busy timeout set to {args.max_busy_timeout} seconds")
 
     # Configure request timeout
     config.set_request_timeout(args.request_timeout)
-    print(f"✓ Request timeout set to {args.request_timeout} seconds")
+    print(f"[OK] Request timeout set to {args.request_timeout} seconds")
 
     # Configure JADX connection (for backward compatibility)
     config.set_jadx_config(host=args.jadx_host, port=args.jadx_port)
@@ -994,9 +956,9 @@ def main():
     if default_jadx_token:
         config.set_auth_token(default_jadx_token)
         InstanceRegistry.set_auth_token(default_jadx_token)
-        print(f"✓ Default JADX plugin token configured")
+        print(f"[OK] Default JADX plugin token configured")
     else:
-        print("⚠ No default JADX plugin token (instances may need individual tokens)")
+        print("[WARN] No default JADX plugin token (instances may need individual tokens)")
     
     # Configure multi-user authentication
     allow_anonymous = True  # Allow anonymous if no users configured
@@ -1006,7 +968,7 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=False  # Require auth if users are configured
         )
-        print(f"✓ Multi-user authentication enabled ({len(loaded_config.users)} users)")
+        print(f"[OK] Multi-user authentication enabled ({len(loaded_config.users)} users)")
         for user in loaded_config.users:
             role = "admin" if user.is_admin else "user"
             print(f"  - {user.name} ({role})")
@@ -1018,7 +980,7 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=True
         )
-        print(f"✓ Single-token authentication mode")
+        print(f"[OK] Single-token authentication mode")
     else:
         # No authentication
         UserAuthManager.configure(
@@ -1026,7 +988,7 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=True
         )
-        print("⚠ No MCP authentication configured")
+        print("[WARN] No MCP authentication configured")
         print("  Add [[users]] to config or use --mcp-auth-token")
 
     # Banner & Health Check
@@ -1050,7 +1012,7 @@ def main():
             print(f"\nRegistering JADX instances from config file...")
             for inst_cfg in loaded_config.jadx_instances:
                 if not inst_cfg.enabled:
-                    print(f"  ⊘ Skipped (disabled): {inst_cfg.name}")
+                    print(f"  [-] Skipped (disabled): {inst_cfg.name}")
                     continue
                 
                 # Register as pending - health monitor will attempt connection
@@ -1061,10 +1023,10 @@ def main():
                     token=inst_cfg.token if inst_cfg.token else None,
                 )
                 if result["success"]:
-                    print(f"  ✓ Registered: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port}) [pending]")
+                    print(f"  [OK] Registered: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port}) [pending]")
                     instances_added += 1
                 else:
-                    print(f"  ✗ Failed: {inst_cfg.name}: {result['message']}")
+                    print(f"  [FAIL] Failed: {inst_cfg.name}: {result['message']}")
         
         # 2. Load instances from CLI --jadx-instances
         if args.jadx_instances:
@@ -1078,14 +1040,14 @@ def main():
                         name = parts[2] if len(parts) > 2 else None
                         result = await InstanceRegistry.add_instance(host, port, name)
                         if result["success"]:
-                            print(f"  ✓ Added: {result['instance']['name']} ({host}:{port})")
+                            print(f"  [OK] Added: {result['instance']['name']} ({host}:{port})")
                             instances_added += 1
                         else:
-                            print(f"  ✗ Failed: {host}:{port}: {result['message']}")
+                            print(f"  [FAIL] Failed: {host}:{port}: {result['message']}")
                     except ValueError:
-                        print(f"  ✗ Invalid port: {inst_str}")
+                        print(f"  [FAIL] Invalid port: {inst_str}")
                 else:
-                    print(f"  ✗ Invalid format: {inst_str}")
+                    print(f"  [FAIL] Invalid format: {inst_str}")
         
         # 3. If no instances configured, try default connection
         if instances_added == 0 and not args.jadx_instances and not (loaded_config and loaded_config.jadx_instances):
@@ -1093,20 +1055,20 @@ def main():
             try:
                 result = await InstanceRegistry.add_instance(args.jadx_host, args.jadx_port)
                 if result["success"]:
-                    print(f"✓ Default JADX instance connected")
+                    print(f"[OK] Default JADX instance connected")
                     instances_added += 1
                 else:
-                    print(f"⚠ Could not connect to default JADX: {result['message']}")
+                    print(f"[WARN] Could not connect to default JADX: {result['message']}")
             except Exception as e:
-                print(f"⚠ Default connection failed: {e}")
+                print(f"[WARN] Default connection failed: {e}")
         
         return instances_added
     
     try:
         instance_count = asyncio.run(init_all_instances())
-        print(f"\n✓ Total JADX instances: {instance_count}")
+        print(f"\n[OK] Total JADX instances: {instance_count}")
     except Exception as e:
-        print(f"⚠ Instance initialization error: {e}")
+        print(f"[WARN] Instance initialization error: {e}")
 
     # ========== Config Hot-Reload Callback ==========
     async def on_config_change(new_config: AppConfig):
@@ -1152,11 +1114,16 @@ def main():
     auth_middleware = BearerAuthMiddleware(require_auth=require_auth)
     mcp.add_middleware(auth_middleware)
     if require_auth:
-        print(f"✓ Authentication middleware enabled (required)")
+        print(f"[OK] Authentication middleware enabled (required)")
     else:
-        print(f"✓ Authentication middleware enabled (optional)")
+        print(f"[OK] Authentication middleware enabled (optional)")
     
     if args.http:
+        # 设置 MCP Server URL 供 Transfer API 使用（从配置文件读取）
+        if loaded_config and loaded_config.server.mcp_url:
+            set_mcp_server_url_from_config(loaded_config.server.mcp_url)
+            print(f"[OK] Transfer API URL: {loaded_config.server.mcp_url}")
+        
         print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
         if args.mcp_auth_token or (loaded_config and loaded_config.users):
             print(f"  Clients must provide: Authorization: Bearer <token>")

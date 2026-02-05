@@ -1,6 +1,12 @@
 # JADX MCP Server 配置示例
 # 复制此文件为 jadx-config.toml 并根据需要修改
 
+[server]
+# MCP Server 对外暴露的访问地址（用于 Transfer API）
+# AI 会使用此地址通过 HTTP 下载大批量数据
+# 如果未配置，可通过环境变量 MCP_SERVER_URL 设置
+# mcp_url = "http://192.168.1.100:8651"
+
 [security]
 # 允许动态添加实例（通过 add_jadx_instance 工具）
 allow_dynamic_instances = false

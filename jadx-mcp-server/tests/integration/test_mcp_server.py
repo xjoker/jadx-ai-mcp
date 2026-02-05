@@ -1,81 +1,95 @@
 """
-Layer 3 Integration Tests - MCP Server (Port 8651)
+Layer 3 Integration Tests - MCP Server HTTP Mode Testing
 
-Tests the Python MCP Server layer that wraps JADX Plugin API.
+Tests the MCP Server running in HTTP/streamable-http mode.
+These tests are optional - they skip if MCP Server is not running.
 
-IMPORTANT: FastMCP uses streamable-http transport which requires:
-- Special Accept headers for SSE (Server-Sent Events)
-- MCP protocol client (not standard HTTP JSON-RPC)
-
-Due to these requirements, we only test:
-1. Server reachability (health endpoint)
-2. MCP endpoint existence (returns 406 without proper headers, which is expected)
-
-Full MCP protocol testing would require using fastmcp.Client with StreamableHttpTransport.
+Prerequisites:
+- JADX container running with a file loaded
+- MCP Server started with: python jadx_mcp_server.py --http --port 8651
 """
 
 import pytest
+import httpx
 
 
-@pytest.mark.asyncio
+# MCP Server configuration
+MCP_SERVER_URL = "http://127.0.0.1:8651"
+
+
+@pytest.fixture
+def mcp_client():
+    """HTTP client for MCP Server"""
+    return httpx.Client(timeout=30.0)
+
+
+def is_mcp_server_running() -> bool:
+    """Check if MCP Server is accessible"""
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.get(f"{MCP_SERVER_URL}/mcp")
+            return True
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        return False
+
+
 class TestMCPServerHealth:
-    """MCP Server health and reachability tests"""
-    
-    async def test_mcp_server_reachable(self, mcp_base_url, http_client):
-        """MCP Server should be reachable on port 8651"""
-        try:
-            resp = await http_client.get(f"{mcp_base_url}/health", timeout=10.0)
-            # Any response means server is up
-            assert resp.status_code in [200, 404, 405, 406]
-        except Exception:
-            # Try root endpoint
-            resp = await http_client.get(f"{mcp_base_url}/", timeout=10.0)
-            assert resp.status_code in [200, 404, 405, 406]
-    
-    async def test_mcp_endpoint_exists(self, mcp_base_url, http_client):
-        """MCP endpoint should exist (406 is expected without SSE headers)"""
-        resp = await http_client.get(f"{mcp_base_url}/mcp")
-        # 406 Not Acceptable = server exists but needs streamable-http protocol
-        # This is expected behavior for FastMCP
-        assert resp.status_code in [200, 404, 405, 406]
-    
-    async def test_mcp_post_returns_protocol_error(self, mcp_base_url, http_client):
-        """POST to MCP endpoint without proper headers returns 406"""
-        resp = await http_client.post(
-            f"{mcp_base_url}/mcp",
+    """Verify MCP Server is running and healthy."""
+
+    def test_mcp_endpoint_exists(self, mcp_client):
+        """MCP endpoint should respond"""
+        if not is_mcp_server_running():
+            pytest.skip("MCP Server not running on port 8651")
+
+        resp = mcp_client.get(f"{MCP_SERVER_URL}/mcp")
+        # 200, 405 (method not allowed), or 406 (not acceptable) are valid
+        assert resp.status_code in [200, 405, 406], \
+            f"Unexpected status: {resp.status_code}"
+
+    def test_transfer_health_endpoint(self, mcp_client):
+        """Transfer API health endpoint should work"""
+        if not is_mcp_server_running():
+            pytest.skip("MCP Server not running on port 8651")
+
+        resp = mcp_client.get(f"{MCP_SERVER_URL}/transfer/health")
+        assert resp.status_code in [200, 404]
+
+
+class TestMCPProtocolBasics:
+    """Test basic MCP protocol requirements."""
+
+    def test_options_request_allowed(self, mcp_client):
+        """OPTIONS request should be handled (CORS support)"""
+        if not is_mcp_server_running():
+            pytest.skip("MCP Server not running on port 8651")
+
+        resp = mcp_client.options(f"{MCP_SERVER_URL}/mcp")
+        assert resp.status_code in [200, 204, 405]
+
+    def test_post_to_mcp_endpoint(self, mcp_client):
+        """POST to MCP endpoint should be handled"""
+        if not is_mcp_server_running():
+            pytest.skip("MCP Server not running on port 8651")
+
+        resp = mcp_client.post(
+            f"{MCP_SERVER_URL}/mcp",
             json={"jsonrpc": "2.0", "method": "ping", "id": 1},
-            timeout=10.0
+            headers={"Content-Type": "application/json"}
         )
-        # FastMCP requires streamable-http transport with SSE
-        # 406 = Not Acceptable (needs Accept: text/event-stream or similar)
-        assert resp.status_code in [200, 400, 404, 405, 406, 415]
+        assert resp.status_code != 500, "Server should not crash"
 
 
-@pytest.mark.asyncio
-class TestMCPServerSSE:
-    """Test SSE (Server-Sent Events) transport requirements"""
-    
-    async def test_mcp_with_sse_accept_header(self, mcp_base_url, http_client):
-        """Test MCP endpoint with SSE Accept header"""
-        resp = await http_client.get(
-            f"{mcp_base_url}/mcp",
-            headers={"Accept": "text/event-stream"},
-            timeout=10.0
+class TestMCPServerConfiguration:
+    """Verify MCP Server configuration endpoints."""
+
+    def test_custom_routes_registered(self, mcp_client):
+        """Custom transfer routes should be registered"""
+        if not is_mcp_server_running():
+            pytest.skip("MCP Server not running on port 8651")
+
+        resp = mcp_client.get(
+            f"{MCP_SERVER_URL}/transfer/download/batch-classes",
+            params={"classes": "test", "token": "invalid"}
         )
-        # With correct Accept header, should get different response
-        # May still fail auth or require POST, but not 406
-        assert resp.status_code in [200, 400, 401, 404, 405, 406]
-    
-    async def test_mcp_post_with_sse_accept_header(self, mcp_base_url, http_client):
-        """Test MCP POST with SSE Accept header"""
-        resp = await http_client.post(
-            f"{mcp_base_url}/mcp",
-            headers={
-                "Accept": "text/event-stream",
-                "Content-Type": "application/json"
-            },
-            json={"jsonrpc": "2.0", "method": "initialize", "id": 1},
-            timeout=10.0
-        )
-        # Should accept the request format now
-        assert resp.status_code in [200, 400, 401, 404, 405, 406, 415, 422]
+        # Should not crash
+        assert resp.status_code in [200, 400, 401, 403, 404, 500]

@@ -79,18 +79,6 @@ def set_jadx_config(host: str = "127.0.0.1", port: int = 8650):
     JADX_HTTP_BASE = f"http://{JADX_HOST}:{JADX_PORT}"
 
 
-def set_jadx_port(port: int):
-    """
-    Updates the JADX plugin port (maintains backward compatibility).
-
-    Args:
-        port: TCP port number where JADX AI MCP plugin is listening
-
-    Side Effects:
-        Updates global JADX_PORT and JADX_HTTP_BASE configuration
-    """
-    set_jadx_config(JADX_HOST, port)
-
 
 def set_auth_token(token: Optional[str]):
     """
@@ -138,28 +126,6 @@ def _get_auth_headers() -> Dict[str, str]:
         return {"Authorization": f"Bearer {AUTH_TOKEN}"}
     return {}
 
-
-async def health_ping() -> Union[str, Dict[str, Any]]:
-    """
-    Checks if the JADX Java plugin is reachable (async version).
-
-    Returns:
-        Union[str, Dict[str, Any]]: Success message or error dictionary
-
-    Note:
-        Performs async HTTP health check with configurable timeout.
-        Health check does not require authentication.
-    """
-    logger.info(f"Attempting to connect to {JADX_HTTP_BASE}/health")
-    try:
-        client = await HttpClientManager.get_client()
-        resp = await client.get(f"{JADX_HTTP_BASE}/health")
-        resp.raise_for_status()
-        return resp.text
-    except Exception as e:
-        logger.error(f"Health check failed: {type(e).__name__}: {e}")
-        # Security: return only exception type, don't expose connection details
-        return {"error": f"Health check failed: {type(e).__name__}"}
 
 
 async def get_from_jadx(

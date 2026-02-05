@@ -58,7 +58,7 @@ jobs:
         if: always()
         run: |
           cd jadx-mcp-server
-          echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Extract test statistics
@@ -69,25 +69,25 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             
             # Show passed tests
-            echo "### ✅ Passed Tests" >> $GITHUB_STEP_SUMMARY
+            echo "### [PASSED] Passed Tests" >> $GITHUB_STEP_SUMMARY
             grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_No passed tests found_" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             
             # Show failed tests if any
             if grep -q "FAILED" test-output.txt; then
-              echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
+              echo "### [FAILED] Failed Tests" >> $GITHUB_STEP_SUMMARY
               grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
             
             # Show errors if any
             if grep -q "ERROR" test-output.txt; then
-              echo "### ⚠️ Errors" >> $GITHUB_STEP_SUMMARY
+              echo "### [WARN] Errors" >> $GITHUB_STEP_SUMMARY
               grep "ERROR" test-output.txt | sed 's/ERROR//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
           else
-            echo "⚠️ Test output file not found" >> $GITHUB_STEP_SUMMARY
+            echo "[WARN] Test output file not found" >> $GITHUB_STEP_SUMMARY
           fi
 
   # Optional: Integration tests with JADX container
@@ -113,7 +113,7 @@ jobs:
       
       - name: Start JADX container with JAR
         run: |
-          echo "🚀 Starting JADX container with JAR file..."
+          echo "Starting JADX container with JAR file..."
           docker run -d --name jadx-jar \
             -p 8650:8650 \
             -p 8651:8651 \
@@ -125,12 +125,12 @@ jobs:
       
       - name: Wait for JADX to be ready
         run: |
-          echo "⏳ Waiting for JADX to load JAR..."
-          echo "📋 Initial container logs:"
+          echo "Waiting for JADX to load JAR..."
+          echo "Initial container logs:"
           sleep 10
           docker logs jadx-jar 2>&1 | tail -30
           echo ""
-          echo "🔍 Checking container ports..."
+          echo "Checking container ports..."
           docker ps
           
           MAX_ATTEMPTS=60
@@ -138,21 +138,21 @@ jobs:
             # Check if JADX Plugin API responds (needs file loaded)
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8650/apk-info 2>/dev/null || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ JADX Plugin API is ready (JAR loaded)"
+              echo "[OK] JADX Plugin API is ready (JAR loaded)"
               curl -s http://localhost:8650/apk-info | head -100
               exit 0
             fi
             
             # Show logs every 20 attempts
             if [ $((ATTEMPT % 20)) -eq 0 ]; then
-              echo "📋 Container logs (attempt $ATTEMPT):"
+              echo "Container logs (attempt $ATTEMPT):"
               docker logs jadx-jar 2>&1 | tail -20
             fi
             
             echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: waiting... (HTTP $HTTP_CODE)"
             sleep 3
           done
-          echo "❌ JADX failed to load JAR"
+          echo "[FAIL] JADX failed to load JAR"
           docker logs jadx-jar 2>&1 | tail -100
           exit 1
       
@@ -177,17 +177,17 @@ jobs:
         if: always()
         run: |
           cd jadx-mcp-server
-          echo "## 🧪 Layer 3 - JAR Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "## Layer 3 - JAR Integration Tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f test-output.txt ]; then
             SUMMARY=$(grep -E "^=+.*=+$" test-output.txt | tail -1 || echo "No summary")
             echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ✅ Passed Tests" >> $GITHUB_STEP_SUMMARY
+            echo "### [PASSED] Passed Tests" >> $GITHUB_STEP_SUMMARY
             grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_None_" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             if grep -q "FAILED" test-output.txt; then
-              echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
+              echo "### [FAILED] Failed Tests" >> $GITHUB_STEP_SUMMARY
               grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
             fi
           fi
@@ -233,7 +233,7 @@ jobs:
       
       - name: Start JADX container with APK
         run: |
-          echo "🚀 Starting JADX container with APK file..."
+          echo "Starting JADX container with APK file..."
           docker run -d --name jadx-apk \
             -p 8650:8650 \
             -p 8651:8651 \
@@ -245,19 +245,19 @@ jobs:
       
       - name: Wait for JADX to be ready
         run: |
-          echo "⏳ Waiting for JADX to load APK..."
+          echo "Waiting for JADX to load APK..."
           MAX_ATTEMPTS=60
           for ATTEMPT in $(seq 1 $MAX_ATTEMPTS); do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8650/apk-info 2>/dev/null || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ JADX Plugin API is ready (APK loaded)"
+              echo "[OK] JADX Plugin API is ready (APK loaded)"
               curl -s http://localhost:8650/apk-info | head -100
               exit 0
             fi
             echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: waiting... (HTTP $HTTP_CODE)"
             sleep 3
           done
-          echo "❌ JADX failed to load APK"
+          echo "[FAIL] JADX failed to load APK"
           docker logs jadx-apk 2>&1 | tail -50
           exit 1
       
@@ -282,17 +282,17 @@ jobs:
         if: always()
         run: |
           cd jadx-mcp-server
-          echo "## 🧪 Layer 3 - APK Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "## Layer 3 - APK Integration Tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f test-output.txt ]; then
             SUMMARY=$(grep -E "^=+.*=+$" test-output.txt | tail -1 || echo "No summary")
             echo "**Status:** $SUMMARY" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ✅ Passed Tests" >> $GITHUB_STEP_SUMMARY
+            echo "### [PASSED] Passed Tests" >> $GITHUB_STEP_SUMMARY
             grep "PASSED" test-output.txt | sed 's/PASSED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "_None_" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             if grep -q "FAILED" test-output.txt; then
-              echo "### ❌ Failed Tests" >> $GITHUB_STEP_SUMMARY
+              echo "### [FAILED] Failed Tests" >> $GITHUB_STEP_SUMMARY
               grep "FAILED" test-output.txt | sed 's/FAILED//' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY
             fi
           fi

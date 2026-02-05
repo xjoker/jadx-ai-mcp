@@ -8,96 +8,86 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [6.0.54] - 2026-01-19
+## [6.1.0] - 2026-01-20
 
-### Added
-- **Response Chunking System** for large outputs (>8KB)
-  - `SmartChunker` utility class for automatic content splitting
-  - Prevents MCP client truncation (Gemini 16KB, Codex 10KB limits)
-  - Backward compatible: small responses (<8KB) unchanged
-  
-### Changed
-- **6 tools now support chunking**:
-  - `get_class_source` — Large class sources split into chunks
-  - `get_smali_of_class` — Large Smali code split into chunks
-  - `get_android_manifest` — Large manifests split into chunks
-  - `fetch_current_class` — Current class chunking support
-  - `get_main_activity_class` —Main activity chunking support
-  - `get_resource_file` — Resource file chunking support
-- All tools add `chunk` parameter (default: 0)
-- Responses >8KB include `_chunking` metadata with navigation info
+### 🎉 Major Features
 
-### Technical
-- **SmartChunker tested**: 5 unit tests pass (small/large/chunk/error/null)
-- Chunk size: 8KB (8000 bytes)
-- Metadata includes: `total_chunks`, `current_chunk`, `has_more`, `next_chunk`
-- Documentation updated: `docs/reference/tools.md` Response Chunking section
+**Transfer API** - Large File Download System
+- Bypass MCP message size limits (~16KB) for batch operations
+- HTTP-based token system for direct data download
+- Support for JSON and ZIP formats
+- Multiple compression options (Brotli, GZIP, none)
 
----
-
-## [6.1.1] - 2026-01-18
-
-### 📚 Documentation Restructure
-
-**Major documentation overhaul** for improved navigation and clarity.
-
-### Changed
-
-**File Structure**:
-- Renamed all `docs/*/README.md` to `docs/*/index.md` to avoid confusion with root README
-- Split all bilingual documents into separate language files (`.md` for English, `.zh-cn.md` for Chinese)
-- Created `README.zh-cn.md` in root directory (simplified Chinese entry point)
-
-**New Documentation Files** (38 total):
-- `docs/deployment/docker.md` / `docker.zh-cn.md` — Docker single container guide
-- `docs/deployment/local.md` / `local.zh-cn.md` — Local installation guide
-- `docs/guides/ai-integration.md` / `ai-integration.zh-cn.md` — Claude/Cursor/Continue setup
-- `docs/troubleshooting/windows.md` / `windows.zh-cn.md` — Windows-specific issues
-- `docs/reference/configuration.md` / `configuration.zh-cn.md` — Full config reference
-
-**Content Updates**:
-- Added "APK or JAR" clarification in Quick Start
-- Updated Release Notes links in GitHub Actions
-- Added Changelog link to release notes
-- Fixed Token logging security note (marked as FIXED)
-
----
-
-## [6.1.0] - 2026-01-17 (Unreleased)
-
-### 🎉 Major Feature: Full JAR/AAR/DEX Support
-
-This release transforms JADX-AI-MCP from an Android-only tool to a **universal JVM bytecode analysis platform**.
+**JAR/AAR/DEX Support** (Full JVM bytecode analysis)
+- Transform JADX-AI-MCP from Android-only to universal JVM platform
+- 5 JAR-specific tools + unified interface tools
+- File type detection and dynamic tool availability
 
 ### Added
 
-**Unified Interface Tools** (work for APK/JAR/AAR/DEX):
-- `get_file_info` — Unified file metadata with file type detection and recommended tools
-- `get_config_strings` — Config strings (APK: strings.xml summary, JAR: *.properties files)
-- `get_package_classes` — Get classes by package prefix with `auto=true` detection
+**Transfer API Tools**:
+- `create_transfer_token` — Generate download token with configurable timeout
+- `get_transfer_token_status` — Check token validity and usage status  
+- `revoke_transfer_token` — Manually revoke token (auto-expires by default)
+
+**Transfer API Endpoints** (HTTP):
+- `/transfer/download/batch-classes` — Download multiple class sources
+- Supports `format=json|zip` and `compression=br|gzip|none|auto`
+- Rate limiting: 10 tokens/min creation, 20 requests/min download
+
+**Configuration**:
+- `MCP_SERVER_URL` environment variable (highest priority)
+- `[server] mcp_url` in `jadx-config.toml`
+- Auto-detection from startup parameters (fallback)
+
+**Unified Interface Tools** (APK/JAR/AAR/DEX):
+- `get_file_info` — Unified file metadata with type detection
+- `get_config_strings` — Config strings (APK: strings.xml, JAR: *.properties)
+- `get_package_classes` — Get classes by package with `auto=true` detection
 
 **JAR-Specific Tools**:
-- `jar_get_manifest` — Read META-INF/MANIFEST.MF (Main-Class, Implementation-*, Spring Boot)
+- `jar_get_manifest` — Read META-INF/MANIFEST.MF
 - `jar_get_services` — Read SPI services from META-INF/services/*
-- `jar_get_entry_points` — Discover entry points (Main-Class, @SpringBootApplication, main() methods)
-- `jar_get_dependencies` — Analyze embedded dependencies (pom.properties, Class-Path, BOOT-INF/lib)
-- `jar_get_bytecode` — View class bytecode structure (similar to javap)
+- `jar_get_entry_points` — Discover entry points (Main-Class, @SpringBootApplication)
+- `jar_get_dependencies` — Analyze embedded dependencies
+- `jar_get_bytecode` — View class bytecode structure
 
 **Infrastructure**:
 - `FileTypeDetector.java` — Magic number-based file type detection
-- `NotApplicableResponse.java` — Unified NOT_APPLICABLE responses for APK-only tools
+- `NotApplicableResponse.java` — Unified NOT_APPLICABLE responses
 - `jadx://capabilities` MCP Resource for dynamic tool availability
+- Security: Rate limiting and parameter validation for Transfer API
 
 ### Changed
-- APK-only tools now return `NOT_APPLICABLE` with clear messages instead of crashing on JAR files
-- **Documentation restructured**: Simplified root README, detailed docs in `/docs/`
+- APK-only tools return `NOT_APPLICABLE` instead of crashing on JAR files
 - Tool docstrings enhanced with `Returns:` specifications
 - Exception messages sanitized (removed `str(e)` in 6 places)
 
+### Removed
+- `set_jadx_port()` function (unused legacy code)
+- `health_ping()` function (superseded by HealthMonitor)
+- Deprecated `stateless_http` parameter from FastMCP initialization
+
+### Fixed
+- DeprecationWarning from FastMCP library
+- Transfer API Python usage examples in tool documentation
+
 ### Technical Details
-- **36 files changed**, **+4,000 lines** of code
-- Tested with Nexus JAR (112,699 classes, 14 entry points)
-- Full backward compatibility with existing APK workflows
+- **60+ files changed**, **+5,000 lines** of code
+- Transfer API: Token store with auto-cleanup, single-use enforcement
+- Tested with Nexus JAR (112,699 classes) and XHS APK (322,723 classes)
+- Full backward compatibility maintained
+
+### Docker
+```bash
+docker run -d \
+  -e MCP_SERVER_URL="http://192.168.75.144:8651" \
+  -p 6080:6080 -p 8650:8650 -p 8651:8651 \
+  -v ./apks:/apks \
+  xjoker/jadx-ai-mcp:latest
+```
+
+
 
 ---
 

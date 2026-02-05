@@ -153,7 +153,7 @@ public class PluginServer {
                     javax.swing.SwingUtilities.invokeLater(() -> {
                         javax.swing.JOptionPane.showMessageDialog(
                             mainWindow,
-                            "<html><b>⚠️ Security Warning</b><br><br>" +
+                            "<html><b>[!] Security Warning</b><br><br>" +
                             "Server is bound to <b>0.0.0.0</b> (all network interfaces),<br>" +
                             "but <font color='red'>authentication is disabled</font>!<br><br>" +
                             "This exposes your decompiled code to anyone on the network.<br><br>" +

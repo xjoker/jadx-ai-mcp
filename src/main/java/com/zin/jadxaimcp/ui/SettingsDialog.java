@@ -152,7 +152,7 @@ public class SettingsDialog extends JDialog {
         
         // Warning label
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 5;
-        JLabel warningLabel = new JLabel("<html><font color='#CC6600'>⚠ Binding to 0.0.0.0 exposes service to network</font></html>");
+        JLabel warningLabel = new JLabel("<html><font color='#CC6600'>[!] Binding to 0.0.0.0 exposes service to network</font></html>");
         warningLabel.setFont(warningLabel.getFont().deriveFont(Font.PLAIN, 11f));
         panel.add(warningLabel, gbc);
         
