@@ -16,7 +16,8 @@ LABEL maintainer="xjoker"
 LABEL description="JADX-AI-MCP with noVNC for headless server deployment"
 
 # Additional environment variables
-ENV JADX_API_PORT=8650
+ENV JADX_API_PORT=8650 \
+    JADX_MCP_BIND_ADDRESS=0.0.0.0
 
 # ============================================================================
 # Layer 1: Download JADX (changes only when JADX_VERSION changes)
