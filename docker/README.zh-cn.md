@@ -37,24 +37,36 @@ flowchart LR
 
 ### All-in-One 镜像
 
-**基本用法：**
+**标准模式（图形界面 + AI）- 推荐：**
 
 ```bash
 docker pull xjoker/jadx-ai-mcp:latest
 docker run -d --name jadx-ai-mcp \
   -p 6080:6080 \
-  -p 8650:8650 \
   -p 8651:8651 \
   -v $(pwd)/apks:/apks \
+  -v jadx-cache:/root/.cache \
   xjoker/jadx-ai-mcp
 
 # 访问地址
-# - noVNC: http://localhost:6080
-# - Plugin API: http://localhost:8650
-# - MCP Server: http://localhost:8651
+# - noVNC 图形界面: http://localhost:6080
+# - MCP Server: http://localhost:8651/mcp
 ```
 
-**挂载缓存和配置（推荐）：**
+**无头模式（仅 AI，无图形界面）：**
+
+```bash
+docker run -d --name jadx-ai-mcp \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  xjoker/jadx-ai-mcp
+
+# 访问地址
+# - MCP Server: http://localhost:8651/mcp
+```
+
+**开发 / 多容器模式（所有端口 + 配置）：**
 
 ```bash
 docker run -d --name jadx-ai-mcp \
@@ -66,6 +78,11 @@ docker run -d --name jadx-ai-mcp \
   -v jadx-cache:/root/.cache \
   -v jadx-gui-cache:/root/.jadx-gui \
   xjoker/jadx-ai-mcp
+
+# 访问地址
+# - noVNC 图形界面: http://localhost:6080
+# - Plugin API: http://localhost:8650
+# - MCP Server: http://localhost:8651/mcp
 ```
 
 ### 卷挂载说明
@@ -151,11 +168,13 @@ docker run -d --name jadx-mcp-server \
 
 ## 端口说明
 
-| 端口 | 服务 | 描述 |
-|------|------|------|
-| 6080 | noVNC | Web VNC 桌面 (仅 All-in-One) |
-| 8650 | Plugin API | JADX 插件 HTTP API |
-| 8651 | MCP Server | LLM 客户端连接端点 |
+| 端口 | 服务 | 是否必需？ | 访问来源 | 描述 |
+|:----:|:-----|:---------:|:---------|:-----|
+| **6080** | noVNC | 可选 | 浏览器 | Web VNC 桌面（仅 All-in-One）。无头模式可省略。 |
+| **8650** | Plugin API | 否* | 容器内部 | JADX 插件 HTTP API。仅多容器或调试时暴露。 |
+| **8651** | MCP Server | **必需** | AI 客户端 | **主要端点**，供 LLM 客户端（Claude、ChatGPT 等）访问。 |
+
+> **\* 端口 8650** 仅在 MCP Server 独立容器运行时需要。单容器模式（All-in-One）中，MCP Server 通过内部 `localhost:8650` 连接。
 
 ## 配置
 

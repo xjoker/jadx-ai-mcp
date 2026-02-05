@@ -19,14 +19,29 @@
 ## ⚡ 30 秒快速开始
 
 ```bash
-# 一键启动
+# 一键启动（图形界面 + AI）
 docker run -d --name jadx -p 6080:6080 -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
 
-# 打开浏览器
+# 在浏览器中打开 JADX 图形界面
 open http://localhost:6080
 ```
 
 **完成！** 将你的 APK 或 JAR 放入 `~/apks/`，在 JADX 中打开，让 AI 帮你分析。
+
+<details>
+<summary><strong>其他部署场景</strong></summary>
+
+**无头模式（仅 AI，无图形界面）：**
+```bash
+docker run -d --name jadx -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
+```
+
+**多容器 / 开发模式（所有端口）：**
+```bash
+docker run -d --name jadx -p 6080:6080 -p 8650:8650 -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
+```
+
+</details>
 
 > 💡 **自动加载**：将 `target.jar`、`target.apk`、`target.aar` 或 `target.dex` 放入 `/apks` 目录，JADX 启动时自动加载。优先级：JAR > APK > AAR > DEX。
 
@@ -69,13 +84,18 @@ open http://localhost:6080
 
 ### 端口说明
 
-| 端口 | 服务 | 说明 |
-|:----:|:-----|:-----|
-| **6080** | noVNC | JADX GUI 网页访问 |
-| **8650** | JADX 插件 | 内部 API |
-| **8651** | MCP Server | AI 客户端连接点 |
+| 端口 | 服务 | 是否必需？ | 访问来源 | 说明 |
+|:----:|:-----|:---------:|:---------|:-----|
+| **6080** | noVNC | 可选 | 浏览器 | JADX 图形界面网页访问。无头模式可省略 `-p 6080:6080`。 |
+| **8650** | JADX 插件 API | 否* | 容器内部 | 内部 HTTP API。仅在多容器部署或调试时需要暴露。 |
+| **8651** | MCP Server | **必需** | AI 客户端 | **主要端点**，供 Claude、ChatGPT 等 AI 访问。始终需要。 |
 
-### 推荐 Docker 命令（带缓存）
+> **\* 端口 8650** 仅在 MCP Server 独立容器运行时需要。单容器部署（默认）时，MCP Server 通过内部 `localhost:8650` 连接 JADX 插件。
+
+### 不同场景的部署命令
+
+<details open>
+<summary><strong>🎯 标准模式（图形界面 + AI + 缓存）- 推荐</strong></summary>
 
 ```bash
 docker run -d --name jadx \
@@ -85,7 +105,47 @@ docker run -d --name jadx \
   xjoker/jadx-ai-mcp:latest
 ```
 
-> 📦 缓存卷可显著加速后续分析。
+访问地址：
+- JADX 图形界面：http://localhost:6080
+- AI 端点：http://localhost:8651/mcp
+
+> 📦 缓存卷可将后续分析速度提升 10-50 倍。
+
+</details>
+
+<details>
+<summary><strong>🤖 无头模式（仅 AI，无图形界面）</strong></summary>
+
+```bash
+docker run -d --name jadx \
+  -p 8651:8651 \
+  -v ~/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  xjoker/jadx-ai-mcp:latest
+```
+
+访问地址：
+- AI 端点：http://localhost:8651/mcp
+
+</details>
+
+<details>
+<summary><strong>🔧 开发 / 多容器模式（所有端口）</strong></summary>
+
+```bash
+docker run -d --name jadx \
+  -p 6080:6080 -p 8650:8650 -p 8651:8651 \
+  -v ~/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  xjoker/jadx-ai-mcp:latest
+```
+
+访问地址：
+- JADX 图形界面：http://localhost:6080
+- JADX 插件 API：http://localhost:8650
+- AI 端点：http://localhost:8651/mcp
+
+</details>
 
 ---
 

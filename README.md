@@ -20,14 +20,29 @@
 ## ⚡ 30-Second Quick Start
 
 ```bash
-# One command to start
+# One command to start (GUI + AI)
 docker run -d --name jadx -p 6080:6080 -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
 
-# Open in browser
+# Open JADX GUI in browser
 open http://localhost:6080
 ```
 
 **That's it!** Put your APK or JAR in `~/apks/`, open it in JADX, and let AI analyze it.
+
+<details>
+<summary><strong>Other deployment scenarios</strong></summary>
+
+**Headless Mode (AI only, no GUI):**
+```bash
+docker run -d --name jadx -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
+```
+
+**Multi-Container / Development (all ports):**
+```bash
+docker run -d --name jadx -p 6080:6080 -p 8650:8650 -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
+```
+
+</details>
 
 > 💡 **Auto-load**: Place `target.jar`, `target.apk`, `target.aar`, or `target.dex` in `/apks` directory. JADX loads it automatically on startup. Priority: JAR > APK > AAR > DEX.
 
@@ -84,13 +99,18 @@ Rules:
 
 ### Port Reference
 
-| Port | Service | Description |
-|:----:|:--------|:------------|
-| **6080** | noVNC | JADX GUI web access |
-| **8650** | JADX Plugin | Internal API |
-| **8651** | MCP Server | AI client connection |
+| Port | Service | Required? | Access From | Description |
+|:----:|:--------|:---------:|:------------|:------------|
+| **6080** | noVNC | Optional | Browser | JADX GUI web interface. Skip `-p 6080:6080` for headless mode. |
+| **8650** | JADX Plugin API | No* | Container Internal | Internal HTTP API. Only expose for multi-container setup or debugging. |
+| **8651** | MCP Server | **Yes** | AI Clients | **Main endpoint** for Claude, ChatGPT, etc. Always required. |
 
-### Recommended Docker Command (with cache)
+> **\* Port 8650** is only needed when running MCP Server in a separate container. For single-container deployment (default), MCP Server connects to JADX Plugin via internal `localhost:8650`.
+
+### Deployment Commands by Scenario
+
+<details open>
+<summary><strong>🎯 Standard (GUI + AI + Cache) - Recommended</strong></summary>
 
 ```bash
 docker run -d --name jadx \
@@ -100,7 +120,47 @@ docker run -d --name jadx \
   xjoker/jadx-ai-mcp:latest
 ```
 
-> 📦 The cache volume speeds up subsequent analysis significantly.
+Access:
+- JADX GUI: http://localhost:6080
+- AI endpoint: http://localhost:8651/mcp
+
+> 📦 Cache volume speeds up subsequent analysis by 10-50x.
+
+</details>
+
+<details>
+<summary><strong>🤖 Headless (AI only, no GUI)</strong></summary>
+
+```bash
+docker run -d --name jadx \
+  -p 8651:8651 \
+  -v ~/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  xjoker/jadx-ai-mcp:latest
+```
+
+Access:
+- AI endpoint: http://localhost:8651/mcp
+
+</details>
+
+<details>
+<summary><strong>🔧 Development / Multi-Container (all ports)</strong></summary>
+
+```bash
+docker run -d --name jadx \
+  -p 6080:6080 -p 8650:8650 -p 8651:8651 \
+  -v ~/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  xjoker/jadx-ai-mcp:latest
+```
+
+Access:
+- JADX GUI: http://localhost:6080
+- JADX Plugin API: http://localhost:8650
+- AI endpoint: http://localhost:8651/mcp
+
+</details>
 
 ---
 

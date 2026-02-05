@@ -37,24 +37,36 @@ flowchart LR
 
 ### All-in-One Image
 
-**Basic Usage:**
+**Standard Mode (GUI + AI) - Recommended:**
 
 ```bash
 docker pull xjoker/jadx-ai-mcp:latest
 docker run -d --name jadx-ai-mcp \
   -p 6080:6080 \
-  -p 8650:8650 \
   -p 8651:8651 \
   -v $(pwd)/apks:/apks \
+  -v jadx-cache:/root/.cache \
   xjoker/jadx-ai-mcp
 
 # Access
-# - noVNC: http://localhost:6080
-# - Plugin API: http://localhost:8650
-# - MCP Server: http://localhost:8651
+# - noVNC GUI: http://localhost:6080
+# - MCP Server: http://localhost:8651/mcp
 ```
 
-**With Cache and Config (Recommended):**
+**Headless Mode (AI only, no GUI):**
+
+```bash
+docker run -d --name jadx-ai-mcp \
+  -p 8651:8651 \
+  -v $(pwd)/apks:/apks \
+  -v jadx-cache:/root/.cache \
+  xjoker/jadx-ai-mcp
+
+# Access
+# - MCP Server: http://localhost:8651/mcp
+```
+
+**Development / Multi-Container (all ports + config):**
 
 ```bash
 docker run -d --name jadx-ai-mcp \
@@ -66,6 +78,11 @@ docker run -d --name jadx-ai-mcp \
   -v jadx-cache:/root/.cache \
   -v jadx-gui-cache:/root/.jadx-gui \
   xjoker/jadx-ai-mcp
+
+# Access
+# - noVNC GUI: http://localhost:6080
+# - Plugin API: http://localhost:8650
+# - MCP Server: http://localhost:8651/mcp
 ```
 
 ### Volume Reference
@@ -151,11 +168,13 @@ docker run -d --name jadx-mcp-server \
 
 ## Ports
 
-| Port | Service | Description |
-|------|---------|-------------|
-| 6080 | noVNC | Web-based VNC desktop (All-in-One only) |
-| 8650 | Plugin API | JADX plugin HTTP API |
-| 8651 | MCP Server | LLM client connection endpoint |
+| Port | Service | Required? | Access From | Description |
+|:----:|:--------|:---------:|:------------|:------------|
+| **6080** | noVNC | Optional | Browser | Web-based VNC desktop (All-in-One only). Omit for headless mode. |
+| **8650** | Plugin API | No* | Container Internal | JADX plugin HTTP API. Only expose for multi-container or debugging. |
+| **8651** | MCP Server | **Yes** | AI Clients | **Main endpoint** for LLM clients (Claude, ChatGPT, etc.). |
+
+> **\* Port 8650** is only needed for multi-container deployments where MCP Server runs in a separate container. In single-container mode (All-in-One), MCP Server connects internally via `localhost:8650`.
 
 ## Configuration
 

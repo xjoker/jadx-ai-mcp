@@ -1,15 +1,29 @@
-# JADX MCP Server 双实例测试配置
+# JADX MCP Server 配置文件
+# All-in-One 容器默认配置 - 连接容器内部 JADX 实例
 
 [security]
+# 允许动态添加 JADX 实例
 allow_dynamic_instances = true
 
+# 默认 JADX 实例配置（All-in-One 容器）
 [[jadx_instances]]
-name = "nexus-jar"
-host = "host.docker.internal"
+name = "local"
+host = "127.0.0.1"
 port = 8650
-
-[[jadx_instances]]
-name = "xhs-apk"
-host = "host.docker.internal"
-port = 8652
 default = true
+enabled = true
+
+# 多实例配置示例（注释掉）
+# 如需连接多个 JADX 实例，请取消注释并修改配置
+#
+# [[jadx_instances]]
+# name = "remote-instance"
+# host = "192.168.1.100"
+# port = 8650
+# enabled = true
+#
+# [[jadx_instances]]
+# name = "another-apk"
+# host = "host.docker.internal"
+# port = 8652
+# default = false
