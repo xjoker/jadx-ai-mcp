@@ -8,6 +8,54 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.1] - 2026-02-05
+
+### 🐛 Bug Fixes
+
+**All-in-One Container**
+- Fixed All-in-One container unable to connect to JADX instance
+  - Changed default JADX instance from `host.docker.internal` to `127.0.0.1`
+  - Fixed MCP Server connection configuration inside container
+
+- Fixed supervisord startup failure
+  - Removed undefined `JADX_MCP_BIND_ADDRESS` environment variable reference
+  - Optimized container service binding address to `0.0.0.0`
+
+### 📚 Documentation
+
+**Port Documentation**
+- Added comprehensive port reference table (6080/8650/8651)
+- Detailed port purpose, access source, and security notes
+
+**Deployment Scenarios**
+- Added three deployment scenario guides:
+  - **Standard Mode** (GUI + AI): `docker run -p 6080:6080 -p 8651:8651 ...`
+  - **Headless Mode** (AI only): `docker run -p 8651:8651 ...`
+  - **Development Mode** (Full ports): `docker run -p 6080:6080 -p 8650:8650 -p 8651:8651 ...`
+
+- Improved quick start commands with complete port mapping instructions
+- Unified Chinese and English documentation
+
+### 🐳 Docker
+
+**Multi-Platform Support**
+- Base image `xjoker/jadx-ai-mcp-base:1.1` upgraded to Java 25 + Ubuntu 24.04 Noble
+- Main image `xjoker/jadx-ai-mcp:latest` supports linux/amd64 and linux/arm64
+
+**Images**
+- `xjoker/jadx-ai-mcp:latest` - SHA256: `409c6923d654dcea9baf0d172978564aa2343516f89eb2e87d68b5a00e5f6abd`
+- `xjoker/jadx-ai-mcp-base:1.1` - SHA256: `3d2d270af24e4c051044eae72d634cc820bb2b0cb53e4c30f3437d921310b24e`
+
+### 📦 Changed Files
+
+- `README.md` / `README.zh-cn.md` - Documentation improvements
+- `docker/Dockerfile` - Removed incorrect environment variable
+- `docker/README.md` / `docker/README.zh-cn.md` - Docker documentation updates
+- `docker/scripts/supervisord.conf` - Fixed configuration error
+- `jadx-mcp-server/data/config/jadx-config.toml` - Default instance configuration
+
+---
+
 ## [6.1.0] - 2026-01-20
 
 ### 🎉 Major Features

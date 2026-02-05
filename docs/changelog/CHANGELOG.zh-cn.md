@@ -8,6 +8,54 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.1.1] - 2026-02-05
+
+### 🐛 Bug 修复
+
+**All-in-One 容器**
+- 修复 All-in-One 容器无法连接 JADX 实例的问题
+  - 将默认 JADX 实例从 `host.docker.internal` 改为 `127.0.0.1`
+  - 修复 MCP Server 在容器内的连接配置
+
+- 修复 supervisord 启动失败问题
+  - 移除未定义的 `JADX_MCP_BIND_ADDRESS` 环境变量引用
+  - 优化容器内服务绑定地址为 `0.0.0.0`
+
+### 📚 文档
+
+**端口说明**
+- 添加完整的端口参考表格 (6080/8650/8651)
+- 详细说明各端口用途、访问来源和安全注意事项
+
+**部署场景**
+- 新增三种部署场景指南：
+  - **标准模式**（GUI + AI）：`docker run -p 6080:6080 -p 8651:8651 ...`
+  - **无头模式**（仅 AI）：`docker run -p 8651:8651 ...`
+  - **开发模式**（完整端口）：`docker run -p 6080:6080 -p 8650:8650 -p 8651:8651 ...`
+
+- 完善快速启动命令的端口映射说明
+- 统一中英文文档
+
+### 🐳 Docker
+
+**多平台支持**
+- 基础镜像 `xjoker/jadx-ai-mcp-base:1.1` 升级到 Java 25 + Ubuntu 24.04 Noble
+- 主镜像 `xjoker/jadx-ai-mcp:latest` 支持 linux/amd64 和 linux/arm64
+
+**镜像信息**
+- `xjoker/jadx-ai-mcp:latest` - SHA256: `409c6923d654dcea9baf0d172978564aa2343516f89eb2e87d68b5a00e5f6abd`
+- `xjoker/jadx-ai-mcp-base:1.1` - SHA256: `3d2d270af24e4c051044eae72d634cc820bb2b0cb53e4c30f3437d921310b24e`
+
+### 📦 变更文件
+
+- `README.md` / `README.zh-cn.md` - 文档改进
+- `docker/Dockerfile` - 移除错误的环境变量
+- `docker/README.md` / `docker/README.zh-cn.md` - Docker 文档更新
+- `docker/scripts/supervisord.conf` - 修复配置错误
+- `jadx-mcp-server/data/config/jadx-config.toml` - 默认实例配置
+
+---
+
 ## [6.1.0] - 2026-01-20
 
 ### 🎉 重大功能
