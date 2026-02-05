@@ -29,7 +29,7 @@ open http://localhost:6080
 
 **That's it!** Put your APK or JAR in `~/apks/`, open it in JADX, and let AI analyze it.
 
-> 💡 **Auto-load**: Name your file `target.apk` (or `target.jar`) and JADX will load it automatically on startup.
+> 💡 **Auto-load**: Place `target.jar`, `target.apk`, `target.aar`, or `target.dex` in `/apks` directory. JADX loads it automatically on startup. Priority: JAR > APK > AAR > DEX.
 
 <details>
 <summary>💡 <strong>Let AI guide your installation?</strong></summary>

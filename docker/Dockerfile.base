@@ -2,10 +2,10 @@
 # Contains system dependencies that rarely change
 # Build separately and push to Docker Hub
 #
-# Build: docker build -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
-# Push:  docker push xjoker/jadx-ai-mcp-base:1.0
+# Build: docker build -t xjoker/jadx-ai-mcp-base:1.1 -f docker/Dockerfile.base .
+# Push:  docker push xjoker/jadx-ai-mcp-base:1.1
 
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:25-jre-noble
 
 LABEL maintainer="xjoker"
 LABEL description="Base image for JADX-AI-MCP with system dependencies"
@@ -20,7 +20,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # ============================================================================
 # System dependencies (rarely changes - this is why we cache it)
 # ============================================================================
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# First update and upgrade existing packages to fix security vulnerabilities
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     # X11 and VNC
     xvfb \
     x11vnc \
@@ -46,10 +47,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Install uv package manager for running MCP Server
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+# Upgrade vulnerable Python packages installed by apt (Pillow CVE-2023-50447)
+RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --upgrade \
+    "pillow>=10.2.0"
+
+# Install uv package manager for running MCP Server (with retry for network reliability)
+RUN for i in 1 2 3 4 5; do \
+        curl -LsSf https://astral.sh/uv/install.sh | sh && break || sleep 5; \
+    done \
     && ln -s /root/.local/bin/uv /usr/local/bin/uv \
-    && ln -s /root/.local/bin/uvx /usr/local/bin/uvx
+    && ln -s /root/.local/bin/uvx /usr/local/bin/uvx \
+    && uv --version
 
 # Create directories
 WORKDIR /opt/jadx

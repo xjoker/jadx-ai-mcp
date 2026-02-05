@@ -9,7 +9,7 @@
 # Build base image separately when system deps change:
 #   docker build -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
 # ============================================================================
-ARG BASE_VERSION=1.0
+ARG BASE_VERSION=1.1
 FROM xjoker/jadx-ai-mcp-base:${BASE_VERSION}
 
 LABEL maintainer="xjoker"

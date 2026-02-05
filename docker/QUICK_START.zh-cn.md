@@ -28,12 +28,15 @@ docker compose ps
 
 ### 方式 1: 自动加载（推荐）
 
-将 APK 命名为 `target.apk` 放入对应目录，JADX 启动时自动加载：
+将文件命名为 `target.jar`、`target.apk`、`target.aar` 或 `target.dex` 放入对应目录，JADX 启动时自动加载。
+
+**支持格式**（优先级：JAR > APK > AAR > DEX）：
 
 ```bash
+apks/jadx-1/target.jar  → JADX #1 自动打开（最高优先级）
 apks/jadx-1/target.apk  → JADX #1 自动打开
-apks/jadx-2/target.apk  → JADX #2 自动打开
-apks/jadx-3/target.apk  → JADX #3 自动打开
+apks/jadx-1/target.aar  → JADX #1 自动打开
+apks/jadx-1/target.dex  → JADX #1 自动打开（最低优先级）
 ```
 
 ### 方式 2: 手动加载

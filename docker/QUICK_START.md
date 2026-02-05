@@ -28,12 +28,15 @@ docker compose ps
 
 ### Method 1: Auto-load (Recommended)
 
-Name your APK as `target.apk` and place it in the corresponding directory. JADX will load it automatically on startup:
+Place your file as `target.jar`, `target.apk`, `target.aar`, or `target.dex` in the corresponding directory. JADX will load it automatically on startup.
+
+**Supported formats** (Priority: JAR > APK > AAR > DEX):
 
 ```bash
+apks/jadx-1/target.jar  → JADX #1 auto-opens (highest priority)
 apks/jadx-1/target.apk  → JADX #1 auto-opens
-apks/jadx-2/target.apk  → JADX #2 auto-opens
-apks/jadx-3/target.apk  → JADX #3 auto-opens
+apks/jadx-1/target.aar  → JADX #1 auto-opens
+apks/jadx-1/target.dex  → JADX #1 auto-opens (lowest priority)
 ```
 
 ### Method 2: Manual Load

@@ -1,9 +1,13 @@
 FROM python:3.12-slim
 
+# Update system packages to fix security vulnerabilities
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Install uv
-RUN pip install uv
+# Upgrade pip and build tools, then install uv
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir uv
 
 # Copy project files
 COPY pyproject.toml uv.lock ./

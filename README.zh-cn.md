@@ -28,7 +28,7 @@ open http://localhost:6080
 
 **完成！** 将你的 APK 或 JAR 放入 `~/apks/`，在 JADX 中打开，让 AI 帮你分析。
 
-> 💡 **自动加载**：将文件命名为 `target.apk`（或 `target.jar`），JADX 启动时会自动加载。
+> 💡 **自动加载**：将 `target.jar`、`target.apk`、`target.aar` 或 `target.dex` 放入 `/apks` 目录，JADX 启动时自动加载。优先级：JAR > APK > AAR > DEX。
 
 > 💡 **让 AI 指导安装？** 发送给 Claude/ChatGPT：
 > ```
