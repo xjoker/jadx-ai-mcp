@@ -117,7 +117,7 @@ docker run -d --name jadx \
 
 | Document | Description |
 |:---------|:------------|
-| [Tools Reference](docs/reference/tools.md) | Complete 51 MCP tools matrix |
+| [Tools Reference](docs/reference/tools.md) | Complete 45 MCP tools matrix |
 | [Configuration](docs/reference/configuration.md) | All configuration options |
 | [FAQ](docs/troubleshooting/faq.md) | Common issues and solutions |
 
@@ -132,7 +132,7 @@ docker run -d --name jadx \
 
 ## 🛠️ MCP Tools Overview
 
-**51 tools** for APK/JAR analysis:
+**45 tools** for APK/JAR analysis:
 
 | Category | Tools |
 |:---------|:------|

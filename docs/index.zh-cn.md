@@ -36,7 +36,7 @@
 
 | 文档 | 说明 |
 |:-----|:-----|
-| [工具参考](reference/tools.zh-cn.md) | 完整的 51 个 MCP 工具 |
+| [工具参考](reference/tools.zh-cn.md) | 完整的 45 个 MCP 工具 |
 | [配置说明](reference/configuration.zh-cn.md) | 配置项详解 |
 
 ---

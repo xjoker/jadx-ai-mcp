@@ -8,68 +8,37 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
-## [6.0.54] - 2026-01-19
+## [6.1.0] - 2026-01-20
+
+### 🎉 重大功能
+
+**Transfer API** - 大文件下载系统
+- 绕过 MCP 消息大小限制（约 16KB）用于批量操作
+- 基于 HTTP 的令牌系统，支持直接数据下载
+- 支持 JSON 和 ZIP 格式
+- 多种压缩选项（Brotli、GZIP、无压缩）
+
+**完整的 JAR/AAR/DEX 支持**（全 JVM 字节码分析）
+- 将 JADX-AI-MCP 从 Android 专用工具升级为通用 JVM 字节码分析平台
+- 5 个 JAR 专用工具 + 统一接口工具
+- 文件类型检测和动态工具可用性
 
 ### 新增
-- **响应分片系统** 适用于大型输出 (>8KB)
-  - `SmartChunker` 工具类实现自动内容分片
-  - 防止 MCP 客户端截断（Gemini 16KB、Codex 10KB 限制）
-  - 向后兼容：小响应（<8KB）保持不变
-  
-### 变更
-- **6 个工具现已支持分片**：
-  - `get_class_source` — 大类源码自动分片
-  - `get_smali_of_class` — 大型 Smali 代码自动分片
-  - `get_android_manifest` — 大型清单文件自动分片
-  - `fetch_current_class` — 当前类分片支持
-  - `get_main_activity_class` — 主活动分片支持
-  - `get_resource_file` — 资源文件分片支持
-- 所有工具添加 `chunk` 参数（默认值：0）
-- 响应 >8KB 时包含 `_chunking` 元数据与导航信息
 
-### 技术细节
-- **SmartChunker 测试通过**：5 个单元测试（小/大/分片/错误/空）
-- 分片大小：8KB (8000 字节)
-- 元数据包含：`total_chunks`、`current_chunk`、`has_more`、`next_chunk`
-- 文档已更新：`docs/reference/tools.md` 响应分片章节
+**Transfer API 工具**:
+- `create_transfer_token` — 生成可配置超时的下载令牌
+- `get_transfer_token_status` — 检查令牌有效性和使用状态
+- `revoke_transfer_token` — 手动撤销令牌（默认自动过期）
 
----
+**Transfer API 端点**（HTTP）:
+- `/transfer/download/batch-classes` — 下载多个类源码
+- 支持 `format=json|zip` 和 `compression=br|gzip|none|auto`
+- 速率限制：每分钟创建 10 个令牌，每分钟下载 20 次
 
-## [6.1.1] - 2026-01-18
-
-### 📚 文档结构重构
-
-**重大文档改版**，提升导航与可读性。
-
-### 变更
-
-**文件结构**：
-- 将所有 `docs/*/README.md` 重命名为 `docs/*/index.md`，避免与根目录 README 混淆
-- 拆分所有双语文档为独立语言文件（`.md` 英文，`.zh-cn.md` 中文）
-- 在根目录创建 `README.zh-cn.md`（简化中文入口）
-
-**新增文档文件**（共 38 个）：
-- `docs/deployment/docker.md` / `docker.zh-cn.md` — Docker 单容器指南
-- `docs/deployment/local.md` / `local.zh-cn.md` — 本地安装指南
-- `docs/guides/ai-integration.md` / `ai-integration.zh-cn.md` — Claude/Cursor/Continue 配置
-- `docs/troubleshooting/windows.md` / `windows.zh-cn.md` — Windows 专项问题
-- `docs/reference/configuration.md` / `configuration.zh-cn.md` — 完整配置参考
-
-**内容更新**：
-- 快速开始添加 "APK or JAR" 说明
-- 更新 GitHub Actions Release Notes 链接
-- Release Notes 添加 Changelog 链接
-- Token 日志安全说明标记为已修复
-
----
-
-## [6.1.0] - 2026-01-17 (未发布)
-
-### 🎉 重大功能：完整的 JAR/AAR/DEX 支持
-
-本版本将 JADX-AI-MCP 从 Android 专用工具升级为**通用 JVM 字节码分析平台**。
-
-### 新增
+**配置**:
+- `MCP_SERVER_URL` 环境变量（最高优先级）
+- `jadx-config.toml` 中的 `[server] mcp_url`
+- 从启动参数自动检测（回退）
 
 **统一接口工具**（适用于 APK/JAR/AAR/DEX）：
 - `get_file_info` — 统一文件元数据，自动识别文件类型并推荐工具
@@ -87,17 +56,36 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 - `FileTypeDetector.java` — 基于 Magic Number 的文件类型检测
 - `NotApplicableResponse.java` — APK 专用工具对 JAR 返回统一 NOT_APPLICABLE 响应
 - `jadx://capabilities` MCP Resource 提供动态工具可用性
+- 安全：Transfer API 的速率限制和参数验证
 
 ### 变更
 - APK 专用工具现在对 JAR 文件返回 `NOT_APPLICABLE` 明确提示，而非崩溃
-- **文档重构**：简化根目录 README，详细文档移至 `/docs/`
 - 工具 docstring 增强，添加 `Returns:` 规范
 - 异常信息脱敏（移除 6 处 `str(e)`）
 
+### 移除
+- `set_jadx_port()` 函数（未使用的遗留代码）
+- `health_ping()` 函数（已被 HealthMonitor 取代）
+- FastMCP 初始化中已废弃的 `stateless_http` 参数
+
+### 修复
+- FastMCP 库的 DeprecationWarning
+- 工具文档中 Transfer API Python 使用示例
+
 ### 技术细节
-- **36 个文件修改**，**+4,000 行**代码
-- 使用 Nexus JAR 测试（112,699 类，14 个入口点）
-- 完全向后兼容现有 APK 工作流
+- **60+ 个文件修改**，**+5,000 行**代码
+- Transfer API：带自动清理的令牌存储，单次使用强制执行
+- 使用 Nexus JAR（112,699 类）和 XHS APK（322,723 类）测试
+- 完全向后兼容
+
+### Docker
+```bash
+docker run -d \
+  -e MCP_SERVER_URL="http://192.168.75.144:8651" \
+  -p 6080:6080 -p 8650:8650 -p 8651:8651 \
+  -v ./apks:/apks \
+  xjoker/jadx-ai-mcp:latest
+```
 
 ---
 

@@ -102,7 +102,7 @@ docker run -d --name jadx \
 
 | 文档 | 说明 |
 |:-----|:-----|
-| [工具参考](docs/reference/tools.zh-cn.md) | 完整的 51 个 MCP 工具矩阵 |
+| [工具参考](docs/reference/tools.zh-cn.md) | 完整的 45 个 MCP 工具矩阵 |
 | [配置说明](docs/reference/configuration.zh-cn.md) | 所有配置项 |
 | [常见问题](docs/troubleshooting/faq.zh-cn.md) | 常见问题解答 |
 
@@ -117,7 +117,7 @@ docker run -d --name jadx \
 
 ## 🛠️ MCP 工具概览
 
-**51 个工具** 用于 APK/JAR 分析：
+**45 个工具** 用于 APK/JAR 分析：
 
 | 类别 | 工具 |
 |:-----|:-----|
