@@ -7,15 +7,14 @@
 # ============================================================================
 # Use pre-built base image with system dependencies
 # ============================================================================
-ARG BASE_VERSION=1.0
+ARG BASE_VERSION=1.1
 FROM xjoker/jadx-ai-mcp-base:${BASE_VERSION}
 
 LABEL maintainer="xjoker"
 LABEL description="JADX-AI-MCP Local Dev Build with noVNC"
 
 # Environment variables
-ENV JADX_API_PORT=8650 \
-    JADX_MCP_BIND_ADDRESS=0.0.0.0
+ENV JADX_API_PORT=8650
 
 # ============================================================================
 # Layer 1: Download JADX
