@@ -23,7 +23,7 @@ This fork provides **major enhancements** over the original project:
 |:--------|:------------|
 | 🚀 **Smart Batch Optimization** | 4-tier strategy avoids 60-120s wasted decompilation. Auto-splits large responses (>8KB) with chunking. |
 | 🔄 **Transfer API** | Bypass MCP's ~16KB limit via HTTP download. Tested with 322K classes. |
-| 💼 **Full JVM Support** | APK, JAR, AAR, DEX all supported. 5 JAR-specific tools for Spring Boot analysis. |
+| 💼 **Full JVM Support** | APK, JAR, AAR, DEX all supported. 5 JAR-specific tools (manifest, entry points, dependencies, services, bytecode). |
 | ⚡ **ClassCacheManager** | 10-50x faster repeated analysis with background caching and auto-invalidation. |
 | 🐳 **All-in-One Docker** | One command deploys GUI + AI server. Multi-platform (amd64/arm64). |
 

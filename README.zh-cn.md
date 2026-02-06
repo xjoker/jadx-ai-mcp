@@ -22,7 +22,7 @@
 |:-----|:-----|
 | 🚀 **智能批量优化** | 4 层分级策略，避免 60-120 秒无效反编译。大响应（>8KB）自动分块传输。 |
 | 🔄 **Transfer API** | HTTP 直接下载突破 MCP 约 16KB 限制。已验证支持 32.2 万类规模。 |
-| 💼 **完整 JVM 支持** | APK、JAR、AAR、DEX 全支持。5 个 JAR 专用工具用于 Spring Boot 分析。 |
+| 💼 **完整 JVM 支持** | APK、JAR、AAR、DEX 全支持。5 个 JAR 专用工具（manifest、入口点、依赖、服务、字节码）。 |
 | ⚡ **ClassCacheManager** | 后台缓存 + 自动失效，重复分析快 10-50 倍。 |
 | 🐳 **All-in-One Docker** | 一键部署 GUI + AI 服务器。多平台支持（amd64/arm64）。 |
 
