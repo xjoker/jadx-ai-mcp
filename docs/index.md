@@ -36,7 +36,7 @@
 
 | Document | Description |
 |:---------|:------------|
-| [Tools Reference](reference/tools.md) | Complete 51 MCP tools matrix |
+| [Tools Reference](reference/tools.md) | Complete 45 MCP tools matrix |
 | [Configuration](reference/configuration.md) | Detailed configuration options |
 
 ---

@@ -249,8 +249,8 @@ By pre-loading key classes, subsequent searches and analysis will be faster.
 **Available Batch Tools**:
 | Tool | Max Items | Use Case |
 |:---|:---:|:---|
-| `batch_get_class_source` | 20 | Get source code for multiple classes |
-| `batch_get_method_by_name` | 20 | Get multiple method implementations |
+| `batch_get_class_source` | 20 | Get source code for multiple classes (smart size management) |
+| `batch_get_method_by_name` | 20 | Get multiple method implementations (smart size management) |
 | `batch_get_xrefs` | 20 | Get cross-references for multiple targets |
 
 **Best Practices**:
@@ -258,25 +258,95 @@ By pre-loading key classes, subsequent searches and analysis will be faster.
     - Instead of 10 individual `get_class_source` calls, use one `batch_get_class_source`.
     - This reduces network round-trips and MCP overhead.
 
-2.  **Handle Partial Failures**:
+2.  **Smart Batching with `batch_get_class_source` and `batch_get_method_by_name`**:
+    - Automatically estimates response size before execution
+    - Small batches (<20KB): Execute directly
+    - Large batches (20-50KB): Execute with performance warning
+    - Very large batches (>50KB): Returns BATCH_TOO_LARGE error with suggestions
+    - Use `force=True` to bypass size checks if needed
+    - Supports chunking for large responses (check `_chunking.has_more`)
+
+3.  **Handle BATCH_TOO_LARGE Errors**:
+    - Response includes `class_summaries` with metadata for each class
+    - Follow suggestions: reduce batch size, use targeted tools, or add `force=True`
+    - Example error response:
+    ```json
+    {
+      "error": "BATCH_TOO_LARGE",
+      "estimated_size_kb": 120.5,
+      "class_summaries": [{class_name, method_count, field_count}, ...],
+      "suggestions": {
+        "option1": "Reduce batch size to 2-3 classes",
+        "option2": "Use get_class_info + get_method_by_name",
+        "option3": "Fetch individually with get_class_source",
+        "option4": "Add force=True to proceed anyway"
+      }
+    }
+    ```
+
+4.  **Handle Partial Failures**:
     - Batch operations return results for each item with `found: true/false`.
     - Check the `error` field for individual items that failed.
 
-3.  **Pagination for Large Results**:
+5.  **Pagination for Large Results**:
     - Tools like `search_method_by_name` support `offset` and `count` parameters.
     - Use `has_more` and `next_offset` to paginate through large result sets.
 
-4.  **Avoid Overloading**:
-    - Requesting too many items at once can still cause timeouts.
-    - If batch operations fail, try smaller batches (e.g., 5-10 items).
+6.  **Chunking Support**:
+    - If response contains `_chunking.has_more=true`, call again with `chunk=N`
+    - Example: `batch_get_class_source(class_names=[...], chunk=2)`
+    - Example: `batch_get_method_by_name(methods=["A:m1", "B:m2"], chunk=2)`
 
-**Example: Analyzing a Class Hierarchy**:
+**Example 1: Analyzing a Class Hierarchy**:
 ```python
-# Get info for multiple related classes at once
+# Smart batch request with size management
 result = batch_get_class_source(["com.example.BaseActivity", "com.example.MainActivity", "com.example.SettingsActivity"])
-for cls in result["classes"]:
+
+# Handle BATCH_TOO_LARGE error
+if result.get("error") == "BATCH_TOO_LARGE":
+    print(f"Estimated size: {result['estimated_size_kb']} KB")
+    # Option 1: Use class summaries
+    for summary in result["class_summaries"]:
+        print(f"{summary['class_name']}: {summary.get('method_count', 0)} methods")
+
+    # Option 2: Reduce batch size or force
+    result = batch_get_class_source(["com.example.BaseActivity"], force=True)
+
+# Handle normal response
+for cls in result.get("classes", []):
     if cls["found"]:
         # Analyze cls["content"]
         pass
+
+# Handle chunked response
+if result.get("_chunking", {}).get("has_more"):
+    next_chunk = batch_get_class_source(class_names=[...], chunk=result["_chunking"]["next_chunk"])
+```
+
+**Example 2: Analyzing Multiple Methods**:
+```python
+# Batch get method sources
+methods = [
+    "com.example.Auth:login",
+    "com.example.Auth:logout",
+    "com.example.Network:sendRequest"
+]
+result = batch_get_method_by_name(methods)
+
+# Handle BATCH_TOO_LARGE error
+if result.get("error") == "BATCH_TOO_LARGE":
+    print(f"Estimated size: {result['estimated_size_kb']} KB")
+    # Reduce batch or force
+    result = batch_get_method_by_name(methods[:2], force=True)
+
+# Process results
+for method in result.get("methods", []):
+    if method["found"]:
+        print(f"Method: {method['class_name']}:{method['method_name']}")
+        # Analyze method["code"]
+
+# Handle chunking
+if result.get("_chunking", {}).get("has_more"):
+    next_chunk = batch_get_method_by_name(methods=methods, chunk=2)
 ```
 """

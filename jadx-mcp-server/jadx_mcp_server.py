@@ -137,16 +137,41 @@ async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optiona
 
 @mcp.tool()
 @with_busy_check
-async def batch_get_class_source(class_names: list[str], instance_id: Optional[str] = None) -> dict:
-    """Fetch multiple class sources in a single request. Maximum 20 classes.
-    
-    Reduces MCP interaction overhead when analyzing multiple related classes.
+async def batch_get_class_source(
+    class_names: list[str],
+    chunk: int = 0,
+    force: bool = False,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Fetch multiple class sources in a single request with intelligent size management.
+
+    SMART BATCHING: Automatically estimates response size and provides optimization guidance.
+    - Small batches (<20KB): Execute directly
+    - Large batches (20-50KB): Execute with performance warning
+    - Very large batches (>50KB): Returns BATCH_TOO_LARGE error with class summaries
+
+    CHUNKING: Large responses (>8KB) are automatically chunked. If response contains
+    `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+
+    TIERED STRATEGY:
+    1. Continuation requests (chunk>0): Execute immediately
+    2. Very large requests (>50KB estimated): Pre-flight check fails, returns optimization suggestions
+    3. Large requests (20-50KB): Execute with performance warning
+    4. Normal requests (<20KB): Execute directly
 
     Args:
-        class_names: List of fully qualified class names (e.g., ['com.example.A', 'com.example.B']).
+        class_names: List of fully qualified class names (e.g., ['com.example.A', 'com.example.B']). Max 20.
+        chunk: Chunk number for continuation (0=first request, 1-N=subsequent chunks). Default: 0
+        force: Force execution even for very large requests (bypasses size check). Default: False
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        Success: {classes: [{class_name, content, found}, ...], total, found_count}
+        BATCH_TOO_LARGE error: {error, estimated_size_kb, class_summaries, suggestions}
     """
-    return await tools.class_tools.batch_get_class_source(class_names, instance_id=instance_id)
+    return await tools.class_tools.batch_get_class_source(
+        class_names, chunk=chunk, force=force, instance_id=instance_id
+    )
 
 
 @mcp.tool()
@@ -174,16 +199,41 @@ async def search_method_by_name(
 
 @mcp.tool()
 @with_busy_check
-async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str] = None) -> dict:
-    """Fetch multiple method sources in a single request. Maximum 20 methods.
-    
-    Reduces MCP interaction overhead when analyzing multiple methods.
+async def batch_get_method_by_name(
+    methods: list[str],
+    chunk: int = 0,
+    force: bool = False,
+    instance_id: Optional[str] = None
+) -> dict:
+    """Fetch multiple method sources in a single request with intelligent size management.
+
+    SMART BATCHING: Automatically estimates response size and provides optimization guidance.
+    - Small batches (<20KB): Execute directly
+    - Large batches (20-50KB): Execute with performance warning
+    - Very large batches (>50KB): Returns BATCH_TOO_LARGE error with method summaries
+
+    CHUNKING: Large responses (>8KB) are automatically chunked. If response contains
+    `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+
+    TIERED STRATEGY:
+    1. Continuation requests (chunk>0): Execute immediately
+    2. Very large requests (>50KB estimated): Pre-flight check fails, returns optimization suggestions
+    3. Large requests (20-50KB): Execute with performance warning
+    4. Normal requests (<20KB): Execute directly
 
     Args:
-        methods: List of "class_name:method_name" pairs (e.g., ['com.example.A:methodA', 'com.example.B:methodB']).
+        methods: List of "class_name:method_name" pairs (e.g., ['com.example.A:methodA', 'com.example.B:methodB']). Max 20.
+        chunk: Chunk number for continuation (0=first request, 1-N=subsequent chunks). Default: 0
+        force: Force execution even for very large requests (bypasses size check). Default: False
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        Success: {methods: [{class_name, method_name, code, found}, ...], total, found_count}
+        BATCH_TOO_LARGE error: {error, estimated_size_kb, method_summaries, suggestions}
     """
-    return await tools.search_tools.batch_get_method_by_name(methods, instance_id=instance_id)
+    return await tools.search_tools.batch_get_method_by_name(
+        methods, chunk=chunk, force=force, instance_id=instance_id
+    )
 
 
 @mcp.tool()

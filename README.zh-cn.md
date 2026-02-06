@@ -6,6 +6,45 @@
 
 ⚡ 让 AI 直接分析 Android APK 和 Java JAR 文件
 
+## 🌟 本 Fork 的独特优势
+
+相比原版，本 Fork 提供**重大功能增强**：
+
+### 🚀 智能批量优化 - 告别超时
+- **智能预检**：避免 60-120 秒的无效反编译等待时间
+- **分层策略**：自动处理正常（<20KB）、大型（20-50KB）、超大（>50KB）请求
+- **AI 友好提示**：清晰的错误信息和可操作的优化建议
+- **分块传输**：大响应（>8KB）自动分块，支持 `chunk` 参数续传
+- **完全兼容**：现有代码无需修改
+
+### 🔄 Transfer API - 突破 16KB MCP 限制
+- **HTTP 直接下载**：绕过 MCP 约 16KB 消息大小限制
+- **令牌系统**：安全的一次性令牌，自动过期
+- **多格式支持**：JSON 和 ZIP，支持 Brotli/GZIP 压缩
+- **大规模验证**：可处理 Nexus（11.2 万类）和 XHS（32.2 万类）
+
+### 💼 完整 JVM 平台支持 - 不止 Android
+- **全面覆盖**：APK、JAR、AAR、DEX - 所有 JVM 字节码
+- **5 个 JAR 专用工具**：Manifest 读取、SPI 服务、入口点发现、依赖分析、字节码查看
+- **智能检测**：文件类型自动识别，不兼容操作返回 `NOT_APPLICABLE`
+- **Spring Boot 就绪**：自动发现 `@SpringBootApplication` 和嵌入依赖
+
+### ⚡ ClassCacheManager - 重复分析快 10-50 倍
+- **后台缓存**：预加载类源码，批量获取瞬间完成
+- **自动失效**：重构操作智能刷新缓存
+- **进度跟踪**：`LOADING` 状态显示进度指示器
+- **内存高效**：支持 30 万+ 类的大型 APK
+
+### 🐳 All-in-One Docker - 生产就绪
+- **一键部署**：`docker run ...` 即刻启动 GUI + AI 服务器
+- **自动加载**：将 `target.apk` 或 `target.jar` 放入 `/apks` - 启动时自动识别
+- **多平台**：支持 linux/amd64 和 linux/arm64
+- **完整技术栈**：Java 25 + Ubuntu 24.04 + noVNC + supervisord
+
+> 📚 **完整文档**：44 篇中英双语指南，涵盖部署、工具、故障排查和 AI 测试提示词
+
+[查看详细对比 →](docs/reference/tools.zh-cn.md#smart-batch-size-management)
+
 ![Latest release](https://img.shields.io/github/release/xjoker/jadx-ai-mcp.svg)
 ![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
@@ -45,10 +84,24 @@ docker run -d --name jadx -p 6080:6080 -p 8650:8650 -p 8651:8651 -v ~/apks:/apks
 
 > 💡 **自动加载**：将 `target.jar`、`target.apk`、`target.aar` 或 `target.dex` 放入 `/apks` 目录，JADX 启动时自动加载。优先级：JAR > APK > AAR > DEX。
 
-> 💡 **让 AI 指导安装？** 发送给 Claude/ChatGPT：
-> ```
-> 按照这里的说明指导我安装：https://raw.githubusercontent.com/xjoker/jadx-ai-mcp/jadx-ai/docs/getting-started/installation.md
-> ```
+<details>
+<summary>💡 <strong>让 AI 指导安装？</strong></summary>
+
+发送给 Claude/ChatGPT：
+
+```
+按照以下文档逐步指导我安装 JADX-AI-MCP：
+https://raw.githubusercontent.com/xjoker/jadx-ai-mcp/jadx-ai/docs/getting-started/installation.md
+
+规则：
+1. 每次只问我一个问题，等待我的回复后再继续
+2. 只使用文档中的命令，不要创造新命令
+3. 每一步后，让我粘贴输出结果再继续
+4. 如果出现问题，帮我排查后再继续
+```
+
+> **如果 AI 无法访问 URL**：从 [installation.md](docs/getting-started/installation.md) 复制内容直接粘贴到对话中。
+</details>
 
 ---
 

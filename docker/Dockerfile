@@ -50,6 +50,13 @@ COPY docker/scripts/jadx-gui-wrapper.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 COPY docker/scripts/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 
+# ============================================================================
+# Security: Create non-root user and set permissions
+# ============================================================================
+RUN useradd -m -u 1000 jadx && \
+    chown -R jadx:jadx /opt/jadx /root/.vnc
+USER jadx
+
 # Expose ports
 # 6080: noVNC web interface
 # 8650: JADX Plugin HTTP API (internal)

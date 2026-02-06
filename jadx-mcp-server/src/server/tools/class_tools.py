@@ -97,45 +97,128 @@ async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optiona
     return await get_from_jadx("class-source", params, instance_id=instance_id)
 
 
-async def batch_get_class_source(class_names: list[str], instance_id: Optional[str] = None) -> dict:
-    """
-    Fetch multiple class sources in a single request.
-    
-    This reduces MCP interaction overhead when analyzing multiple related classes.
-    Maximum 20 classes per request.
+async def _estimate_batch_size(class_names: list[str], instance_id: Optional[str]) -> int:
+    """基于class_info快速估算批量请求的响应大小"""
+    total_estimate = 0
+    for class_name in class_names:
+        try:
+            info = await get_class_info(class_name, instance_id)
+            if "error" not in info:
+                estimate = (
+                    info.get("methods_count", 0) * 200 +  # 每个方法约200字节
+                    info.get("fields_count", 0) * 50 +    # 每个字段约50字节
+                    500  # 类头部
+                )
+                total_estimate += estimate
+        except:
+            total_estimate += 5000  # 估算失败时假设中等大小
+    return total_estimate
 
-    WARNING: Avoid including very large classes (e.g., R.class) which may cause timeout.
-    Use get_class_info first to check class size (methods_count, fields_count).
+
+async def _execute_batch_request(class_names: list[str], chunk: int, instance_id: Optional[str]) -> dict:
+    """执行实际的批量请求"""
+    params = {"class_names": ",".join(class_names)}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+
+    result = await get_from_jadx("batch-class-source", params, instance_id=instance_id)
+
+    # 如果有chunking元数据，添加AI友好提示
+    if "_chunking" in result and result["_chunking"].get("has_more"):
+        chunk_info = result["_chunking"]
+        result["_ai_instruction"] = (
+            f"Response chunked ({chunk_info['current_chunk']}/{chunk_info['total_chunks']}). "
+            f"Call batch_get_class_source(class_names={class_names}, chunk={chunk_info['next_chunk']}) to get next chunk."
+        )
+
+    return result
+
+
+async def batch_get_class_source(
+    class_names: list[str],
+    chunk: int = 0,
+    force: bool = False,
+    instance_id: Optional[str] = None
+) -> dict:
+    """
+    智能批量获取类源码（支持自动分块和大小预警）
+
+    分层策略：
+    1. 续传请求（chunk>0）→ 直接执行
+    2. 超大请求（预估>50KB）→ 预检失败，返回优化建议
+    3. 大请求（预估20-50KB）→ 执行 + 警告
+    4. 正常请求（<20KB）→ 直接执行
 
     Args:
-        class_names: List of fully qualified class names to fetch
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        class_names: List of fully qualified class names (max 20)
+        chunk: Chunk number for continuation (0=first request)
+        force: Force execution even for very large requests
+        instance_id: Optional JADX instance name
 
     Returns:
-        dict: Contains 'classes' array with name, found status, and content/error for each class,
-              plus 'total' and 'found' counts
+        dict: Response with classes data and optional chunking metadata
 
     MCP Tool: batch_get_class_source
-    Description: Batch retrieval of decompiled Java sources for multiple classes
+    Description: Batch retrieval of decompiled Java sources for multiple classes with intelligent size management
     """
-    logger.info(f"batch_get_class_source: classes={class_names}, instance={instance_id}")
+    logger.info(f"batch_get_class_source: classes={class_names}, chunk={chunk}, force={force}")
+
+    # Validate batch size
+    if len(class_names) > 20:
+        return {
+            "error": "TOO_MANY_CLASSES",
+            "message": "Maximum 20 classes per request",
+            "requested": len(class_names),
+            "maximum": 20
+        }
+
+    # 续传请求：直接执行
+    if chunk > 0:
+        return await _execute_batch_request(class_names, chunk, instance_id)
+
+    # 预估响应大小
     try:
-        # Join class names with comma for the API
-        class_names_str = ",".join(class_names)
-        result = await get_from_jadx("batch-class-source", {"class_names": class_names_str}, instance_id=instance_id)
-        
-        if "error" in result:
-            logger.error(f"batch_get_class_source failed: {result.get('error')}")
-        else:
-            found_count = result.get("found", 0)
-            total_count = result.get("total", len(class_names))
-            logger.info(f"batch_get_class_source: found {found_count}/{total_count} classes")
-        
-        return result
+        estimated_size = await _estimate_batch_size(class_names, instance_id)
     except Exception as e:
-        error_msg = f"{type(e).__name__}: {str(e) or '(no message)'}"
-        logger.error(f"batch_get_class_source exception: {error_msg}")
-        return {"error": f"Unexpected error: {error_msg}"}
+        logger.error(f"Size estimation failed: {e}, using conservative fallback")
+        estimated_size = len(class_names) * 5000  # Conservative estimate
+
+    # 策略1：超大请求（>50KB）
+    if estimated_size > 50000 and not force:
+        class_infos = []
+        for class_name in class_names:
+            try:
+                info = await get_class_info(class_name, instance_id)
+                class_infos.append(info)
+            except:
+                class_infos.append({"class_name": class_name, "error": "Failed to get info"})
+
+        return {
+            "error": "BATCH_TOO_LARGE",
+            "estimated_size_bytes": estimated_size,
+            "estimated_size_kb": round(estimated_size / 1024, 1),
+            "classes_count": len(class_names),
+            "class_summaries": class_infos,
+            "suggestions": {
+                "option1": "Reduce batch size to 2-3 classes maximum",
+                "option2": "Use get_class_info + get_method_by_name for targeted analysis",
+                "option3": "Fetch classes individually with get_class_source (supports chunking)",
+                "option4": f"Add force=True to proceed anyway: batch_get_class_source(class_names={class_names[:2]}, force=True)"
+            }
+        }
+
+    # 策略2 & 3：执行请求
+    result = await _execute_batch_request(class_names, chunk, instance_id)
+
+    # 大请求添加性能警告
+    if estimated_size > 20000:
+        result["_performance_warning"] = {
+            "estimated_size_kb": round(estimated_size / 1024, 1),
+            "message": "Large batch request. Response may be chunked.",
+            "optimization_tip": "Consider using get_class_info first to check if you really need full source code"
+        }
+
+    return result
 
 
 async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:

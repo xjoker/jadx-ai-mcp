@@ -58,6 +58,7 @@ import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.SmartChunker;
 
 public class ClassRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ClassRoutes.class);
@@ -306,6 +307,10 @@ public class ClassRoutes {
             return;
         }
 
+        // Parse chunk parameter for large response handling
+        String chunkParam = ctx.queryParam("chunk");
+        int chunk = chunkParam != null ? Integer.parseInt(chunkParam) : 0;
+
         String[] classNames = classNamesParam.split(",");
         
         // Limit to prevent performance issues
@@ -379,7 +384,19 @@ public class ClassRoutes {
             response.put("classes", results);
             response.put("total", classNames.length);
             response.put("found", foundCount);
-            ctx.json(response);
+
+            // Serialize and apply SmartChunker to prevent large response truncation
+            com.google.gson.Gson gson = new com.google.gson.Gson();
+            String responseJson = gson.toJson(response);
+
+            // Apply chunking (auto-chunks if response > 8KB)
+            Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
+                responseJson,
+                chunk,
+                "batch_result"
+            );
+
+            ctx.json(chunkedResponse);
 
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving batch class sources: " + e.getMessage(), e, logger);

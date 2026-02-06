@@ -6,6 +6,7 @@ Transfer Server - HTTP 端点实现
 import io
 import zipfile
 import json
+import secrets
 from typing import Optional
 from starlette.applications import Starlette
 from starlette.responses import Response, JSONResponse
@@ -17,9 +18,9 @@ from .config import get_from_jadx
 from .logging_config import get_logger
 from .rate_limiter import get_download_limiter
 from .param_validator import (
-    validate_class_names, 
-    validate_token, 
-    validate_format, 
+    validate_class_names,
+    validate_token,
+    validate_format,
     validate_compression,
     ValidationError
 )

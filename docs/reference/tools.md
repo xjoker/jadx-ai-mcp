@@ -105,8 +105,8 @@
 
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
-| `batch_get_class_source(class_names)` | `class_names[]`, `instance_id?` | Max 20 classes |
-| `batch_get_method_by_name(methods)` | `methods[]` (format: `class:method`), `instance_id?` | Max 20 methods |
+| `batch_get_class_source(class_names)` | `class_names[]`, `chunk=0`, `force=False`, `instance_id?` | Max 20 classes. Smart size management with chunking support |
+| `batch_get_method_by_name(methods)` | `methods[]` (format: `class:method`), `chunk=0`, `force=False`, `instance_id?` | Max 20 methods. Smart size management with chunking support |
 | `batch_get_xrefs(targets)` | `targets[]` (format: `type:class:member`), `instance_id?` | Max 10 targets |
 
 ### JAR-Specific Tools
@@ -192,9 +192,141 @@ Large responses (>8KB) are automatically chunked to prevent MCP client truncatio
 ```python
 # If _chunking.has_more == true, call again with chunk=N
 result = get_smali_of_class(class_name="...", chunk=2)
+result = batch_get_class_source(class_names=["..."], chunk=2)
 ```
 
-**Affected Tools:** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `fetch_current_class`, `get_main_activity_class`, `get_resource_file`
+**Affected Tools:** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `fetch_current_class`, `get_main_activity_class`, `get_resource_file`, `batch_get_class_source`, `batch_get_method_by_name`
+
+---
+
+## 🚦 Smart Batch Size Management
+
+`batch_get_class_source` and `batch_get_method_by_name` include intelligent size management to prevent oversized responses.
+
+### Tiered Strategy
+
+| Response Size | Behavior | Action |
+|:--------------|:---------|:-------|
+| <20KB | Execute directly | No warnings |
+| 20-50KB | Execute with warning | Returns `_performance_warning` field |
+| >50KB | Pre-flight check fails | Returns `BATCH_TOO_LARGE` error |
+
+### BATCH_TOO_LARGE Error Response
+
+When a batch request is too large, you'll receive:
+
+**For `batch_get_class_source`:**
+```json
+{
+  "error": "BATCH_TOO_LARGE",
+  "estimated_size_bytes": 128000,
+  "estimated_size_kb": 125.0,
+  "classes_count": 15,
+  "class_summaries": [
+    {
+      "class_name": "com.example.LargeClass",
+      "method_count": 150,
+      "field_count": 80,
+      "is_abstract": false
+    }
+  ],
+  "suggestions": {
+    "option1": "Reduce batch size to 2-3 classes maximum",
+    "option2": "Use get_class_info + get_method_by_name for targeted analysis",
+    "option3": "Fetch classes individually with get_class_source (supports chunking)",
+    "option4": "Add force=True to proceed anyway: batch_get_class_source(class_names=['...'], force=True)"
+  }
+}
+```
+
+**For `batch_get_method_by_name`:**
+```json
+{
+  "error": "BATCH_TOO_LARGE",
+  "estimated_size_bytes": 95000,
+  "estimated_size_kb": 92.8,
+  "methods_count": 12,
+  "method_summaries": [
+    {
+      "class_name": "com.example.Service",
+      "method_name": "processData",
+      "line_count": 450
+    }
+  ],
+  "suggestions": {
+    "option1": "Reduce batch size to 2-3 methods maximum",
+    "option2": "Fetch methods individually with get_method_by_name",
+    "option3": "Add force=True to proceed anyway: batch_get_method_by_name(methods=['...'], force=True)"
+  }
+}
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|:----------|:-----|:--------|:------------|
+| `class_names` | list[str] | required | List of class names (max 20) |
+| `chunk` | int | 0 | Chunk number for continuation (0=first request) |
+| `force` | bool | False | Bypass size check and force execution |
+| `instance_id` | str | None | Target JADX instance |
+
+### Usage Examples
+
+**Example 1: Batch Get Classes**
+```python
+# Normal batch request
+result = batch_get_class_source(["com.example.A", "com.example.B"])
+
+# Handle BATCH_TOO_LARGE error
+result = batch_get_class_source(["Large1", "Large2", "Large3"])
+if result.get("error") == "BATCH_TOO_LARGE":
+    # Option 1: Review class summaries
+    for summary in result["class_summaries"]:
+        print(f"{summary['class_name']}: {summary['method_count']} methods")
+
+    # Option 2: Reduce batch size
+    result = batch_get_class_source(["Large1"])
+
+    # Option 3: Force execution
+    result = batch_get_class_source(["Large1", "Large2"], force=True)
+
+# Handle chunked response
+if result.get("_chunking", {}).get("has_more"):
+    next_result = batch_get_class_source(
+        class_names=["com.example.A"],
+        chunk=result["_chunking"]["next_chunk"]
+    )
+```
+
+**Example 2: Batch Get Methods**
+```python
+# Batch request for multiple methods
+methods = [
+    "com.example.Auth:login",
+    "com.example.Auth:logout",
+    "com.example.Network:sendRequest"
+]
+result = batch_get_method_by_name(methods)
+
+# Handle BATCH_TOO_LARGE error
+if result.get("error") == "BATCH_TOO_LARGE":
+    print(f"Estimated size: {result['estimated_size_kb']} KB")
+    # Reduce batch or force execution
+    result = batch_get_method_by_name(methods[:2], force=True)
+
+# Process results
+for method in result.get("methods", []):
+    if method["found"]:
+        print(f"{method['class_name']}:{method['method_name']}")
+        # Analyze method["code"]
+
+# Handle chunking
+if result.get("_chunking", {}).get("has_more"):
+    next_result = batch_get_method_by_name(
+        methods=methods,
+        chunk=result["_chunking"]["next_chunk"]
+    )
+```
 
 ---
 

@@ -22,6 +22,7 @@ import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.SmartChunker;
 
 public class MethodRoutes {
     private static final Logger logger = LoggerFactory.getLogger(MethodRoutes.class);
@@ -138,10 +139,14 @@ public class MethodRoutes {
     public void handleBatchMethodByName(Context ctx) {
         String methodsParam = ctx.queryParam("methods");
         if (methodsParam == null || methodsParam.isEmpty()) {
-            JadxAIMCPPluginError.handleError(ctx, 400, 
+            JadxAIMCPPluginError.handleError(ctx, 400,
                 "Missing 'methods' parameter. Provide comma-separated class_name:method_name pairs.", logger);
             return;
         }
+
+        // Parse chunk parameter for large response handling
+        String chunkParam = ctx.queryParam("chunk");
+        int chunk = chunkParam != null ? Integer.parseInt(chunkParam) : 0;
 
         String[] methodPairs = methodsParam.split(",");
         
@@ -248,7 +253,19 @@ public class MethodRoutes {
             response.put("methods", results);
             response.put("total", methodPairs.length);
             response.put("found", foundCount);
-            ctx.json(response);
+
+            // Serialize and apply SmartChunker to prevent large response truncation
+            com.google.gson.Gson gson = new com.google.gson.Gson();
+            String responseJson = gson.toJson(response);
+
+            // Apply chunking (auto-chunks if response > 8KB)
+            Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
+                responseJson,
+                chunk,
+                "batch_result"
+            );
+
+            ctx.json(chunkedResponse);
 
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving batch methods: " + e.getMessage(), e, logger);

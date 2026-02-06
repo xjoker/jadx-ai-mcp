@@ -8,6 +8,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.2] - 2026-02-06
+
+### 📚 Documentation Fixes
+
+- Fixed tool count in `docs/index.md` (51→45 tools)
+- Completed AI installation guide in Chinese README (`README.zh-cn.md` lines 87-105)
+
+### 🔒 Security Enhancements
+
+- Added non-root user `jadx` (UID 1000) to Docker container for improved security
+- Implemented timing-safe token comparison to prevent timing attacks
+
+### 🛡️ Code Quality
+
+- Added batch size input validation (maximum 20 classes per request) at `class_tools.py:167-174`
+- Added conservative fallback (5000 bytes/class) for size estimation failures at `class_tools.py:181-183`
+
+---
+
 ## [6.1.1] - 2026-02-05
 
 ### 🐛 Bug Fixes

@@ -92,15 +92,44 @@ async def search_method_by_name(
         }
 
 
-async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str] = None) -> dict:
+async def _execute_batch_method_request(methods: list[str], chunk: int, instance_id: Optional[str]) -> dict:
+    """执行实际的批量方法请求"""
+    params = {"methods": ",".join(methods)}
+    if chunk > 0:
+        params["chunk"] = str(chunk)
+
+    result = await get_from_jadx("batch-method-by-name", params, instance_id=instance_id)
+
+    # 如果有chunking元数据，添加AI友好提示
+    if "_chunking" in result and result["_chunking"].get("has_more"):
+        chunk_info = result["_chunking"]
+        result["_ai_instruction"] = (
+            f"Response chunked ({chunk_info['current_chunk']}/{chunk_info['total_chunks']}). "
+            f"Call batch_get_method_by_name(methods={methods}, chunk={chunk_info['next_chunk']}) to get next chunk."
+        )
+
+    return result
+
+
+async def batch_get_method_by_name(
+    methods: list[str],
+    chunk: int = 0,
+    force: bool = False,
+    instance_id: Optional[str] = None
+) -> dict:
     """
-    Fetch multiple method sources in a single request.
-    
-    This reduces MCP interaction overhead when analyzing multiple methods.
-    Maximum 20 methods per request.
+    智能批量获取方法源码（支持自动分块和大小预警）
+
+    分层策略：
+    1. 续传请求（chunk>0）→ 直接执行
+    2. 超大请求（预估>50KB）→ 预检失败，返回优化建议
+    3. 大请求（预估20-50KB）→ 执行 + 警告
+    4. 正常请求（<20KB）→ 直接执行
 
     Args:
         methods: List of "class_name:method_name" pairs (e.g., ["com.example.A:methodA", "com.example.B:methodB"])
+        chunk: Chunk number for continuation (0=first request)
+        force: Force execution even for very large requests
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
@@ -108,11 +137,43 @@ async def batch_get_method_by_name(methods: list[str], instance_id: Optional[str
               plus 'total' and 'found' counts
 
     MCP Tool: batch_get_method_by_name
-    Description: Batch retrieval of method sources using class:method format
+    Description: Batch retrieval of method sources using class:method format with intelligent size management
     """
-    # Join method pairs with comma for the API
-    methods_str = ",".join(methods)
-    return await get_from_jadx("batch-method-by-name", {"methods": methods_str}, instance_id=instance_id)
+    logger.info(f"batch_get_method_by_name: methods={methods}, chunk={chunk}, force={force}")
+
+    # 续传请求：直接执行
+    if chunk > 0:
+        return await _execute_batch_method_request(methods, chunk, instance_id)
+
+    # 预估响应大小（每个方法约3KB）
+    estimated_size = len(methods) * 3000
+
+    # 策略1：超大请求（>50KB）
+    if estimated_size > 50000 and not force:
+        return {
+            "error": "BATCH_TOO_LARGE",
+            "estimated_size_bytes": estimated_size,
+            "estimated_size_kb": round(estimated_size / 1024, 1),
+            "methods_count": len(methods),
+            "suggestions": {
+                "option1": "Reduce batch size to 5-10 methods maximum",
+                "option2": "Fetch methods individually with get_method_by_name",
+                "option3": f"Add force=True to proceed: batch_get_method_by_name(methods={methods[:5]}, force=True)"
+            }
+        }
+
+    # 策略2 & 3：执行请求
+    result = await _execute_batch_method_request(methods, chunk, instance_id)
+
+    # 大请求添加性能警告
+    if estimated_size > 20000:
+        result["_performance_warning"] = {
+            "estimated_size_kb": round(estimated_size / 1024, 1),
+            "message": "Large batch request. Response may be chunked.",
+            "optimization_tip": "Consider fetching methods individually if only specific ones are needed"
+        }
+
+    return result
 
 
 async def search_classes_by_keyword(

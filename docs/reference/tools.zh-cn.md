@@ -105,8 +105,8 @@
 
 | 工具 | 参数 | 说明 |
 |:-----|:-----|:-----|
-| `batch_get_class_source(class_names)` | `class_names[]`, `instance_id?` | 最多 20 个类 |
-| `batch_get_method_by_name(methods)` | `methods[]` (格式: `class:method`), `instance_id?` | 最多 20 个方法 |
+| `batch_get_class_source(class_names)` | `class_names[]`, `chunk=0`, `force=False`, `instance_id?` | 最多 20 个类。智能大小管理，支持分片 |
+| `batch_get_method_by_name(methods)` | `methods[]` (格式: `class:method`), `chunk=0`, `force=False`, `instance_id?` | 最多 20 个方法。智能大小管理，支持分片 |
 | `batch_get_xrefs(targets)` | `targets[]` (格式: `type:class:member`), `instance_id?` | 最多 10 个目标 |
 
 #### JAR 专用工具
@@ -192,8 +192,140 @@
 ```python
 # 如果 _chunking.has_more == true，使用 chunk=N 继续调用
 result = get_smali_of_class(class_name="...", chunk=2)
+result = batch_get_class_source(class_names=["..."], chunk=2)
 ```
 
-**受影响的工具：** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `fetch_current_class`, `get_main_activity_class`, `get_resource_file`
+**受影响的工具：** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `fetch_current_class`, `get_main_activity_class`, `get_resource_file`, `batch_get_class_source`, `batch_get_method_by_name`
+
+---
+
+## 🚦 智能批量大小管理
+
+`batch_get_class_source` 和 `batch_get_method_by_name` 包含智能大小管理，防止过大响应。
+
+### 分层策略
+
+| 响应大小 | 行为 | 操作 |
+|:---------|:-----|:-----|
+| <20KB | 直接执行 | 无警告 |
+| 20-50KB | 执行并警告 | 返回 `_performance_warning` 字段 |
+| >50KB | 预检失败 | 返回 `BATCH_TOO_LARGE` 错误 |
+
+### BATCH_TOO_LARGE 错误响应
+
+当批量请求过大时，会收到：
+
+**`batch_get_class_source` 错误示例：**
+```json
+{
+  "error": "BATCH_TOO_LARGE",
+  "estimated_size_bytes": 128000,
+  "estimated_size_kb": 125.0,
+  "classes_count": 15,
+  "class_summaries": [
+    {
+      "class_name": "com.example.LargeClass",
+      "method_count": 150,
+      "field_count": 80,
+      "is_abstract": false
+    }
+  ],
+  "suggestions": {
+    "option1": "将批量大小减少到最多 2-3 个类",
+    "option2": "使用 get_class_info + get_method_by_name 进行有针对性的分析",
+    "option3": "使用 get_class_source 单独获取类（支持分片）",
+    "option4": "添加 force=True 强制执行: batch_get_class_source(class_names=['...'], force=True)"
+  }
+}
+```
+
+**`batch_get_method_by_name` 错误示例：**
+```json
+{
+  "error": "BATCH_TOO_LARGE",
+  "estimated_size_bytes": 95000,
+  "estimated_size_kb": 92.8,
+  "methods_count": 12,
+  "method_summaries": [
+    {
+      "class_name": "com.example.Service",
+      "method_name": "processData",
+      "line_count": 450
+    }
+  ],
+  "suggestions": {
+    "option1": "将批量大小减少到最多 2-3 个方法",
+    "option2": "使用 get_method_by_name 单独获取方法",
+    "option3": "添加 force=True 强制执行: batch_get_method_by_name(methods=['...'], force=True)"
+  }
+}
+```
+
+### 参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|:-----|:-----|:-------|:-----|
+| `class_names` | list[str] | 必需 | 类名列表（最多 20 个） |
+| `chunk` | int | 0 | 续传分片编号（0=首次请求） |
+| `force` | bool | False | 绕过大小检查，强制执行 |
+| `instance_id` | str | None | 目标 JADX 实例 |
+
+### 使用示例
+
+**示例 1: 批量获取类源码**
+```python
+# 正常批量请求
+result = batch_get_class_source(["com.example.A", "com.example.B"])
+
+# 处理 BATCH_TOO_LARGE 错误
+result = batch_get_class_source(["Large1", "Large2", "Large3"])
+if result.get("error") == "BATCH_TOO_LARGE":
+    # 选项1: 查看类摘要
+    for summary in result["class_summaries"]:
+        print(f"{summary['class_name']}: {summary['method_count']} 个方法")
+
+    # 选项2: 减少批量大小
+    result = batch_get_class_source(["Large1"])
+
+    # 选项3: 强制执行
+    result = batch_get_class_source(["Large1", "Large2"], force=True)
+
+# 处理分片响应
+if result.get("_chunking", {}).get("has_more"):
+    next_result = batch_get_class_source(
+        class_names=["com.example.A"],
+        chunk=result["_chunking"]["next_chunk"]
+    )
+```
+
+**示例 2: 批量获取方法源码**
+```python
+# 批量请求多个方法
+methods = [
+    "com.example.Auth:login",
+    "com.example.Auth:logout",
+    "com.example.Network:sendRequest"
+]
+result = batch_get_method_by_name(methods)
+
+# 处理 BATCH_TOO_LARGE 错误
+if result.get("error") == "BATCH_TOO_LARGE":
+    print(f"预估大小: {result['estimated_size_kb']} KB")
+    # 减少批量或强制执行
+    result = batch_get_method_by_name(methods[:2], force=True)
+
+# 处理结果
+for method in result.get("methods", []):
+    if method["found"]:
+        print(f"{method['class_name']}:{method['method_name']}")
+        # 分析 method["code"]
+
+# 处理分片
+if result.get("_chunking", {}).get("has_more"):
+    next_result = batch_get_method_by_name(
+        methods=methods,
+        chunk=result["_chunking"]["next_chunk"]
+    )
+```
 
 ---
