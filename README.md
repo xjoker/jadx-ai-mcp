@@ -103,6 +103,31 @@ Rules:
 
 ---
 
+## 🧠 AI Skills
+
+Install specialized analysis skills for Claude Code, Cursor, and other AI agents:
+
+```bash
+# Install all skills
+npx skills add xjoker/jadx-ai-mcp
+
+# Install specific skill
+npx skills add xjoker/jadx-ai-mcp --skill logic-tracing
+```
+
+| Skill | Use Case |
+|:------|:---------|
+| **quickstart** | Getting started, performance optimization |
+| **logic-tracing** | Understand call chains, API flows, feature implementation |
+| **security-audit** | Vulnerability hunting, OWASP checks, risk analysis |
+| **crypto-analysis** | Encryption algorithms, malware analysis, anti-debug |
+| **frida-hooks** | Generate Frida scripts for dynamic instrumentation |
+| **refactoring** | Rename obfuscated code, improve readability |
+
+> Browse all skills at [skills.sh](https://skills.sh)
+
+---
+
 ## 🚀 Deployment Options
 
 | Method | Use Case | Guide |

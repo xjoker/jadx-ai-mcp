@@ -1,327 +1,136 @@
 ---
 name: quickstart
-description: Getting started guide for JADX-AI-MCP. Use when first connecting to analyze an APK/JAR, or when unsure which tools to use.
+description: Getting started guide and performance tips for JADX-AI-MCP. Use when user asks "getting started", "how to use", "first time", "what tools", "where to start", "batch operations", "performance", "large response", "optimize", "slow", "timeout", or needs help choosing between APK and JAR analysis tools.
 ---
 
-# Quick Start Guide Skill
+# JADX-AI-MCP Quick Start Guide
 
-A comprehensive guide for new users to get started with JADX-AI-MCP analysis.
+Essential workflows and performance tips for effective APK/JAR analysis.
 
 ## First Connection Workflow
 
-When connecting to a new file for analysis, follow this workflow:
-
-### Step 1: Understand the File
+### Step 1: Get File Information
 
 ```
-get_file_info()
+get_file_info
 ```
 
-This returns:
-- File type (APK, JAR, AAR, DEX)
-- Total class count
-- Recommended tools for this file type
+Returns loaded file type, package count, class count, and analysis status.
 
-### Step 2: Check Decompilation Status
+### Step 2: Check Decompile Status
 
 ```
-get_decompile_status()
+get_decompile_status
 ```
 
-Check the `cached_percentage` field - higher values mean faster searches:
-- `< 30%`: Code search will be slow, consider waiting
-- `> 70%`: Good performance for code search
-- `100%`: Full cache, optimal performance
+Shows decompilation progress and whether background processing is complete.
 
-### Step 3: Get Entry Points
-
-**For APK files:**
-```
-get_android_manifest()
-get_main_activity_class()
-get_main_application_classes_names()
-```
-
-**For JAR files:**
-```
-jar_get_manifest()
-jar_get_entry_points()
-jar_get_services()
-```
-
----
-
-## Project Overview Workflow
-
-### List All Classes (Paginated)
+### Step 3: Explore Package Structure
 
 ```
-get_all_classes(offset=0, count=100)
+list_packages
 ```
 
-For large projects, use pagination:
-```
-get_all_classes(offset=0, count=100)    # First 100
-get_all_classes(offset=100, count=100)  # Next 100
-```
+Lists all packages in the loaded file for navigation.
 
-### Get Main Package Classes
+## APK vs JAR Tool Selection
 
-Use `auto=true` to automatically detect the main package:
+| Analysis Target | Tool | Use Case |
+|:----------------|:-----|:---------|
+| Android app structure | `list_packages` | Browse package hierarchy |
+| Class discovery | `search_class` | Find classes by name pattern |
+| Method discovery | `search_method` | Find methods across classes |
+| Code inspection | `get_class_source` | View decompiled Java source |
+| String analysis | `search_code` | Find hardcoded strings/patterns |
+| Resource files | `list_resources` | APK resources (layouts, strings) |
+| Manifest | `get_manifest` | Android manifest analysis |
 
-```
-get_package_classes(auto=true)
-```
+## Quick Reference
 
-Or specify a package prefix:
+| Task | Tool | Key Parameters |
+|:-----|:-----|:---------------|
+| Find class by name | `search_class` | `query` (supports wildcards) |
+| Get class source | `get_class_source` | `class_name` (full qualified) |
+| Search in code | `search_code` | `query`, `case_sensitive` |
+| List all methods | `get_class_methods` | `class_name` |
+| Get method details | `get_method_source` | `class_name`, `method_name` |
+| Find field usages | `search_field` | `query` |
+| List resources | `list_resources` | `path` (optional filter) |
+| Get resource content | `get_resource` | `path` |
 
-```
-get_package_classes(package="com.example.app")
-```
+## Batch Operations Best Practices
 
----
-
-## Common Tool Combinations
-
-### Finding a Feature
-
-When searching for specific functionality:
-
-1. **Search for keywords**
-   ```
-   search_classes_by_keyword(search_term="login", search_in="code")
-   ```
-
-2. **Get the class source**
-   ```
-   get_class_source(class_name="com.example.LoginActivity")
-   ```
-
-3. **Find cross-references**
-   ```
-   get_xrefs_to_class(class_name="com.example.LoginActivity")
-   get_xrefs_to_method(class_name="com.example.LoginActivity", method_name="authenticate")
-   ```
-
-### Understanding a Class
-
-For deep analysis of a specific class:
-
-1. **Get class structure**
-   ```
-   get_class_info(class_name="com.example.NetworkClient")
-   ```
-
-2. **List all methods**
-   ```
-   get_methods_of_class(class_name="com.example.NetworkClient")
-   ```
-
-3. **Get full source code**
-   ```
-   get_class_source(class_name="com.example.NetworkClient")
-   ```
-
-4. **Analyze method calls**
-   ```
-   get_method_callees(class_name="com.example.NetworkClient", method_name="sendRequest")
-   ```
-
-### Security Analysis
-
-For security auditing:
-
-1. **Get manifest for permissions/components**
-   ```
-   get_android_manifest()
-   ```
-
-2. **Search for secrets/sensitive strings**
-   ```
-   search_classes_by_keyword(search_term="api_key", search_in="code")
-   search_classes_by_keyword(search_term="password", search_in="code")
-   search_classes_by_keyword(search_term="secret", search_in="code")
-   ```
-
-3. **Find crypto usage**
-   ```
-   search_classes_by_keyword(search_term="Cipher", search_in="code")
-   search_classes_by_keyword(search_term="encrypt", search_in="code")
-   ```
-
-4. **Analyze findings**
-   ```
-   get_class_source(class_name="<suspicious_class>")
-   get_xrefs_to_method(class_name="<class>", method_name="<method>")
-   ```
-
----
-
-## Performance Tips
-
-### 1. Check Cache Before Code Search
+### 1. Use Pagination for Large Results
 
 ```
-get_decompile_status()
+search_class(query="Activity", limit=50, offset=0)
+search_class(query="Activity", limit=50, offset=50)
 ```
 
-If `cached_percentage` is low, use class/method search instead of code search:
+### 2. Check Cache Before Repeated Calls
+
+The server caches decompiled results. Repeated calls to the same class are fast.
+
+### 3. Batch Related Queries
+
+Instead of multiple single queries:
+
 ```
-# Faster - searches class names only
-search_classes_by_keyword(search_term="Auth", search_in="class")
-
-# Slower - searches full code
-search_classes_by_keyword(search_term="Auth", search_in="code")
-```
-
-### 2. Use Package Filter to Narrow Scope
-
-Instead of searching all classes:
-```
-# Narrow to app package
-search_classes_by_keyword(search_term="login", package="com.example")
-
-# Exclude libraries
-search_classes_by_keyword(search_term="login", exclude="androidx,com.google")
+# Inefficient
+get_class_source("com.app.MainActivity")
+get_class_source("com.app.BaseActivity")
+get_class_source("com.app.LoginActivity")
 ```
 
-### 3. Use Batch Operations
+Use search first, then fetch selectively:
 
-When analyzing multiple classes:
 ```
-# Instead of 5 individual calls
-batch_get_class_source(class_names=[
-    "com.example.A",
-    "com.example.B",
-    "com.example.C"
-])
+# Efficient
+search_class(query="*Activity")  # Get list first
+get_class_source("com.app.MainActivity")  # Fetch only what you need
 ```
 
-When analyzing multiple methods:
-```
-batch_get_method_by_name(methods=[
-    "com.example.Auth:login",
-    "com.example.Auth:logout",
-    "com.example.Network:send"
-])
-```
+### 4. Narrow Search Scope
 
-When getting multiple cross-references:
-```
-batch_get_xrefs(targets=[
-    "class:com.example.Auth",
-    "method:com.example.Auth:login",
-    "field:com.example.Config:API_KEY"
-])
-```
+| Approach | Performance |
+|:---------|:------------|
+| `search_code(query="password")` | Scans entire codebase |
+| `search_code(query="password", package="com.app.auth")` | Scans only auth package |
 
-### 4. Handle Large Responses
+## Performance Optimization Tips
 
-Large responses are automatically chunked. Check for `_chunking` metadata:
-```json
-{
-  "_chunking": {
-    "has_more": true,
-    "next_chunk": 2,
-    "total_chunks": 5
-  }
-}
-```
+### Handling Large Responses
 
-To get more chunks:
-```
-get_class_source(class_name="...", chunk=2)
-```
+1. **Use `limit` parameter** - Most search tools support pagination
+2. **Filter by package** - Narrow scope when possible
+3. **Request specific data** - Use `get_method_source` instead of full class when only one method needed
 
----
+### Timeout Prevention
+
+| Symptom | Solution |
+|:--------|:---------|
+| Search timeout | Add `limit` parameter, narrow package scope |
+| Large class timeout | Use `get_method_source` for specific methods |
+| Resource timeout | Use `list_resources` first, then `get_resource` selectively |
+
+### Caching Behavior
+
+- Decompiled classes are cached after first access
+- `get_decompile_status` shows background decompilation progress
+- Wait for decompilation to complete for faster subsequent queries
 
 ## Error Handling Guide
 
-### BATCH_TOO_LARGE Error
+| Error | Cause | Solution |
+|:------|:------|:---------|
+| "Class not found" | Wrong class name | Use `search_class` to find correct name |
+| "No file loaded" | JADX not ready | Call `get_file_info` to check status |
+| "Connection refused" | Server not running | Check JADX instance is running |
+| "Timeout" | Large result set | Add pagination, narrow scope |
 
-When batch request is too large (>50KB estimated):
+## Common Pitfalls
 
-```json
-{
-  "error": "BATCH_TOO_LARGE",
-  "estimated_size_kb": 125.0,
-  "suggestions": {
-    "option1": "Reduce batch size to 2-3 classes",
-    "option2": "Use get_class_info for targeted analysis",
-    "option3": "Fetch individually with get_class_source",
-    "option4": "Add force=True to proceed anyway"
-  }
-}
-```
-
-**Solutions:**
-1. Reduce batch size
-2. Use `force=True` to override
-3. Fetch classes individually (supports chunking)
-
-### NOT_APPLICABLE Response
-
-Tool doesn't apply to this file type:
-```json
-{
-  "status": "NOT_APPLICABLE",
-  "message": "jar_get_manifest only applies to JAR files"
-}
-```
-
-Check `get_file_info()` to confirm file type and use appropriate tools.
-
-### Instance Connection Error
-
-```json
-{
-  "error": "Connection failed",
-  "instance": "default"
-}
-```
-
-**Solutions:**
-1. Check instance health: `health_check_jadx_instances()`
-2. Verify JADX is running and file is loaded
-3. Check network connectivity to MCP server
-
-### Class Not Found
-
-```json
-{
-  "error": "Class not found",
-  "class_name": "com.example.Missing"
-}
-```
-
-**Solutions:**
-1. Verify class name with `search_classes_by_keyword(search_term="Missing", search_in="class")`
-2. Check if class is obfuscated - may have different name
-3. Use `get_all_classes()` to browse available classes
-
----
-
-## File Type Reference
-
-| File Type | Entry Point Tools | Manifest Tool |
-|:----------|:------------------|:--------------|
-| APK | `get_main_activity_class()`, `get_main_application_classes_names()` | `get_android_manifest()` |
-| JAR | `jar_get_entry_points()`, `jar_get_services()` | `jar_get_manifest()` |
-| AAR | `get_android_manifest()` | `get_android_manifest()` |
-| DEX | `get_all_classes()` | N/A |
-
----
-
-## Quick Reference Card
-
-| Task | Tool |
-|:-----|:-----|
-| File info | `get_file_info()` |
-| Check status | `get_decompile_status()` |
-| List classes | `get_all_classes()`, `get_package_classes()` |
-| Get source | `get_class_source()`, `get_method_by_name()` |
-| Search | `search_classes_by_keyword()`, `search_method_by_name()` |
-| Cross-refs | `get_xrefs_to_class()`, `get_xrefs_to_method()`, `get_xrefs_to_field()` |
-| Batch ops | `batch_get_class_source()`, `batch_get_method_by_name()`, `batch_get_xrefs()` |
-| APK manifest | `get_android_manifest()` |
-| JAR manifest | `jar_get_manifest()` |
+- **Using short class names** - Always use fully qualified names (e.g., `com.app.MainActivity`)
+- **Fetching all classes** - Use search and pagination instead of bulk retrieval
+- **Ignoring decompile status** - Background decompilation may still be running
+- **Broad searches** - Always add package filters when possible

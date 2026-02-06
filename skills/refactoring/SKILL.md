@@ -1,186 +1,129 @@
 ---
 name: refactoring
-description: Rename and deobfuscate code elements. Use when renaming classes, methods, fields, or packages to improve code readability.
+description: Use this skill when the user wants to rename, deobfuscate, or refactor Java code in JADX. This includes renaming classes, methods, fields, or packages to meaningful names, cleaning up obfuscated code, improving code readability, or applying consistent naming conventions. Trigger words include "rename", "deobfuscate", "refactor", "meaningful names", "clean up", "improve readability", "obfuscated code", "fix names", "name cleanup".
 ---
 
-# Refactoring Assistant
+# JADX Refactoring Guide
 
-A skill for guiding AI through code refactoring operations in JADX-AI-MCP, focusing on renaming deobfuscated code elements.
+Rename and deobfuscate Java code using JADX MCP tools to improve readability and understanding.
 
-## Overview
+## Unified Rename Interface
 
-This skill helps with systematic refactoring of decompiled Android/Java code, primarily through renaming obfuscated identifiers to meaningful names.
+All rename operations use the same tool with a `type` parameter:
 
-## Unified Rename Tool
-
-Use the `rename` tool for all renaming operations:
-
-### Class Renaming
-```python
-rename("class", "com.example.a", "com.example.MainActivity")
+```
+mcp__jadx__rename_identifier(
+    original_name: str,      # Current name (e.g., "a", "com.example.a")
+    new_name: str,           # New meaningful name
+    type: str,               # "package" | "class" | "method" | "field"
+    instance_name: str       # JADX instance (default: "local")
+)
 ```
 
-### Method Renaming
-```python
-rename("method", "a", "getUserProfile", class_name="com.example.UserManager")
-```
+## Naming Conventions
 
-### Field Renaming
-```python
-rename("field", "b", "mUserName", class_name="com.example.User")
-```
+| Type | Convention | Example |
+|:-----|:-----------|:--------|
+| Package | lowercase, dot-separated | `com.example.network` |
+| Class | PascalCase, noun | `UserManager`, `HttpClient` |
+| Method | camelCase, verb | `fetchData`, `parseResponse` |
+| Field | camelCase, descriptive | `userName`, `isConnected` |
 
-### Package Renaming
-```python
-rename("package", "com.example.a", "com.example.network")
-```
+## Renaming Priority
+
+Process in this order to maintain valid references:
+
+| Priority | Type | Reason |
+|:--------:|:-----|:-------|
+| 1 | Package | Affects all contained classes |
+| 2 | Class | Affects all methods and fields |
+| 3 | Method | May affect call sites |
+| 4 | Field | Least dependencies |
 
 ## Cache Invalidation
 
-**Critical**: Rename operations trigger a 30-second cache cooldown.
+**IMPORTANT**: After renaming, JADX cache takes up to 30 seconds to refresh.
 
-### Why This Matters
-- After renaming, the class source cache becomes stale
-- Fetching source immediately after rename may return old content
-- The 30-second window allows JADX to regenerate decompiled source
+- Wait before fetching updated code
+- Use `get_class_source` to verify changes applied
+- If old names appear, wait and retry
 
-### Best Practice
-1. Execute rename operation
-2. Wait before fetching renamed class source (system handles this automatically)
-3. Verify the rename was applied correctly
+## Step-by-Step Workflow
 
-### Batch Operations
-When performing multiple renames:
-- Group related renames together
-- Wait once after the batch completes
-- Then verify all changes
-
-## Using Cross-References (xrefs)
-
-Always check references before and after renaming to ensure consistency.
-
-### Before Renaming
-```python
-# Check all usages of a class before renaming
-xrefs = get_xrefs("com.example.a")
-print(f"Found {len(xrefs)} references to this class")
-```
-
-### After Renaming
-```python
-# Verify old name has no references (should be empty)
-old_refs = get_xrefs("com.example.a")
-assert len(old_refs) == 0, "Old name still has references!"
-
-# Verify new name has all expected references
-new_refs = get_xrefs("com.example.MainActivity")
-print(f"New name has {len(new_refs)} references")
-```
-
-### Impact Analysis
-Before renaming a widely-used class:
-1. Get xrefs count
-2. Review calling classes
-3. Consider if rename affects public API
-
-## Deobfuscation Best Practices
-
-### Prioritization Order
-
-1. **Package Names** - Establish the project structure first
-2. **Class Names** - Most impactful for code understanding
-3. **Method Names** - Clarify behavior
-4. **Field Names** - Document state
-
-### Naming Conventions
-
-| Element | Convention | Example |
-|---------|------------|---------|
-| Package | lowercase, domain-based | `com.app.network` |
-| Class | PascalCase, noun | `UserManager`, `NetworkClient` |
-| Method | camelCase, verb | `getUserById`, `sendRequest` |
-| Field | camelCase, prefixed | `mUserName`, `sInstance` |
-
-### Deriving Meaningful Names
-
-1. **Analyze Method Body**
-   - Look for API calls (HTTP, database, crypto)
-   - Check string literals for hints
-   - Examine control flow patterns
-
-2. **Check String Constants**
-   - Log tags often reveal class purpose
-   - Error messages describe functionality
-   - URL paths indicate network operations
-
-3. **Follow Data Flow**
-   - Input parameters suggest purpose
-   - Return types indicate output
-   - Field assignments show state management
-
-4. **Examine Inheritance**
-   - Base class names provide context
-   - Interface implementations reveal contracts
-   - Android component types are informative
-
-### Example Workflow
+### Step 1: Analyze Obfuscated Code
 
 ```
-1. Identify obfuscated class: com.a.b.c
-
-2. Gather context:
-   - Get class source
-   - Check xrefs to see usage patterns
-   - Look for string literals
-
-3. Analyze findings:
-   - Extends Activity
-   - Has onCreate, onResume
-   - Contains "Login" in strings
-   - Makes network calls to /auth endpoint
-
-4. Apply renames:
-   rename("class", "com.a.b.c", "com.app.ui.LoginActivity")
-   rename("method", "a", "validateCredentials", class_name="com.app.ui.LoginActivity")
-   rename("field", "b", "mEmailInput", class_name="com.app.ui.LoginActivity")
-
-5. Verify:
-   - Check xrefs for new name
-   - Fetch updated source
-   - Confirm no broken references
+mcp__jadx__search_class(query="a")
+mcp__jadx__get_class_source(class_name="com.example.a")
 ```
 
-## Common Patterns
+Review the code structure and identify patterns.
 
-### Network Classes
-- Look for: OkHttp, Retrofit, HttpURLConnection
-- Naming: `*Client`, `*Api`, `*Service`
+### Step 2: Identify Meaningful Names
 
-### Data Models
-- Look for: Parcelable, Serializable, GSON annotations
-- Naming: Noun matching the data type
+Analyze:
+- String constants and API calls
+- Method signatures and return types
+- Field usage patterns
+- Import statements
 
-### UI Components
-- Look for: Activity, Fragment, View inheritance
-- Naming: `*Activity`, `*Fragment`, `*View`
+### Step 3: Rename Packages First
 
-### Utilities
-- Look for: Static methods, no state
-- Naming: `*Utils`, `*Helper`, `*Manager`
+```
+mcp__jadx__rename_identifier(
+    original_name="com.a.b",
+    new_name="com.example.network",
+    type="package"
+)
+```
 
-## Troubleshooting
+### Step 4: Rename Classes
 
-### Rename Not Appearing
-- Wait for cache cooldown (30 seconds)
-- Refresh the class source
-- Check for typos in class name
+```
+mcp__jadx__rename_identifier(
+    original_name="com.example.network.a",
+    new_name="HttpClient",
+    type="class"
+)
+```
 
-### Xrefs Still Show Old Name
-- Cache may not be fully invalidated
-- Wait and retry
-- Verify rename was successful
+### Step 5: Rename Methods and Fields
 
-### Conflicting Names
-- Check if target name already exists
-- Use unique, descriptive names
-- Consider package context
+```
+mcp__jadx__rename_identifier(
+    original_name="a",
+    new_name="sendRequest",
+    type="method"
+)
+
+mcp__jadx__rename_identifier(
+    original_name="b",
+    new_name="responseData",
+    type="field"
+)
+```
+
+### Step 6: Verify Changes
+
+```
+mcp__jadx__get_class_source(class_name="com.example.network.HttpClient")
+```
+
+## Quick Reference
+
+| Task | Tool | Parameters |
+|:-----|:-----|:-----------|
+| Find classes | `search_class` | `query` |
+| View source | `get_class_source` | `class_name` |
+| Rename package | `rename_identifier` | `type="package"` |
+| Rename class | `rename_identifier` | `type="class"` |
+| Rename method | `rename_identifier` | `type="method"` |
+| Rename field | `rename_identifier` | `type="field"` |
+
+## Common Pitfalls
+
+- **Renaming out of order**: Always rename packages before classes, classes before methods/fields
+- **Not waiting for cache**: Changes may not appear immediately; wait 30 seconds
+- **Invalid names**: Ensure new names follow Java naming rules (no spaces, no keywords)
+- **Duplicate names**: Check for existing names before renaming to avoid conflicts
+- **Missing context**: Always read the source code before deciding on meaningful names

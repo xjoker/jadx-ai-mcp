@@ -102,6 +102,31 @@ https://raw.githubusercontent.com/xjoker/jadx-ai-mcp/jadx-ai/docs/getting-starte
 
 ---
 
+## 🧠 AI 技能
+
+为 Claude Code、Cursor 等 AI 助手安装专业分析技能：
+
+```bash
+# 安装所有技能
+npx skills add xjoker/jadx-ai-mcp
+
+# 安装特定技能
+npx skills add xjoker/jadx-ai-mcp --skill logic-tracing
+```
+
+| 技能 | 用途 |
+|:-----|:-----|
+| **quickstart** | 入门指南、性能优化 |
+| **logic-tracing** | 理解调用链、API 流程、功能实现 |
+| **security-audit** | 漏洞挖掘、OWASP 检查、风险分析 |
+| **crypto-analysis** | 加密算法、恶意软件分析、反调试 |
+| **frida-hooks** | 生成 Frida 脚本进行动态插桩 |
+| **refactoring** | 重命名混淆代码、提高可读性 |
+
+> 浏览更多技能：[skills.sh](https://skills.sh)
+
+---
+
 ## 🚀 部署方式
 
 | 方式 | 适用场景 | 指南 |
