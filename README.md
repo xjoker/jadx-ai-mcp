@@ -6,45 +6,6 @@
 
 ⚡ Let AI directly analyze Android APKs and Java JARs via JADX + MCP protocol.
 
-## 🌟 What Makes This Fork Different?
-
-This fork provides **major enhancements** over the original project:
-
-### 🚀 Smart Batch Optimization - No More Timeouts
-- **Intelligent Pre-check**: Avoids 60-120s wasted decompilation time on oversized requests
-- **Layered Strategy**: Automatically handles normal (<20KB), large (20-50KB), and oversized (>50KB) requests
-- **AI-Friendly Guidance**: Clear error messages with actionable suggestions for optimization
-- **Chunked Transfer**: Auto-splits large responses (>8KB) with `chunk` parameter support
-- **Full Compatibility**: Existing code works unchanged
-
-### 🔄 Transfer API - Breaking the 16KB MCP Limit
-- **HTTP-Based Download**: Bypass MCP's ~16KB message size limit for batch operations
-- **Token System**: Secure, single-use tokens with auto-expiration
-- **Multiple Formats**: JSON and ZIP with Brotli/GZIP compression support
-- **Tested at Scale**: Handles Nexus (112K classes) and XHS (322K classes) without breaking
-
-### 💼 Full JVM Platform Support - Beyond Android
-- **Universal Coverage**: APK, JAR, AAR, DEX - all JVM bytecode supported
-- **5 JAR-Specific Tools**: Manifest reader, SPI services, entry point discovery, dependency analyzer, bytecode viewer
-- **Smart Detection**: File type auto-detection with `NOT_APPLICABLE` responses for incompatible operations
-- **Spring Boot Ready**: Automatically discovers `@SpringBootApplication` and embedded dependencies
-
-### ⚡ ClassCacheManager - 10-50x Faster Repeated Analysis
-- **Background Caching**: Pre-loads class sources for instant batch retrieval
-- **Auto-Invalidation**: Smart cache refresh on refactoring operations
-- **Progress Tracking**: `LOADING` status with progress indicators
-- **Memory Efficient**: Designed for large APKs with 300K+ classes
-
-### 🐳 All-in-One Docker - Production Ready
-- **One Command Deploy**: `docker run ...` starts GUI + AI server instantly
-- **Auto-Load**: Place `target.apk` or `target.jar` in `/apks` - automatic recognition on startup
-- **Multi-Platform**: linux/amd64 and linux/arm64 support
-- **Complete Stack**: Java 25 + Ubuntu 24.04 + noVNC + supervisord
-
-> 📚 **Full Documentation**: 44 bilingual guides covering deployment, tools, troubleshooting, and AI testing prompts
-
-[View detailed comparison →](docs/reference/tools.md#smart-batch-size-management)
-
 ![Latest release](https://img.shields.io/github/release/xjoker/jadx-ai-mcp.svg)
 ![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
@@ -53,6 +14,20 @@ This fork provides **major enhancements** over the original project:
 [📖 Full Documentation](docs/index.md) | [简体中文](README.zh-cn.md)
 
 </div>
+
+## 🌟 What Makes This Fork Different?
+
+This fork provides **major enhancements** over the original project:
+
+| Feature | Description |
+|:--------|:------------|
+| 🚀 **Smart Batch Optimization** | 4-tier strategy avoids 60-120s wasted decompilation. Auto-splits large responses (>8KB) with chunking. |
+| 🔄 **Transfer API** | Bypass MCP's ~16KB limit via HTTP download. Tested with 322K classes. |
+| 💼 **Full JVM Support** | APK, JAR, AAR, DEX all supported. 5 JAR-specific tools for Spring Boot analysis. |
+| ⚡ **ClassCacheManager** | 10-50x faster repeated analysis with background caching and auto-invalidation. |
+| 🐳 **All-in-One Docker** | One command deploys GUI + AI server. Multi-platform (amd64/arm64). |
+
+> 📚 **44 bilingual guides** covering deployment, tools, troubleshooting, and AI testing prompts. [View details →](docs/reference/tools.md)
 
 ---
 
