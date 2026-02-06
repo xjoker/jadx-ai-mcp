@@ -11,7 +11,7 @@
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
-[📖 Full Documentation](docs/index.md) | [简体中文](README.zh-cn.md)
+**[简体中文](README.zh-cn.md)** | [📖 Documentation](docs/index.md) | [🚀 Quick Start](#-30-second-quick-start) | [🛠️ Tools](docs/reference/tools.md)
 
 </div>
 
