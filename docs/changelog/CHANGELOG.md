@@ -10,6 +10,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [6.1.2] - 2026-02-06
 
+### 🐛 Bug Fixes
+
+- Fixed Docker build failure: removed non-existent `/root/.vnc` from chown command
+
 ### 📚 Documentation Fixes
 
 - Fixed tool count in `docs/index.md` (51→45 tools)

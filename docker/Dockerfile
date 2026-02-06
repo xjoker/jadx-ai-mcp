@@ -54,7 +54,7 @@ RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 # Security: Create non-root user and set permissions
 # ============================================================================
 RUN useradd -m -u 1000 jadx && \
-    chown -R jadx:jadx /opt/jadx /root/.vnc
+    chown -R jadx:jadx /opt/jadx
 USER jadx
 
 # Expose ports
