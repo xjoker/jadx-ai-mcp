@@ -29,34 +29,44 @@ RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/j
     && chmod +x /opt/jadx/bin/*
 
 # ============================================================================
-# Layer 2: Install plugin using official jadx command
+# Layer 2: Create non-root user BEFORE plugin installation
+# This ensures plugin is installed in /home/jadx/.jadx/plugins/
+# ============================================================================
+# Note: Use UID 1001 because base image (eclipse-temurin:25-jre-noble) has ubuntu user at UID 1000
+RUN useradd -m -u 1001 jadx && \
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
+    mkdir -p /var/log/supervisor /apks && \
+    chown -R jadx:jadx /opt/jadx /var/log/supervisor /apks
+
+# Switch to jadx user for plugin installation
+USER jadx
+
+# ============================================================================
+# Layer 3: Install plugin as jadx user (installs to /home/jadx/.jadx/plugins/)
 # Change PLUGIN_VERSION to force re-download of plugin when building
 # ============================================================================
 ARG PLUGIN_VERSION=6.0.7
 RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
-    && echo "Plugin version: ${PLUGIN_VERSION}"
+    && echo "Plugin version: ${PLUGIN_VERSION}" \
+    && /opt/jadx/bin/jadx plugins --list
 
 # ============================================================================
-# Layer 3: MCP Server (local copy instead of runtime pull)
+# Layer 4: MCP Server (need root for uv sync, then fix permissions)
 # ============================================================================
+USER root
 COPY jadx-mcp-server /opt/jadx/jadx-mcp-server
-RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen
+RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen \
+    && chown -R jadx:jadx /opt/jadx/jadx-mcp-server
 
 # ============================================================================
-# Layer 4: Startup scripts (changes occasionally)
+# Layer 5: Startup scripts (changes occasionally)
 # ============================================================================
 COPY docker/scripts/start.sh /start.sh
 COPY docker/scripts/jadx-gui-wrapper.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 COPY docker/scripts/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 
-# ============================================================================
-# Security: Create non-root user and set permissions
-# ============================================================================
-# Note: Use UID 1001 because base image (eclipse-temurin:25-jre-noble) has ubuntu user at UID 1000
-RUN useradd -m -u 1001 jadx && \
-    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
-    chown -R jadx:jadx /opt/jadx /var/log/supervisor /apks
+# Switch back to jadx user for runtime
 USER jadx
 
 # Expose ports
@@ -65,7 +75,7 @@ USER jadx
 # 8651: MCP Server HTTP endpoint (external, connect LLMs here)
 EXPOSE 6080 8650 8651
 
-# Health check
+# Health check for JADX Plugin API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${JADX_API_PORT}/health || exit 1
 
