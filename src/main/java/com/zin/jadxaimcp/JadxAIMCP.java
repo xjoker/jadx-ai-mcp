@@ -36,7 +36,7 @@ public class JadxAIMCP implements JadxPlugin {
     private static final String PREF_KEY_BIND_ADDRESS = "jadx_ai_mcp_bind_address";
     private static final String PREF_KEY_INSTANCE_NAME = "jadx_ai_mcp_instance_name";
     private static final int DEFAULT_PORT = 8650;
-    private static final String DEFAULT_BIND_ADDRESS = "127.0.0.1";
+    private static final String DEFAULT_BIND_ADDRESS = "0.0.0.0";
     
     // Environment variable names for Docker/container configuration
     private static final String ENV_BIND_ADDRESS = "JADX_MCP_BIND_ADDRESS";

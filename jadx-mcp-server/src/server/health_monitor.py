@@ -138,8 +138,11 @@ class HealthMonitor:
                         last_check=now_iso
                     )
                     healthy_count += 1
-                    
+
                     logger.info(f"[HEALTH] Instance '{name}' now available: {apk_info.get('apk_package', 'unknown')}")
+
+                    # Trigger warmup for newly connected instance
+                    asyncio.create_task(cls._warmup_instance(name, instance.host, instance.port))
                 except Exception as e:
                     # Still not available
                     InstanceRegistry.update_instance_status(
@@ -183,3 +186,32 @@ class HealthMonitor:
     def is_running(cls) -> bool:
         """Check if health monitor is running."""
         return cls._running
+
+    @classmethod
+    async def _warmup_instance(cls, name: str, host: str, port: int):
+        """
+        Warm up a newly connected instance by triggering strings cache preload.
+
+        Args:
+            name: Instance name
+            host: Instance host
+            port: Instance port
+        """
+        try:
+            import httpx
+            url = f"http://{host}:{port}/warmup"
+
+            logger.info(f"[WARMUP] Starting cache warmup for instance '{name}'")
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(url)
+                response.raise_for_status()
+
+                result = response.json()
+                if result.get("success"):
+                    logger.info(f"[WARMUP] Instance '{name}' warmup completed: {result.get('message', 'OK')}")
+                else:
+                    logger.warning(f"[WARMUP] Instance '{name}' warmup returned non-success: {result}")
+
+        except Exception as e:
+            logger.warning(f"[WARMUP] Failed to warm up instance '{name}': {e}")

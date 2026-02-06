@@ -28,7 +28,7 @@ public class PluginServer {
      * @param port        - The port to listen on
      */
     public PluginServer(MainWindow mainWindow, int port) {
-        this(mainWindow, port, "127.0.0.1");
+        this(mainWindow, port, "0.0.0.0");
     }
 
     /**
@@ -165,6 +165,24 @@ public class PluginServer {
                     });
                 }
             }
+
+            // Asynchronous cache warmup for class cache
+            new Thread(() -> {
+                try {
+                    Thread.sleep(2000); // Wait 2s for server to fully stabilize
+                    logger.info("[JAI] Starting background cache warmup...");
+
+                    // Warmup class cache
+                    try {
+                        ClassCacheManager.initCache(mainWindow.getWrapper());
+                        logger.info("[JAI] Class cache warmup initiated");
+                    } catch (Exception e) {
+                        logger.warn("[JAI] Failed to warmup class cache: " + e.getMessage());
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }, "JAI-CacheWarmup").start();
 
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin Error: Could not start HTTP Server. Exception: " + e.getMessage(), e);

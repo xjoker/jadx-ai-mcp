@@ -203,8 +203,31 @@ async def get_from_jadx(
 
     except httpx.HTTPStatusError as e:
         error_msg = f"HTTP error {e.response.status_code}: {e.response.text}"
+
         if e.response.status_code == 401:
             error_msg = "Authentication failed. Please check your auth token configuration."
+            logger.error(error_msg)
+            return {"error": error_msg}
+
+        elif e.response.status_code == 503:
+            # Parse 503 response for structured retry information
+            try:
+                error_data = e.response.json()
+                retry_after = error_data.get("retry_after", 5)
+                suggestion = error_data.get("suggestion", "Service temporarily unavailable. Please retry in a few seconds.")
+
+                logger.warning(f"Service unavailable (503): {suggestion} (retry_after={retry_after}s)")
+                return {
+                    "error": "SERVICE_UNAVAILABLE",
+                    "retry_after": retry_after,
+                    "suggestion": suggestion
+                }
+            except (json.JSONDecodeError, AttributeError):
+                # Fallback if response is not JSON
+                error_msg = "Service temporarily unavailable. The instance may be warming up caches. Please retry in a few seconds."
+                logger.error(error_msg)
+                return {"error": error_msg}
+
         logger.error(error_msg)
         return {"error": error_msg}
 

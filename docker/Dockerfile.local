@@ -5,9 +5,47 @@
 # Run:   docker run -d -p 6080:6080 -p 8651:8651 -v ./apks:/apks jadx-ai-mcp-local
 
 # ============================================================================
-# Use pre-built base image with system dependencies
+# Global ARG (available in all FROM statements)
 # ============================================================================
 ARG BASE_VERSION=1.2
+
+# ============================================================================
+# Stage 1: Build Maven plugin
+# ============================================================================
+FROM maven:3.9.9-eclipse-temurin-11 AS builder
+
+WORKDIR /build
+
+# Install unzip for extracting JADX
+RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/*
+
+COPY pom.xml .
+COPY src ./src
+
+# Download JADX and install to local Maven repo (to satisfy provided dependency)
+RUN wget -q "https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.zip" -O /tmp/jadx.zip && \
+    unzip -q /tmp/jadx.zip -d /tmp/jadx && \
+    echo "=== JADX directory structure ===" && \
+    ls -la /tmp/jadx/lib/ && \
+    JADX_JAR=$(find /tmp/jadx/lib -name "jadx-*-all.jar" | head -1) && \
+    echo "Found JADX JAR: $JADX_JAR" && \
+    mvn install:install-file \
+        -Dfile="$JADX_JAR" \
+        -DgroupId=io.github.skylot \
+        -DartifactId=jadx-all \
+        -Dversion=1.5.3 \
+        -Dpackaging=jar && \
+    rm -rf /tmp/jadx.zip /tmp/jadx
+
+# Build the plugin JAR (now jadx-all is in local repo)
+RUN mvn clean install -DskipTests -U && \
+    ls -lh target/*.jar && \
+    cp target/jadx-ai-mcp-*.jar /build/jadx-ai-mcp.jar
+
+# ============================================================================
+# Stage 2: Use pre-built base image with system dependencies
+# ============================================================================
+ARG BASE_VERSION
 FROM xjoker/jadx-ai-mcp-base:${BASE_VERSION}
 
 LABEL maintainer="xjoker"
@@ -26,10 +64,23 @@ RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/j
     && chmod +x /opt/jadx/bin/*
 
 # ============================================================================
-# Layer 2: Install LOCAL plugin using JADX's official install command
+# Layer 2: Create non-root user BEFORE plugin installation
+# This ensures plugin is installed in /home/jadx/.config/jadx/plugins/
 # ============================================================================
-ARG PLUGIN_JAR=target/jadx-ai-mcp-6.0.50.jar
-COPY ${PLUGIN_JAR} /tmp/jadx-ai-mcp.jar
+# Note: Use UID 1001 because base image (eclipse-temurin:25-jre-noble) has ubuntu user at UID 1000
+RUN useradd -m -u 1001 jadx && \
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
+    mkdir -p /var/log/supervisor /apks && \
+    chown -R jadx:jadx /opt/jadx /var/log/supervisor /apks
+
+# Switch to jadx user for plugin installation
+USER jadx
+
+# ============================================================================
+# Layer 3: Install LOCAL plugin as jadx user
+# ============================================================================
+# Copy the freshly built JAR from builder stage
+COPY --from=builder --chown=jadx:jadx /build/jadx-ai-mcp.jar /tmp/jadx-ai-mcp.jar
 
 # Use JADX's official plugin installation command
 RUN /opt/jadx/bin/jadx plugins --install-jar /tmp/jadx-ai-mcp.jar \
@@ -37,26 +88,22 @@ RUN /opt/jadx/bin/jadx plugins --install-jar /tmp/jadx-ai-mcp.jar \
     && echo "Installed plugins:" && /opt/jadx/bin/jadx plugins --list
 
 # ============================================================================
-# Layer 3: MCP Server (local copy)
+# Layer 4: MCP Server (need root for uv sync, then fix permissions)
 # ============================================================================
+USER root
 COPY jadx-mcp-server /opt/jadx/jadx-mcp-server
-RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen
+RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen \
+    && chown -R jadx:jadx /opt/jadx/jadx-mcp-server
 
 # ============================================================================
-# Layer 4: Startup scripts
+# Layer 5: Startup scripts
 # ============================================================================
 COPY docker/scripts/start.sh /start.sh
 COPY docker/scripts/jadx-gui-wrapper.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 COPY docker/scripts/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 
-# ============================================================================
-# Security: Create non-root user and set permissions
-# ============================================================================
-# Note: Use UID 1001 because base image (eclipse-temurin:25-jre-noble) has ubuntu user at UID 1000
-RUN useradd -m -u 1001 jadx && \
-    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
-    chown -R jadx:jadx /opt/jadx /var/log/supervisor /apks
+# Switch back to jadx user for runtime
 USER jadx
 
 # Expose ports

@@ -487,13 +487,13 @@ public class XrefsRoutes {
                 response.put("message", "Class cache is being loaded in background. First load takes ~30-60 seconds for large APKs.");
                 response.put("retry_after", 10);
                 response.put("health", health);
-                
+
                 long elapsed = health.containsKey("elapsed_seconds") ? ((Number) health.get("elapsed_seconds")).longValue() : 0;
                 if (elapsed > 0) {
                     response.put("estimated_remaining", "~" + Math.max(0, 40 - elapsed) + " seconds");
                 }
-                
-                ctx.json(response);
+
+                ctx.status(503).json(response);
                 return;
             }
             
