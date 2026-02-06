@@ -7,7 +7,7 @@
 # ============================================================================
 # Use pre-built base image with system dependencies
 # ============================================================================
-ARG BASE_VERSION=1.1
+ARG BASE_VERSION=1.2
 FROM xjoker/jadx-ai-mcp-base:${BASE_VERSION}
 
 LABEL maintainer="xjoker"
@@ -49,6 +49,15 @@ COPY docker/scripts/start.sh /start.sh
 COPY docker/scripts/jadx-gui-wrapper.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 COPY docker/scripts/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
+
+# ============================================================================
+# Security: Create non-root user and set permissions
+# ============================================================================
+# Note: Use UID 1001 because base image (eclipse-temurin:25-jre-noble) has ubuntu user at UID 1000
+RUN useradd -m -u 1001 jadx && \
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
+    chown -R jadx:jadx /opt/jadx /var/log/supervisor /apks
+USER jadx
 
 # Expose ports
 # 6080: noVNC web interface

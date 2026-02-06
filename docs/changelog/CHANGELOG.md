@@ -12,22 +12,31 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### 🐛 Bug Fixes
 
-- Fixed Docker build failure: removed non-existent `/root/.vnc` from chown command
+**Docker Container Security Hardening**
+- Fixed supervisord PID file permission: changed from `/var/run/supervisord.pid` to `/tmp/supervisord.pid`
+- Fixed UID conflict: changed from UID 1000 to UID 1001 (base image already has `ubuntu` user at UID 1000)
+- Fixed uv binary permission: changed from symlink to copy (`ln -s` → `cp`) to allow non-root user access
+- Fixed `/var/log/supervisor` directory permission for non-root user
+- Fixed `/apks` directory permission for non-root user
+- Added X11 socket directory `/tmp/.X11-unix` with proper permissions
 
-### 📚 Documentation Fixes
+**Dockerfile.local**
+- Added missing non-root user configuration (was running as root)
 
-- Fixed tool count in `docs/index.md` (51→45 tools)
-- Completed AI installation guide in Chinese README (`README.zh-cn.md` lines 87-105)
+**Dockerfile.mcp**
+- Added non-root user `mcp` (UID 1001) for improved security
+- Fixed uv binary permission (symlink → copy)
 
 ### 🔒 Security Enhancements
 
-- Added non-root user `jadx` (UID 1000) to Docker container for improved security
+- All Docker containers now run as non-root user (UID 1001)
+- Updated base image version to 1.2 with security fixes
 - Implemented timing-safe token comparison to prevent timing attacks
 
 ### 🛡️ Code Quality
 
-- Added batch size input validation (maximum 20 classes per request) at `class_tools.py:167-174`
-- Added conservative fallback (5000 bytes/class) for size estimation failures at `class_tools.py:181-183`
+- Added batch size input validation (maximum 20 classes per request)
+- Added conservative fallback (5000 bytes/class) for size estimation failures
 
 ---
 

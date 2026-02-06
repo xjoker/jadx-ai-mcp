@@ -9,7 +9,7 @@
 # Build base image separately when system deps change:
 #   docker build -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
 # ============================================================================
-ARG BASE_VERSION=1.1
+ARG BASE_VERSION=1.2
 FROM xjoker/jadx-ai-mcp-base:${BASE_VERSION}
 
 LABEL maintainer="xjoker"
@@ -53,8 +53,10 @@ RUN chmod +x /start.sh /opt/jadx/bin/jadx-gui-wrapper.sh
 # ============================================================================
 # Security: Create non-root user and set permissions
 # ============================================================================
-RUN useradd -m -u 1000 jadx && \
-    chown -R jadx:jadx /opt/jadx
+# Note: Use UID 1001 because base image (eclipse-temurin:25-jre-noble) has ubuntu user at UID 1000
+RUN useradd -m -u 1001 jadx && \
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
+    chown -R jadx:jadx /opt/jadx /var/log/supervisor /apks
 USER jadx
 
 # Expose ports

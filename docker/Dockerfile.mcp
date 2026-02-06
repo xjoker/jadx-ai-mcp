@@ -20,12 +20,14 @@ ENV PYTHONUNBUFFERED=1 \
 # ============================================================================
 # Install uv package manager
 # ============================================================================
+# Copy binary to /usr/local/bin instead of symlink to avoid permission issues with non-root user
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && ln -s /root/.local/bin/uv /usr/local/bin/uv
+    && cp /root/.local/bin/uv /usr/local/bin/uv \
+    && chmod +x /usr/local/bin/uv
 
 # ============================================================================
 # Copy and install MCP Server
@@ -38,6 +40,13 @@ RUN /usr/local/bin/uv sync --frozen
 
 # Create config directory
 RUN mkdir -p /app/data/config
+
+# ============================================================================
+# Security: Create non-root user and set permissions
+# ============================================================================
+RUN useradd -m -u 1001 mcp && \
+    chown -R mcp:mcp /app
+USER mcp
 
 # ============================================================================
 # Default configuration

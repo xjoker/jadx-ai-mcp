@@ -52,11 +52,13 @@ RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --upgrade \
     "pillow>=10.2.0"
 
 # Install uv package manager for running MCP Server (with retry for network reliability)
+# Copy binary to /usr/local/bin instead of symlink to avoid permission issues with non-root user
 RUN for i in 1 2 3 4 5; do \
         curl -LsSf https://astral.sh/uv/install.sh | sh && break || sleep 5; \
     done \
-    && ln -s /root/.local/bin/uv /usr/local/bin/uv \
-    && ln -s /root/.local/bin/uvx /usr/local/bin/uvx \
+    && cp /root/.local/bin/uv /usr/local/bin/uv \
+    && cp /root/.local/bin/uvx /usr/local/bin/uvx \
+    && chmod +x /usr/local/bin/uv /usr/local/bin/uvx \
     && uv --version
 
 # Create directories

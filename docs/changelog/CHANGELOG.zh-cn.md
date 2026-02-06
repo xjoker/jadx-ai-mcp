@@ -12,22 +12,31 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ### 🐛 Bug 修复
 
-- 修复 Docker 构建失败：移除 chown 命令中不存在的 `/root/.vnc` 目录
+**Docker 容器安全加固**
+- 修复 supervisord PID 文件权限：从 `/var/run/supervisord.pid` 改为 `/tmp/supervisord.pid`
+- 修复 UID 冲突：从 UID 1000 改为 UID 1001（基础镜像已有 `ubuntu` 用户占用 UID 1000）
+- 修复 uv 二进制权限：从符号链接改为复制（`ln -s` → `cp`）以允许非 root 用户访问
+- 修复 `/var/log/supervisor` 目录权限
+- 修复 `/apks` 目录权限
+- 添加 X11 socket 目录 `/tmp/.X11-unix` 并设置正确权限
 
-### 📚 文档修复
+**Dockerfile.local**
+- 添加缺失的非 root 用户配置（之前以 root 运行）
 
-- 修复 `docs/index.md` 中的工具数量错误（51→45 个工具）
-- 完善中文 README 的 AI 安装指南（`README.zh-cn.md` 第 87-105 行）
+**Dockerfile.mcp**
+- 添加非 root 用户 `mcp`（UID 1001）以提高安全性
+- 修复 uv 二进制权限（符号链接 → 复制）
 
 ### 🔒 安全增强
 
-- 为 Docker 容器添加非 root 用户 `jadx`（UID 1000）以提高安全性
+- 所有 Docker 容器现在都以非 root 用户运行（UID 1001）
+- 更新基础镜像版本至 1.2，包含安全修复
 - 实现时间安全的令牌比较以防止时序攻击
 
 ### 🛡️ 代码质量
 
-- 添加批量大小输入验证（每次请求最多 20 个类）位于 `class_tools.py:167-174`
-- 为大小估算失败添加保守的回退策略（5000 字节/类）位于 `class_tools.py:181-183`
+- 添加批量大小输入验证（每次请求最多 20 个类）
+- 为大小估算失败添加保守的回退策略（5000 字节/类）
 
 ---
 
