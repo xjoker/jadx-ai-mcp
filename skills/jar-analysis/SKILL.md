@@ -1,3 +1,8 @@
+---
+name: jar-analysis
+description: Analyze JAR files and Spring Boot applications. Use when working with Java libraries, executable JARs, or Spring Boot fat JARs.
+---
+
 # JAR/Spring Boot Analysis
 
 A skill for analyzing JAR files and Spring Boot applications using JADX-AI-MCP tools.

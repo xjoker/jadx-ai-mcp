@@ -1,3 +1,8 @@
+---
+name: batch-optimization
+description: Guide for efficient batch operations with JADX-AI-MCP. Use when performing bulk class retrieval, handling large responses, or optimizing search performance.
+---
+
 # Batch Analysis Optimization Skill
 
 ## Overview

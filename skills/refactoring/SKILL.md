@@ -1,3 +1,8 @@
+---
+name: refactoring
+description: Rename and deobfuscate code elements. Use when renaming classes, methods, fields, or packages to improve code readability.
+---
+
 # Refactoring Assistant
 
 A skill for guiding AI through code refactoring operations in JADX-AI-MCP, focusing on renaming deobfuscated code elements.

@@ -1,8 +1,11 @@
+---
+name: quickstart
+description: Getting started guide for JADX-AI-MCP. Use when first connecting to analyze an APK/JAR, or when unsure which tools to use.
+---
+
 # Quick Start Guide Skill
 
 A comprehensive guide for new users to get started with JADX-AI-MCP analysis.
-
----
 
 ## First Connection Workflow
 

@@ -1,3 +1,8 @@
+---
+name: frida-hooks
+description: Generate Frida JavaScript hooks from decompiled code. Use when creating method hooks, intercepting native calls, or instrumenting Android/Java applications.
+---
+
 # Frida Hook Generation
 
 A skill for generating Frida hooks from decompiled Android/Java code using JADX-AI-MCP.
