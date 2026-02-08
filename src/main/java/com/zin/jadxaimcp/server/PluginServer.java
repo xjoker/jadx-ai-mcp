@@ -167,7 +167,7 @@ public class PluginServer {
             }
 
             // Asynchronous cache warmup for class cache
-            new Thread(() -> {
+            Thread cacheWarmupThread = new Thread(() -> {
                 try {
                     Thread.sleep(2000); // Wait 2s for server to fully stabilize
                     logger.info("[JAI] Starting background cache warmup...");
@@ -182,7 +182,9 @@ public class PluginServer {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            }, "JAI-CacheWarmup").start();
+            }, "JAI-CacheWarmup");
+            cacheWarmupThread.setDaemon(true);
+            cacheWarmupThread.start();
 
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin Error: Could not start HTTP Server. Exception: " + e.getMessage(), e);
@@ -301,7 +303,6 @@ public class PluginServer {
         MethodRoutes methodRoutes = new MethodRoutes(mainWindow, paginationUtils);
         ResourceRoutes resourceRoutes = new ResourceRoutes(mainWindow);
         RefactoringRoutes refactoringRoutes = new RefactoringRoutes(mainWindow);
-        DebugRoutes debugRoutes = new DebugRoutes(mainWindow);
         XrefsRoutes xrefsRoutes = new XrefsRoutes(mainWindow);
 
         // --- General & Health ---
@@ -368,11 +369,6 @@ public class PluginServer {
         app.get("/rename-field", refactoringRoutes::handleRenameField);
         app.get("/rename-package", refactoringRoutes::handleRenamePackage);
 
-        // --- Debugging ---
-        app.get("/debug/stack-frames", debugRoutes::handleGetStackFrames);
-        app.get("/debug/variables", debugRoutes::handleGetVariables);
-        app.get("/debug/threads", debugRoutes::handleGetThreads);
-        
         // --- Decompilation Status ---
         app.get("/decompile-status", ctx -> {
             try {

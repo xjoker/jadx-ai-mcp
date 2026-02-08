@@ -146,7 +146,15 @@ public class MethodRoutes {
 
         // Parse chunk parameter for large response handling
         String chunkParam = ctx.queryParam("chunk");
-        int chunk = chunkParam != null ? Integer.parseInt(chunkParam) : 0;
+        int chunk = 0;
+        if (chunkParam != null) {
+            try {
+                chunk = Integer.parseInt(chunkParam);
+            } catch (NumberFormatException e) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Invalid 'chunk' parameter: must be an integer", logger);
+                return;
+            }
+        }
 
         String[] methodPairs = methodsParam.split(",");
         

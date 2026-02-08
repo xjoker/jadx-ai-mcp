@@ -25,7 +25,6 @@ import java.util.prefs.Preferences;
 // Importing custom banner string
 import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
 import com.zin.jadxaimcp.utils.PaginationUtils;
-import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.ui.PluginMenu;
 import com.zin.jadxaimcp.server.PluginServer;
 

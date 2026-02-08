@@ -8,4 +8,3 @@ from . import search_tools
 from . import xrefs_tools
 from . import instance_tools
 from . import refactor_tools
-from . import debug_tools
