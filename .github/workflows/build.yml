@@ -262,6 +262,7 @@ jobs:
             BASE_VERSION=${{ env.BASE_IMAGE_VERSION }}
             JADX_VERSION=${{ env.JADX_VERSION }}
             PLUGIN_VERSION=${{ steps.version.outputs.version }}
+            CACHE_BUST=${{ github.run_number }}
           tags: |
             xjoker/jadx-ai-mcp:${{ steps.version.outputs.version }}
             xjoker/jadx-ai-mcp:${{ steps.version.outputs.docker_alias }}

@@ -55,16 +55,16 @@ RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
 # ============================================================================
 USER root
 
-# Fix uv binary - if uv is a symlink or missing, reinstall it properly
-# This ensures jadx user can execute uv regardless of base image version
-RUN if [ -L /usr/local/bin/uv ] || [ ! -x /usr/local/bin/uv ]; then \
-        rm -f /usr/local/bin/uv /usr/local/bin/uvx && \
-        curl -LsSf https://astral.sh/uv/install.sh | sh && \
-        cp -L /root/.local/bin/uv /usr/local/bin/uv && \
-        cp -L /root/.local/bin/uvx /usr/local/bin/uvx && \
-        chmod +x /usr/local/bin/uv /usr/local/bin/uvx && \
-        rm -rf /root/.local/bin /root/.cache; \
-    fi && uv --version
+# Fix uv binary - ALWAYS reinstall to ensure it's a real binary, not a symlink
+# ARG CACHE_BUST forces this layer to rebuild when value changes
+ARG CACHE_BUST=1
+RUN rm -f /usr/local/bin/uv /usr/local/bin/uvx && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    cp -L /root/.local/bin/uv /usr/local/bin/uv && \
+    cp -L /root/.local/bin/uvx /usr/local/bin/uvx && \
+    chmod +x /usr/local/bin/uv /usr/local/bin/uvx && \
+    rm -rf /root/.local/bin /root/.cache && \
+    uv --version
 
 COPY jadx-mcp-server /opt/jadx/jadx-mcp-server
 RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen \
