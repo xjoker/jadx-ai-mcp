@@ -94,14 +94,13 @@ def test_3_xrefs_response():
     logger.info("测试 3: 首次调用 get_xrefs")
     logger.info("=" * 60)
 
-    test_class = "com.xingin.xhs.MainActivity"
+    test_class = "android.support.v4.app.INotificationSideChannel"
 
     try:
         start_time = time.time()
         response = requests.get(
-            f"{BASE_URL}/xrefs",
+            f"{BASE_URL}/xrefs-to-class",
             params={
-                "target_type": "class",
                 "class_name": test_class
             },
             timeout=30

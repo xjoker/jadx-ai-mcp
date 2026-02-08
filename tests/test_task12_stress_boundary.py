@@ -30,8 +30,8 @@ def get_sample_classes(count=25):
     """获取样本类列表"""
     try:
         response = requests.get(
-            f"{BASE_URL}/classes",
-            params={"offset": 0, "count": count},
+            f"{BASE_URL}/all-classes",
+            params={"offset": 0, "limit": count},
             timeout=10
         )
         if response.status_code == 200:
@@ -59,9 +59,9 @@ def test_1_batch_limit_20_classes():
 
     try:
         start_time = time.time()
-        response = requests.post(
-            f"{BASE_URL}/batch-classes",
-            json={"class_names": test_classes},
+        response = requests.get(
+            f"{BASE_URL}/batch-class-source",
+            params={"class_names": ",".join(test_classes)},
             timeout=60
         )
         elapsed = time.time() - start_time
@@ -99,9 +99,9 @@ def test_2_batch_exceed_limit():
     test_classes = classes[:21]
 
     try:
-        response = requests.post(
-            f"{BASE_URL}/batch-classes",
-            json={"class_names": test_classes},
+        response = requests.get(
+            f"{BASE_URL}/batch-class-source",
+            params={"class_names": ",".join(test_classes)},
             timeout=60
         )
 
@@ -130,12 +130,12 @@ def test_3_large_class_chunking():
     logger.info("=" * 60)
 
     # 查找一个可能较大的类
-    test_class = "com.xingin.xhs.MainActivity"
+    test_class = "android.support.v4.app.INotificationSideChannel"
 
     try:
         start_time = time.time()
         response = requests.get(
-            f"{BASE_URL}/class",
+            f"{BASE_URL}/class-source",
             params={"class_name": test_class},
             timeout=30
         )
@@ -210,20 +210,20 @@ def test_5_error_handling_invalid_params():
     test_cases = [
         {
             "name": "空类名",
-            "url": "/class",
+            "url": "/class-source",
             "params": {"class_name": ""},
             "expected": [400, 404]
         },
         {
             "name": "不存在的类",
-            "url": "/class",
+            "url": "/class-source",
             "params": {"class_name": "com.nonexistent.FakeClass"},
             "expected": [404, 200]  # 200也可接受，返回found=false
         },
         {
             "name": "无效的offset",
-            "url": "/classes",
-            "params": {"offset": -1, "count": 10},
+            "url": "/all-classes",
+            "params": {"offset": -1, "limit": 10},
             "expected": [400, 200]  # 某些实现可能容错
         },
     ]
@@ -272,7 +272,7 @@ def test_6_memory_monitoring():
         classes = get_sample_classes(10)
         if classes:
             for cls in classes[:5]:
-                requests.get(f"{BASE_URL}/class", params={"class_name": cls}, timeout=10)
+                requests.get(f"{BASE_URL}/class-source", params={"class_name": cls}, timeout=10)
 
         time.sleep(2)
 
