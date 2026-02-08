@@ -20,6 +20,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # ============================================================================
 # System dependencies (rarely changes - this is why we cache it)
 # ============================================================================
+# Disable APT post-invoke scripts that cause issues in QEMU emulation
+RUN rm -f /etc/apt/apt.conf.d/docker-clean \
+    && echo 'APT::Update::Post-Invoke-Success { };' > /etc/apt/apt.conf.d/99-disable-post-invoke
+
 # First update and upgrade existing packages to fix security vulnerabilities
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     # X11 and VNC
@@ -52,13 +56,15 @@ RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --upgrade \
     "pillow>=10.2.0"
 
 # Install uv package manager for running MCP Server (with retry for network reliability)
-# Copy binary to /usr/local/bin instead of symlink to avoid permission issues with non-root user
+# IMPORTANT: Copy actual binary files (not symlinks) to /usr/local/bin
+# This ensures non-root users (jadx) can execute uv at runtime
 RUN for i in 1 2 3 4 5; do \
         curl -LsSf https://astral.sh/uv/install.sh | sh && break || sleep 5; \
     done \
-    && cp /root/.local/bin/uv /usr/local/bin/uv \
-    && cp /root/.local/bin/uvx /usr/local/bin/uvx \
+    && cp -L /root/.local/bin/uv /usr/local/bin/uv \
+    && cp -L /root/.local/bin/uvx /usr/local/bin/uvx \
     && chmod +x /usr/local/bin/uv /usr/local/bin/uvx \
+    && rm -rf /root/.local/bin /root/.cache \
     && uv --version
 
 # Create directories
