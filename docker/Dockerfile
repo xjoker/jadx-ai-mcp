@@ -54,6 +54,16 @@ RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
 # Layer 4: MCP Server (need root for uv sync, then fix permissions)
 # ============================================================================
 USER root
+
+# Fix uv binary - copy actual file instead of symlink to /root/.local/bin
+# This ensures jadx user can execute uv
+RUN if [ -L /usr/local/bin/uv ]; then \
+        rm /usr/local/bin/uv /usr/local/bin/uvx && \
+        cp /root/.local/bin/uv /usr/local/bin/uv && \
+        cp /root/.local/bin/uvx /usr/local/bin/uvx && \
+        chmod +x /usr/local/bin/uv /usr/local/bin/uvx; \
+    fi
+
 COPY jadx-mcp-server /opt/jadx/jadx-mcp-server
 RUN cd /opt/jadx/jadx-mcp-server && uv sync --frozen \
     && chown -R jadx:jadx /opt/jadx/jadx-mcp-server
