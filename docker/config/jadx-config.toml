@@ -15,24 +15,6 @@ health_check_interval = 30
 # 使用 Docker Compose 内部网络名称
 # ============================================
 
-[[jadx_instances]]
-name = "jadx-1"
-host = "jadx-1"       # Docker 服务名
-port = 8650
-enabled = true
-
-[[jadx_instances]]
-name = "jadx-2"
-host = "jadx-2"       # Docker 服务名
-port = 8650
-enabled = true
-
-[[jadx_instances]]
-name = "jadx-3"
-host = "jadx-3"       # Docker 服务名
-port = 8650
-enabled = true
-
 # ============================================
 # 用户认证 (可选)
 # 取消注释并修改 token 以启用认证
@@ -42,7 +24,7 @@ enabled = true
 # name = "alice"
 # token = "your-secret-token-here"
 
-# [[users]]
-# name = "admin"
-# token = "admin-secret-token"
-# is_admin = true
+[[users]]
+name = "admin"
+token = "admin-secret-token"
+is_admin = true

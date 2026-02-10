@@ -1,6 +1,6 @@
 # AI Integration Guide
 
-**English** | [简体中文](ai-integration.zh-cn.md)
+**English** | [简体中文](ai-clients.zh-cn.md)
 
 ---
 

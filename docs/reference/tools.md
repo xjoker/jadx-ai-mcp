@@ -333,6 +333,6 @@ if result.get("_chunking", {}).get("has_more"):
 ## 🔗 Related Documentation
 
 - [Quick Start Guide](../getting-started/quickstart.md)
-- [AI Integration](../guides/ai-integration.md)
-- [FAQ / Troubleshooting](../troubleshooting/faq.md)
+- [AI Client Configuration](../guides/ai-clients.md)
+- [Common Issues / Troubleshooting](../troubleshooting/common-issues.md)
 - [Docker Deployment](../deployment/docker.md)

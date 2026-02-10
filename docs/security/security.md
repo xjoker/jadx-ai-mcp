@@ -1,5 +1,9 @@
 # Security Policy
 
+**English** | [简体中文](security.zh-cn.md)
+
+---
+
 ## 🔒 Security Considerations
 
 JADX-AI-MCP is designed for **internal/development use** in trusted network environments. Please review the following security considerations before deployment.

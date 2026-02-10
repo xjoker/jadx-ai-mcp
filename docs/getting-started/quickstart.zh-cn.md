@@ -30,19 +30,30 @@ docker run -d --name jadx \
 
 ## 📱 加载 APK
 
+### 方式 1: 自动加载（推荐）
+
+将文件命名为 `target.apk`、`target.jar`、`target.aar` 或 `target.dex` 放入 `~/apks/` 目录，JADX 启动时自动加载。
+
+**优先级**：JAR > APK > AAR > DEX
+
+```bash
+# 示例
+cp my-app.apk ~/apks/target.apk
+```
+
+### 方式 2: 手动加载
+
 1. 将 APK 复制到 `~/apks/` 目录
 2. 浏览器打开 http://localhost:6080
 3. JADX 中: **File → Open → /apks/你的应用.apk**
-
-> 💡 提示：将文件命名为 `target.apk` 可自动加载
 
 ---
 
 ## 🔌 连接 AI 客户端
 
-### Claude Desktop
+### Claude Desktop（推荐）
 
-编辑 `claude_desktop_config.json`:
+编辑 `claude_desktop_config.json`：
 
 | 系统 | 路径 |
 |:-----|:-----|
@@ -50,6 +61,7 @@ docker run -d --name jadx \
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Linux | `~/.config/claude/claude_desktop_config.json` |
 
+**基础配置（无认证）**：
 ```json
 {
   "mcpServers": {
@@ -63,12 +75,7 @@ docker run -d --name jadx \
 
 重启 Claude Desktop。
 
-### Cursor
-
-设置 → MCP → 添加服务器:
-- Name: `jadx`
-- Type: `HTTP`
-- URL: `http://localhost:8651/mcp`
+> 💡 **提示**：更多客户端配置（Cursor、Continue、带认证等）请参阅 [AI 客户端配置指南](../guides/ai-clients.zh-cn.md)
 
 ---
 
@@ -82,9 +89,31 @@ docker run -d --name jadx \
 
 ---
 
+## 💡 让 AI 指导安装？
+
+如果你遇到问题，可以让 AI 一步步引导你完成安装：
+
+发送给 Claude/ChatGPT：
+
+```
+按照以下文档逐步指导我安装 JADX-AI-MCP：
+https://raw.githubusercontent.com/xjoker/jadx-ai-mcp/jadx-ai/docs/getting-started/quickstart.md
+
+规则：
+1. 每次只问我一个问题，等待我的回复后再继续
+2. 只使用文档中的命令，不要创造新命令
+3. 每一步后，让我粘贴输出结果再继续
+4. 如果出现问题，帮我排查后再继续
+```
+
+> **如果 AI 无法访问 URL**：从 [quickstart.md](quickstart.md) 复制内容直接粘贴到对话中。
+
+---
+
 ## 🔗 下一步
 
-- [Docker 选项](../deployment/docker.zh-cn.md) - 缓存、配置卷
+- [系统架构](../overview/architecture.zh-cn.md) - 理解端口和组件通信
+- [Docker 完整指南](../deployment/docker.zh-cn.md) - 缓存、配置卷、多平台命令
 - [Docker Compose](../deployment/docker-compose.zh-cn.md) - 多实例部署
-- [本地安装](../deployment/local.zh-cn.md) - 无 Docker 安装
-- [AI 集成](../guides/ai-integration.zh-cn.md) - 更多 AI 客户端
+- [AI 客户端配置](../guides/ai-clients.zh-cn.md) - 所有客户端的完整配置
+- [常见问题](../troubleshooting/common-issues.zh-cn.md) - 故障排查
