@@ -35,7 +35,7 @@ docker run -d --name jadx \
 
 ---
 
-### Headless Mode (AI only, no GUI)
+### AI-Only Mode (No GUI Port Exposed)
 
 ```bash
 docker run -d --name jadx \
@@ -47,6 +47,8 @@ docker run -d --name jadx \
 
 **Access:**
 - AI endpoint: http://localhost:8651/mcp
+
+> 💡 **Note**: JADX GUI still runs inside the container (on Xvfb virtual display), just without exposing the noVNC port 6080.
 
 ---
 

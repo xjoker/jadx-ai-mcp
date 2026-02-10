@@ -35,7 +35,7 @@ docker run -d --name jadx \
 
 ---
 
-### 无头模式（仅 AI，无图形界面）
+### 仅 AI 模式（不暴露 GUI 端口）
 
 ```bash
 docker run -d --name jadx \
@@ -47,6 +47,8 @@ docker run -d --name jadx \
 
 **访问地址：**
 - AI 端点：http://localhost:8651/mcp
+
+> 💡 **说明**：JADX GUI 仍在容器内运行（Xvfb 虚拟显示器），只是不暴露 noVNC 的 6080 端口。
 
 ---
 

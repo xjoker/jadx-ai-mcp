@@ -145,7 +145,7 @@ flowchart TB
 
 | Port | Service | Required? | Access From | Description |
 |:----:|:--------|:---------:|:------------|:------------|
-| **6080** | noVNC | Optional | Browser | JADX GUI web interface. Skip `-p 6080:6080` for headless mode. |
+| **6080** | noVNC | Optional | Browser | JADX GUI web interface. Skip `-p 6080:6080` if GUI access not needed (GUI still runs inside container). |
 | **8650** | JADX Plugin API | No* | Container Internal | Internal HTTP API. Only expose for multi-container setup or debugging. |
 | **8651** | MCP Server | **Yes** | AI Clients | **Main endpoint** for Claude, ChatGPT, etc. Always required. |
 
