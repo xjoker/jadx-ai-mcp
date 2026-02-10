@@ -47,6 +47,8 @@ open http://localhost:6080
 
 > 💡 **Auto-load**: Name your file `target.apk`, `target.jar`, `target.aar`, or `target.dex`. JADX loads it automatically on startup.
 
+> ⚠️ **Important**: You MUST load a file (APK/JAR/AAR/DEX) in JADX before AI can connect. The plugin only initializes after loading a file—MCP Server cannot connect to JADX until then.
+
 ---
 
 ## 📖 Documentation

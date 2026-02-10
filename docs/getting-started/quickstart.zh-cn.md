@@ -30,6 +30,10 @@ docker run -d --name jadx \
 
 ## 📱 加载 APK
 
+> ⚠️ **关键步骤**：必须先在 JADX 中加载文件，AI 才能连接！
+>
+> **原因**：JADX 插件采用延迟加载机制，只有在打开 APK/JAR/AAR/DEX 文件后才会初始化。未加载文件时，插件未启动，MCP Server 无法连接到 JADX（连接会失败）。
+
 ### 方式 1: 自动加载（推荐）
 
 将文件命名为 `target.apk`、`target.jar`、`target.aar` 或 `target.dex` 放入 `~/apks/` 目录，JADX 启动时自动加载。

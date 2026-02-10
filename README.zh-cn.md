@@ -46,6 +46,8 @@ open http://localhost:6080
 
 > 💡 **自动加载**：将文件命名为 `target.apk`、`target.jar`、`target.aar` 或 `target.dex`，JADX 启动时自动加载。
 
+> ⚠️ **重要**：AI 连接前必须先在 JADX 中加载文件（APK/JAR/AAR/DEX）。插件只有在加载文件后才会初始化，未加载时 MCP Server 无法连接到 JADX。
+
 ---
 
 ## 📖 文档导航

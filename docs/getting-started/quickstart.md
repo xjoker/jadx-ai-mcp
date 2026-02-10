@@ -30,6 +30,10 @@ docker run -d --name jadx \
 
 ## 📱 Load Your APK
 
+> ⚠️ **Critical Step**: You MUST load a file in JADX before AI can connect!
+>
+> **Reason**: The JADX plugin uses lazy initialization and only starts after opening an APK/JAR/AAR/DEX file. Without a loaded file, the plugin is not running, and MCP Server cannot connect to JADX (connection will fail).
+
 ### Method 1: Auto-load (Recommended)
 
 Name your file `target.apk`, `target.jar`, `target.aar`, or `target.dex` and place it in `~/apks/`. JADX will load it automatically on startup.
