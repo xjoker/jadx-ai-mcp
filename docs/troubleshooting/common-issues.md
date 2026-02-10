@@ -4,7 +4,45 @@
 
 ---
 
-> 💡 This document consolidates FAQ and platform-specific issues (Windows, etc.).
+> 💡 This document consolidates FAQ and platform-specific issues (Windows, Linux, macOS).
+
+---
+
+## ⚠️ Most Common Issue (Must Read)
+
+### Q: AI shows "Cannot connect to MCP Server" or "Connection refused"
+**A:** 99% of connection issues are caused by **no file loaded in JADX**.
+
+**Complete Checklist**:
+1. ✅ **Is an APK/JAR file open in JADX GUI?** (Most common cause)
+   - Plugin uses lazy initialization—only starts after loading a file
+   - Without a loaded file, plugin is not running, port 8650 won't listen
+   - MCP Server will show connection failure
+
+2. ✅ Is JADX GUI running?
+   ```bash
+   docker ps  # Check container status
+   docker logs jadx  # View logs
+   ```
+
+3. ✅ Is MCP Server started?
+   ```bash
+   curl http://localhost:8651/health
+   # Expected: {"status":"ok"}
+   ```
+
+**Solution**:
+```bash
+# Method 1: Auto-load (Recommended)
+cp your-app.apk ~/apks/target.apk
+docker restart jadx
+
+# Method 2: Manual load
+# 1. Open http://localhost:6080 in browser
+# 2. In JADX: File → Open → /apks/your-app.apk
+```
+
+---
 
 ## 🔧 Installation Issues
 
@@ -141,6 +179,48 @@ Claude configuration:
 1. Verify token value in config file
 2. Ensure token matches in Claude config
 3. Check `Authorization: Bearer ` format (note the space)
+
+---
+
+## 🔒 Security (VPS Deployment)
+
+### Q: Is it safe to deploy on a VPS?
+**A:** ⚠️ **Important Security Warning**:
+
+**Default Docker behavior bypasses firewall**:
+- `docker run -p 8651:8651` exposes port to **0.0.0.0** (all interfaces)
+- This bypasses `ufw`/`iptables` rules
+- Port 8651 will be publicly accessible
+
+**Secure deployment options**:
+
+1. **Bind to localhost** (Recommended for single-user):
+   ```bash
+   docker run -p 127.0.0.1:8651:8651 ...
+   ```
+
+2. **Bind to internal network IP**:
+   ```bash
+   docker run -p 192.168.1.10:8651:8651 ...
+   ```
+
+3. **Use reverse proxy with authentication**:
+   ```bash
+   # Keep Docker on localhost
+   docker run -p 127.0.0.1:8651:8651 ...
+
+   # Configure Nginx/Caddy with SSL + Basic Auth
+   ```
+
+4. **Use built-in authentication**:
+   - Configure `[[users]]` in `jadx-config.toml`
+   - Use strong tokens
+   - Consider IP whitelisting at firewall level
+
+**Never**:
+- ❌ Expose without authentication on public VPS
+- ❌ Use default ports without binding to specific IP
+- ❌ Rely only on firewall rules (Docker bypasses them)
 
 ---
 
