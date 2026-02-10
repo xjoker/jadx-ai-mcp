@@ -53,6 +53,8 @@ docker run -d --name jadx-ai-mcp \
 # - MCP Server: http://localhost:8651/mcp
 ```
 
+> **Prerequisite**: The JADX plugin API port (8650) only starts after a file is loaded. Load an APK/JAR via auto-load or the GUI before connecting the MCP Server.
+
 **Headless Mode (AI only, no GUI):**
 
 ```bash
@@ -145,6 +147,8 @@ docker run -d --name jadx-mcp-server \
   xjoker/jadx-mcp-server
 ```
 
+> **Docker Networking**: When the MCP Server container connects to JADX on the host, use `host.docker.internal` as the host address. On Linux, add `--add-host=host.docker.internal:host-gateway` to the `docker run` command. Within `docker-compose.yaml`, add `extra_hosts: ["host.docker.internal:host-gateway"]`.
+
 **Option 2: With Environment Variables**
 
 ```bash
@@ -213,6 +217,71 @@ docker run -d -p 8651:8651 \
   xjoker/jadx-mcp-server \
   uv run jadx_mcp_server --http --host 0.0.0.0 --config /app/data/config/jadx-config.toml
 ```
+
+### Permissions and Security
+
+Users with `is_admin = true` have elevated privileges:
+
+| Capability | Admin | Regular User |
+|------------|-------|--------------|
+| Use all analysis tools | Yes | Yes |
+| View own JADX instances | Yes | Yes |
+| View all JADX instances | Yes | No |
+| Dynamically add/remove instances via AI | Yes | Requires `can_add_instances` |
+
+To allow regular users to dynamically manage instances, add to the config:
+
+```toml
+[security]
+allow_dynamic_instances = true
+
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+can_add_instances = true
+```
+
+> **SSRF Warning**: Enabling `allow_dynamic_instances` allows users to instruct the AI to connect to arbitrary hosts. Only enable this in trusted environments. Admin users can always manage instances regardless of this setting.
+
+### Client Connection with Authentication
+
+When `[[users]]` is configured, clients must include a Bearer token.
+
+**Claude Code CLI:**
+
+```bash
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization: Bearer token-alice-xxxxx"
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "jadx": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer token-alice-xxxxx"
+      }
+    }
+  }
+}
+```
+
+**OpenAI Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+bearer_token_env_var = "JADX_MCP_TOKEN"
+```
+
+> Codex does not support inline tokens. Use `bearer_token_env_var` to reference an environment variable:
+> ```bash
+> export JADX_MCP_TOKEN="token-alice-xxxxx"
+> ```
 
 ## Build from Source
 
@@ -298,4 +367,13 @@ docker exec -it jadx-ai-mcp bash
 # Check services (All-in-One)
 docker exec jadx-ai-mcp supervisorctl status
 ```
+
+### Common Issues
+
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| MCP Server cannot connect to JADX | No file loaded in JADX | Open an APK/JAR in JADX GUI first |
+| Connection refused from Docker container | Using `127.0.0.1` for host JADX | Use `host.docker.internal` instead |
+| 401 Unauthorized | Token missing or incorrect | Check `[[users]]` token in config |
+| Plugin API port not responding | JADX GUI not fully started | Wait for JADX GUI to finish loading |
 

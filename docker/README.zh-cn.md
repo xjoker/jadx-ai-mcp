@@ -53,6 +53,8 @@ docker run -d --name jadx-ai-mcp \
 # - MCP Server: http://localhost:8651/mcp
 ```
 
+> **前提条件**：JADX 插件 API 端口 (8650) 仅在加载文件后才会启动。请先通过自动加载或 GUI 打开 APK/JAR 文件，再连接 MCP Server。
+
 **无头模式（仅 AI，无图形界面）：**
 
 ```bash
@@ -145,6 +147,8 @@ docker run -d --name jadx-mcp-server \
   xjoker/jadx-mcp-server
 ```
 
+> **Docker 网络说明**：当 MCP Server 容器需要连接宿主机上的 JADX 时，使用 `host.docker.internal` 作为主机地址。Linux 上需在 `docker run` 命令中添加 `--add-host=host.docker.internal:host-gateway`。在 `docker-compose.yaml` 中使用 `extra_hosts: ["host.docker.internal:host-gateway"]`。
+
 **方式 2：使用环境变量**
 
 ```bash
@@ -213,6 +217,71 @@ docker run -d -p 8651:8651 \
   xjoker/jadx-mcp-server \
   uv run jadx_mcp_server --http --host 0.0.0.0 --config /app/data/config/jadx-config.toml
 ```
+
+### 权限与安全
+
+设置了 `is_admin = true` 的用户拥有更高权限：
+
+| 能力 | 管理员 | 普通用户 |
+|------|--------|----------|
+| 使用所有分析工具 | 是 | 是 |
+| 查看自己的 JADX 实例 | 是 | 是 |
+| 查看所有 JADX 实例 | 是 | 否 |
+| 通过 AI 动态添加/移除实例 | 是 | 需要 `can_add_instances` |
+
+如需允许普通用户动态管理实例，在配置中添加：
+
+```toml
+[security]
+allow_dynamic_instances = true
+
+[[users]]
+name = "alice"
+token = "token-alice-xxxxx"
+can_add_instances = true
+```
+
+> **SSRF 风险警告**：启用 `allow_dynamic_instances` 后，用户可指示 AI 连接任意主机。请仅在可信环境中启用。管理员用户不受此设置限制，始终可以管理实例。
+
+### 客户端认证连接
+
+配置了 `[[users]]` 后，客户端必须携带 Bearer token。
+
+**Claude Code CLI：**
+
+```bash
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization: Bearer token-alice-xxxxx"
+```
+
+**Claude Desktop**（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "jadx": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer token-alice-xxxxx"
+      }
+    }
+  }
+}
+```
+
+**OpenAI Codex**（`~/.codex/config.toml`）：
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+bearer_token_env_var = "JADX_MCP_TOKEN"
+```
+
+> Codex 不支持直接写入 token 值，必须通过 `bearer_token_env_var` 引用环境变量：
+> ```bash
+> export JADX_MCP_TOKEN="token-alice-xxxxx"
+> ```
 
 ## 从源码构建
 
@@ -298,3 +367,12 @@ docker exec -it jadx-ai-mcp bash
 # 检查服务状态 (All-in-One)
 docker exec jadx-ai-mcp supervisorctl status
 ```
+
+### 常见问题
+
+| 症状 | 原因 | 解决方案 |
+|------|------|----------|
+| MCP Server 无法连接 JADX | JADX 未加载文件 | 先在 JADX GUI 中打开 APK/JAR |
+| Docker 容器连接被拒绝 | 使用了 `127.0.0.1` 连接宿主机 JADX | 改用 `host.docker.internal` |
+| 401 未授权 | Token 缺失或错误 | 检查配置中 `[[users]]` 的 token |
+| 插件 API 端口无响应 | JADX GUI 尚未完全启动 | 等待 JADX GUI 完成加载 |

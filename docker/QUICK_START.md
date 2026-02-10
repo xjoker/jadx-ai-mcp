@@ -44,24 +44,55 @@ apks/jadx-1/target.dex  → JADX #1 auto-opens (lowest priority)
 1. Access JADX's noVNC page
 2. In JADX GUI: File → Open → `/apks/your-app.apk`
 
-## 🤖 Connect Claude
+> **Important**: The JADX plugin API port (8650) only starts **after a file is loaded**. If no file is loaded, the MCP Server will fail to connect to JADX.
+
+## 🤖 Connect LLM Client
+
+### Claude Code CLI
 
 ```bash
-# Claude CLI
+# Without authentication
 claude mcp add --transport http jadx http://localhost:8651/mcp
+
+# With authentication
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization: Bearer token-alice-xxxxx"
 ```
 
-Or add to `claude_desktop_config.json`:
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "jadx": {
       "type": "http",
-      "url": "http://localhost:8651/mcp"
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer token-alice-xxxxx"
+      }
     }
   }
 }
+```
+
+> Remove the `headers` field if authentication is not enabled.
+
+### OpenAI Codex
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+bearer_token_env_var = "JADX_MCP_TOKEN"
+```
+
+Then set the environment variable before running Codex:
+
+```bash
+export JADX_MCP_TOKEN="token-alice-xxxxx"
 ```
 
 ## 📊 Architecture
@@ -95,6 +126,8 @@ flowchart TB
     J3 -.-> APK3
 ```
 
+> **Docker Networking**: If the MCP Server runs inside Docker and needs to connect to JADX on the host machine, use `host.docker.internal` instead of `127.0.0.1` as the JADX host address. On Linux, add `--add-host=host.docker.internal:host-gateway` to the `docker run` command.
+
 ## 🎯 Use Cases
 
 ### Scenario 1: Compare APP Versions
@@ -127,3 +160,5 @@ Edit `config/jadx-config.toml` to:
 - Add user authentication
 - Modify timeout settings
 - Add more JADX instances
+
+> **Admin Users**: Users with `is_admin = true` can dynamically add/remove JADX instances via AI tools. See [README.md](README.md#permissions-and-security) for details.

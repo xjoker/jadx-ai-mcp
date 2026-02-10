@@ -44,24 +44,55 @@ apks/jadx-1/target.dex  → JADX #1 自动打开（最低优先级）
 1. 访问 JADX 的 noVNC 页面
 2. 在 JADX GUI 中: File → Open → `/apks/your-app.apk`
 
-## 🤖 连接 Claude
+> **重要**：JADX 插件 API 端口 (8650) 仅在**加载文件后**才会启动。如果未加载任何文件，MCP Server 将无法连接 JADX。
+
+## 🤖 连接 LLM 客户端
+
+### Claude Code CLI
 
 ```bash
-# Claude CLI
+# 无认证
 claude mcp add --transport http jadx http://localhost:8651/mcp
+
+# 带认证
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization: Bearer token-alice-xxxxx"
 ```
 
-或在 `claude_desktop_config.json` 中添加:
+### Claude Desktop
+
+添加到 `claude_desktop_config.json`：
 
 ```json
 {
   "mcpServers": {
     "jadx": {
       "type": "http",
-      "url": "http://localhost:8651/mcp"
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer token-alice-xxxxx"
+      }
     }
   }
 }
+```
+
+> 如果未启用认证，可移除 `headers` 字段。
+
+### OpenAI Codex
+
+添加到 `~/.codex/config.toml`：
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+bearer_token_env_var = "JADX_MCP_TOKEN"
+```
+
+然后在运行 Codex 前设置环境变量：
+
+```bash
+export JADX_MCP_TOKEN="token-alice-xxxxx"
 ```
 
 ## 📊 架构图
@@ -95,6 +126,8 @@ flowchart TB
     J3 -.-> APK3
 ```
 
+> **Docker 网络提示**：如果 MCP Server 运行在 Docker 容器内并需要连接宿主机上的 JADX，请使用 `host.docker.internal` 替代 `127.0.0.1` 作为 JADX 地址。Linux 上需在 `docker run` 命令中添加 `--add-host=host.docker.internal:host-gateway`。
+
 ## 🎯 使用场景
 
 ### 场景 1: 比较 APP 版本
@@ -127,3 +160,5 @@ docker compose down -v
 - 添加用户认证
 - 修改超时时间
 - 添加更多 JADX 实例
+
+> **管理员用户**：设置了 `is_admin = true` 的用户可通过 AI 工具动态添加/移除 JADX 实例。详见 [README.zh-cn.md](README.zh-cn.md#权限与安全) 说明。
