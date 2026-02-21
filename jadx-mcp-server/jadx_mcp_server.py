@@ -758,29 +758,6 @@ async def rename_package(old_package_name: str, new_package_name: str, instance_
 
 @mcp.tool()
 @with_busy_check
-async def rename_variable(class_name: str, method_name: str, variable_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
-    """Rename a local variable within a method to improve code readability.
-
-    Scoped to the method body. Use to replace obfuscated variable names
-    (e.g., rename 'a', 'b', 'c' to meaningful names like 'userId', 'tokenStr').
-
-    NOTE: Triggers 30s ClassCacheManager reload cooldown. Rapid successive renames are debounced.
-
-    Args:
-        class_name: Fully qualified class name containing the method (e.g., com.example.MyClass)
-        method_name: Method name containing the variable (e.g., onCreate)
-        variable_name: Current variable name to rename
-        new_name: New descriptive name for the variable
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
-    Returns:
-        dict: {success: bool, message: str}
-    """
-    return await tools.refactor_tools.rename_variable(class_name, method_name, variable_name, new_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
 async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
     """Get structured method signature with Frida-compatible type information.
     

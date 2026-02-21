@@ -56,7 +56,6 @@
 | `rename_method` | ✅ | ✅ | ✅ | ✅ | 重命名方法并更新所有调用点 |
 | `rename_field` | ✅ | ✅ | ✅ | ✅ | 重命名字段并更新所有引用 |
 | `rename_package` | ✅ | ✅ | ✅ | ✅ | 重命名包及其包含的所有类 |
-| `rename_variable` | ✅ | ✅ | ✅ | ✅ | 重命名方法内的局部变量 |
 | **实例管理工具** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | 列出所有实例 |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | 添加新实例 |
@@ -166,7 +165,6 @@ batch_get_xrefs(targets=[
 | `rename_method(class_name, method_name, new_name)` | `class_name`, `method_name`, `new_name`, `instance_id?` | 重命名方法并更新所有调用点 |
 | `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | 重命名字段并更新所有引用 |
 | `rename_package(old_package_name, new_package_name)` | `old_package_name`, `new_package_name`, `instance_id?` | 重命名整个包结构 |
-| `rename_variable(class_name, method_name, variable_name, new_name)` | `class_name`, `method_name`, `variable_name`, `new_name`, `instance_id?` | 重命名方法内的局部变量 |
 
 #### 实例管理工具
 

@@ -56,7 +56,6 @@
 | `rename_method` | ✅ | ✅ | ✅ | ✅ | Rename a method and update all call sites |
 | `rename_field` | ✅ | ✅ | ✅ | ✅ | Rename a field and update all references |
 | `rename_package` | ✅ | ✅ | ✅ | ✅ | Rename a package and all its classes |
-| `rename_variable` | ✅ | ✅ | ✅ | ✅ | Rename a local variable within a method |
 | **Instance Management Tools** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | List all instances |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | Add new instance |
@@ -166,7 +165,6 @@ All rename operations trigger a 30s ClassCacheManager reload cooldown. Rapid suc
 | `rename_method(class_name, method_name, new_name)` | `class_name`, `method_name`, `new_name`, `instance_id?` | Rename method and update all call sites |
 | `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | Rename field and update all references |
 | `rename_package(old_package_name, new_package_name)` | `old_package_name`, `new_package_name`, `instance_id?` | Rename entire package structure |
-| `rename_variable(class_name, method_name, variable_name, new_name)` | `class_name`, `method_name`, `variable_name`, `new_name`, `instance_id?` | Rename local variable within method |
 
 ### Instance Management Tools
 

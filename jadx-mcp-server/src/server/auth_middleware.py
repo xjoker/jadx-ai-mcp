@@ -111,7 +111,7 @@ class BearerAuthMiddleware(Middleware):
         user = UserAuthManager.get_current_user()
         username = user.name if user else "unknown"
         
-        logger.info(f"Tool call: {tool_name} (user={username}, args={list(args.keys()) if args else 'none'})")
+        logger.info(f"Tool call: {tool_name} (user={username})")
         
         start_time = time.perf_counter()
         try:

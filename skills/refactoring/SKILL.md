@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: Use this skill when the user wants to rename, deobfuscate, or refactor Java code in JADX. This includes renaming classes, methods, fields, packages, or local variables to meaningful names, cleaning up obfuscated code, improving code readability, or applying consistent naming conventions. Trigger words include "rename", "deobfuscate", "refactor", "meaningful names", "clean up", "improve readability", "obfuscated code", "fix names", "name cleanup".
+description: Use this skill when the user wants to rename, deobfuscate, or refactor Java code in JADX. This includes renaming classes, methods, fields, or packages to meaningful names, cleaning up obfuscated code, improving code readability, or applying consistent naming conventions. Trigger words include "rename", "deobfuscate", "refactor", "meaningful names", "clean up", "improve readability", "obfuscated code", "fix names", "name cleanup".
 ---
 
 # JADX Refactoring Guide
@@ -17,7 +17,6 @@ Each rename operation has a dedicated tool. Choose the right one by what you are
 | Rename a method | `rename_method` | `class_name`, `method_name`, `new_name` |
 | Rename a field | `rename_field` | `class_name`, `field_name`, `new_name` |
 | Rename a package | `rename_package` | `old_package_name`, `new_package_name` |
-| Rename a local variable | `rename_variable` | `class_name`, `method_name`, `variable_name`, `new_name` |
 
 All rename operations trigger a **30-second ClassCacheManager cooldown**. Wait before fetching updated source.
 
@@ -41,7 +40,6 @@ Process in this order to maintain valid references:
 | 2 | Class | Affects all methods and fields |
 | 3 | Method | May affect call sites |
 | 4 | Field | Fewer dependencies |
-| 5 | Variable | Scoped to method body, safest last |
 
 ## Cache Invalidation
 
@@ -104,20 +102,7 @@ rename_field(
 )
 ```
 
-### Step 6: Rename Local Variables (Optional)
-
-For heavily obfuscated methods with single-letter variables:
-
-```
-rename_variable(
-    class_name="com.example.network.HttpClient",
-    method_name="sendRequest",
-    variable_name="a",
-    new_name="requestUrl"
-)
-```
-
-### Step 7: Verify Changes
+### Step 6: Verify Changes
 
 ```
 get_class_source(class_name="com.example.network.HttpClient")

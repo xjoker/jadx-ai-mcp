@@ -110,7 +110,7 @@ async def _estimate_batch_size(class_names: list[str], instance_id: Optional[str
                     500  # 类头部
                 )
                 total_estimate += estimate
-        except:
+        except Exception:
             total_estimate += 5000  # 估算失败时假设中等大小
     return total_estimate
 
@@ -190,7 +190,7 @@ async def batch_get_class_source(
             try:
                 info = await get_class_info(class_name, instance_id)
                 class_infos.append(info)
-            except:
+            except Exception:
                 class_infos.append({"class_name": class_name, "error": "Failed to get info"})
 
         return {
