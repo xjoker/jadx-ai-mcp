@@ -145,8 +145,6 @@ All rename operations trigger a 30s ClassCacheManager reload cooldown. Rapid suc
 | `rename_package(old_package_name, new_package_name)` | `old_package_name`, `new_package_name`, `instance_id?` | Rename entire package structure |
 | `rename_variable(class_name, method_name, variable_name, new_name)` | `class_name`, `method_name`, `variable_name`, `new_name`, `instance_id?` | Rename local variable within method |
 
-> **Also available:** unified `rename(target_type, old_name, new_name, ...)` tool that routes to the above via `target_type` (`class`/`method`/`field`/`package`/`variable`).
-
 ### Instance Management Tools
 
 | Tool | Parameters | Description |

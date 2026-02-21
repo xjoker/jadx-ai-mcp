@@ -52,7 +52,11 @@
 | `get_all_resource_file_names` | ✅ | ✅ | ✅ | ❌ | 列出所有资源文件 |
 | `get_resource_file` | ✅ | ✅ | ✅ | ❌ | 获取资源文件内容 |
 | **重命名工具** |
-| `rename` | ✅ | ✅ | ✅ | ✅ | 重命名类/方法/字段/包/变量，通过 `target_type` 参数指定 |
+| `rename_class` | ✅ | ✅ | ✅ | ✅ | 重命名类（全局生效） |
+| `rename_method` | ✅ | ✅ | ✅ | ✅ | 重命名方法并更新所有调用点 |
+| `rename_field` | ✅ | ✅ | ✅ | ✅ | 重命名字段并更新所有引用 |
+| `rename_package` | ✅ | ✅ | ✅ | ✅ | 重命名包及其包含的所有类 |
+| `rename_variable` | ✅ | ✅ | ✅ | ✅ | 重命名方法内的局部变量 |
 | **实例管理工具** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | 列出所有实例 |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | 添加新实例 |
@@ -131,22 +135,15 @@
 
 #### 重命名工具
 
-统一的 `rename` 工具通过 `target_type` 参数处理所有重命名操作。
-所有重命名操作都会触发 30 秒 ClassCacheManager 冷却。
+所有重命名操作都会触发 30 秒 ClassCacheManager 冷却，连续快速重命名会被防抖处理。
 
 | 工具 | 参数 | 说明 |
 |:-----|:-----|:-----|
-| `rename(target_type, old_name, new_name)` | `target_type`（`class`/`method`/`field`/`package`/`variable`），`old_name`，`new_name`，`class_name?`，`method_name?`，`instance_id?` | 统一重命名任意符号类型 |
-
-**`target_type` 值及所需额外参数：**
-
-| `target_type` | 必需额外参数 | 示例 |
-|:-------------|:------------|:-----|
-| `class` | — | `rename("class", "com.example.OldClass", "NewClass")` |
-| `method` | `class_name` | `rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")` |
-| `field` | `class_name` | `rename("field", "oldField", "newField", class_name="com.example.MyClass")` |
-| `package` | — | `rename("package", "com.example.old", "com.example.new")` |
-| `variable` | `class_name`, `method_name` | `rename("variable", "a", "userId", class_name="com.example.MyClass", method_name="login")` |
+| `rename_class(class_name, new_name)` | `class_name`, `new_name`, `instance_id?` | 重命名类（全局生效） |
+| `rename_method(class_name, method_name, new_name)` | `class_name`, `method_name`, `new_name`, `instance_id?` | 重命名方法并更新所有调用点 |
+| `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | 重命名字段并更新所有引用 |
+| `rename_package(old_package_name, new_package_name)` | `old_package_name`, `new_package_name`, `instance_id?` | 重命名整个包结构 |
+| `rename_variable(class_name, method_name, variable_name, new_name)` | `class_name`, `method_name`, `variable_name`, `new_name`, `instance_id?` | 重命名方法内的局部变量 |
 
 #### 实例管理工具
 
