@@ -28,7 +28,7 @@ class JadxInstance:
     name: str                 # Instance name (user-defined or auto-generated)
     host: str                 # IP address
     port: int                 # Port number
-    status: str = "unknown"   # "connected" | "disconnected" | "error"
+    status: str = "unknown"   # "connected" | "disconnected" | "pending" | "no_file" | "error"
     apk_info: dict = field(default_factory=dict)  # Info from /apk-info endpoint
     last_health_check: Optional[datetime] = None
     error_message: str = ""   # Most recent error message
@@ -125,11 +125,12 @@ class InstanceRegistry:
                     }
                 
                 # 4. Create and register instance
+                file_loaded = apk_info.get("loaded", False)
                 instance = JadxInstance(
                     name=name,
                     host=host,
                     port=port,
-                    status="connected",
+                    status="connected" if file_loaded else "no_file",
                     apk_info=apk_info,
                     last_health_check=datetime.now(),
                     token=actual_token or "",
@@ -255,22 +256,35 @@ class InstanceRegistry:
             return data
     
     @classmethod
-    async def _check_health(cls, host: str, port: int) -> bool:
-        """Check JADX instance health status"""
+    async def _check_health(cls, host: str, port: int) -> tuple[bool, bool]:
+        """Check JADX instance health and file-load status.
+
+        Returns:
+            Tuple of (is_reachable, has_file_loaded).
+            Parses /health response body's ``jadx.classes_total`` to detect
+            whether JADX has a file open without making an extra /apk-info call.
+        """
         url = f"http://{host}:{port}/health"
         headers = {}
         if cls._shared_auth_token:
             headers["Authorization"] = f"Bearer {cls._shared_auth_token}"
-        
+
         try:
             async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
                 response = await client.get(url, headers=headers)
-                is_healthy = response.status_code == 200
-                logger.debug(f"Health check {host}:{port}: {'OK' if is_healthy else 'FAILED'}")
-                return is_healthy
+                if response.status_code != 200:
+                    return False, False
+                try:
+                    data = response.json()
+                    classes_total = data.get("jadx", {}).get("classes_total", 0)
+                    has_file = isinstance(classes_total, int) and classes_total > 0
+                except Exception:
+                    has_file = True  # Can't parse body → assume file loaded (safe default)
+                logger.debug(f"Health check {host}:{port}: OK, has_file={has_file}")
+                return True, has_file
         except Exception as e:
             logger.debug(f"Health check {host}:{port} failed: {e}")
-            return False
+            return False, False
     
     @classmethod
     def remove_instance(cls, name: str, username: str = None, is_admin: bool = False) -> dict:
@@ -513,9 +527,13 @@ class InstanceRegistry:
             new_status = "unknown"
             error_msg = ""
             try:
-                is_healthy = await cls._check_health(instance.host, instance.port)
-                if is_healthy:
+                is_reachable, has_file = await cls._check_health(instance.host, instance.port)
+                if is_reachable and has_file:
                     new_status = "connected"
+                    healthy_count += 1
+                    error_msg = ""
+                elif is_reachable:
+                    new_status = "no_file"
                     healthy_count += 1
                     error_msg = ""
                 else:

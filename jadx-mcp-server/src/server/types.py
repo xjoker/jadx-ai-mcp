@@ -109,7 +109,7 @@ class InstanceInfo:
     host: str
     port: int
     url: str
-    status: str  # "connected", "pending", "disconnected"
+    status: str  # "connected", "pending", "disconnected", "no_file"
     apk_info: Dict[str, Any] = field(default_factory=dict)
     last_health_check: Optional[str] = None
     error_message: str = ""

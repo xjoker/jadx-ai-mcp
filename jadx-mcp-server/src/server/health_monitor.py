@@ -122,29 +122,37 @@ class HealthMonitor:
         for name, instance in instances.items():
             old_status = instance.status
             now_iso = datetime.now().isoformat()
-            
-            # For pending/disconnected instances, try to fetch APK info
-            if old_status in ("pending", "disconnected"):
+
+            # For pending/disconnected/no_file instances, try to fetch APK info.
+            # /apk-info returns HTTP 200 with {"loaded": false} when JADX is up
+            # but no file is open, so we can distinguish the two cases.
+            if old_status in ("pending", "disconnected", "no_file"):
                 pending_count += 1
                 try:
                     apk_info = await InstanceRegistry._fetch_apk_info(
                         instance.host, instance.port, instance.token
                     )
-                    # Success! Update instance using thread-safe method
+                    # JADX is reachable — check if a file is actually loaded
+                    file_loaded = apk_info.get("loaded", False)
+                    new_status = "connected" if file_loaded else "no_file"
+
                     InstanceRegistry.update_instance_status(
                         name=name,
-                        status="connected",
+                        status=new_status,
                         apk_info=apk_info,
                         last_check=now_iso
                     )
                     healthy_count += 1
 
-                    logger.info(f"[HEALTH] Instance '{name}' now available: {apk_info.get('apk_package', 'unknown')}")
-
-                    # Trigger warmup for newly connected instance
-                    asyncio.create_task(cls._warmup_instance(name, instance.host, instance.port))
+                    if file_loaded:
+                        logger.info(f"[HEALTH] Instance '{name}' now available: {apk_info.get('apk_package', 'unknown')}")
+                        # Trigger warmup only when a file is freshly loaded
+                        if old_status != "connected":
+                            asyncio.create_task(cls._warmup_instance(name, instance.host, instance.port))
+                    else:
+                        logger.debug(f"[HEALTH] Instance '{name}' reachable but no file loaded (no_file)")
                 except Exception as e:
-                    # Still not available
+                    # Still not reachable
                     InstanceRegistry.update_instance_status(
                         name=name,
                         status=old_status,  # Keep same status
@@ -153,15 +161,21 @@ class HealthMonitor:
                     logger.debug(f"[HEALTH] Instance '{name}' still unavailable: {e}")
                     unhealthy_count += 1
             else:
-                # For connected instances, just check health
-                is_healthy = await InstanceRegistry._check_health(instance.host, instance.port)
-                new_status = "connected" if is_healthy else "disconnected"
-                
-                if is_healthy:
+                # For connected instances, check health endpoint and parse classes_total.
+                # This avoids a heavier /apk-info call on every heartbeat tick.
+                is_reachable, has_file = await InstanceRegistry._check_health(instance.host, instance.port)
+
+                if is_reachable and has_file:
+                    new_status = "connected"
+                    healthy_count += 1
+                elif is_reachable:
+                    # Server alive but file was closed/unloaded
+                    new_status = "no_file"
                     healthy_count += 1
                 else:
+                    new_status = "disconnected"
                     unhealthy_count += 1
-                
+
                 # Update status using thread-safe method
                 if old_status != new_status:
                     InstanceRegistry.update_instance_status(
@@ -169,9 +183,11 @@ class HealthMonitor:
                         status=new_status,
                         last_check=now_iso
                     )
-                    
-                    if is_healthy:
+
+                    if new_status == "connected":
                         logger.info(f"[HEALTH] Instance '{name}' recovered: {old_status} -> connected")
+                    elif new_status == "no_file":
+                        logger.info(f"[HEALTH] Instance '{name}' file unloaded: {old_status} -> no_file")
                     else:
                         logger.warning(f"[HEALTH] Instance '{name}' became unavailable: {old_status} -> disconnected")
         
