@@ -28,13 +28,11 @@
 | `search_method_by_name` | ✅ | ✅ | ✅ | ✅ | 按方法名搜索 |
 | `search_native_methods` | ✅ | ❌ | ✅ | ✅ | 搜索 native 方法（JNI） |
 | **交叉引用工具** |
-| `get_xrefs_to_class` | ✅ | ✅ | ✅ | ✅ | 查找类的引用 |
-| `get_xrefs_to_method` | ✅ | ✅ | ✅ | ✅ | 查找方法的引用 |
-| `get_xrefs_to_field` | ✅ | ✅ | ✅ | ✅ | 查找字段的引用 |
+| `get_xrefs` | ✅ | ✅ | ✅ | ✅ | 查找引用（类/方法/字段），通过 `target_type` 参数指定 |
+| `batch_get_xrefs` | ✅ | ✅ | ✅ | ✅ | 批量查找引用（最多 10 个） |
 | **批量工具** |
 | `batch_get_class_source` | ✅ | ✅ | ✅ | ✅ | 批量获取类源码（最多 20 个） |
 | `batch_get_method_by_name` | ✅ | ✅ | ✅ | ✅ | 批量获取方法（最多 20 个） |
-| `batch_get_xrefs` | ✅ | ✅ | ✅ | ✅ | 批量查找引用（最多 10 个） |
 | **Android 专用工具** |
 | `get_android_manifest` | ✅ | 🔄 | ✅ | ❌ | 获取 AndroidManifest.xml |
 | `get_main_activity_class` | ✅ | 🔄 | ✅ | ❌ | 获取主 Activity |
@@ -54,14 +52,7 @@
 | `get_all_resource_file_names` | ✅ | ✅ | ✅ | ❌ | 列出所有资源文件 |
 | `get_resource_file` | ✅ | ✅ | ✅ | ❌ | 获取资源文件内容 |
 | **重命名工具** |
-| `rename_class` | ✅ | ✅ | ✅ | ✅ | 重命名类 |
-| `rename_method` | ✅ | ✅ | ✅ | ✅ | 重命名方法 |
-| `rename_field` | ✅ | ✅ | ✅ | ✅ | 重命名字段 |
-| `rename_package` | ✅ | ✅ | ✅ | ✅ | 重命名包 |
-| **调试工具** |
-| `debug_get_stack_frames` | ✅ | ❌ | ✅ | ✅ | 获取堆栈帧 |
-| `debug_get_threads` | ✅ | ❌ | ✅ | ✅ | 获取线程信息 |
-| `debug_get_variables` | ✅ | ❌ | ✅ | ✅ | 获取变量 |
+| `rename` | ✅ | ✅ | ✅ | ✅ | 重命名类/方法/字段/包/变量，通过 `target_type` 参数指定 |
 | **实例管理工具** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | 列出所有实例 |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | 添加新实例 |
@@ -69,10 +60,10 @@
 | `set_default_jadx_instance` | ✅ | ✅ | ✅ | ✅ | 设置默认实例 |
 | `get_jadx_instance_info` | ✅ | ✅ | ✅ | ✅ | 获取实例详情 |
 | `health_check_jadx_instances` | ✅ | ✅ | ✅ | ✅ | 健康检查 |
-| `check_instance_status` | ✅ | ✅ | ✅ | ✅ | 检查实例忙碌状态 |
 | `clear_class_cache` | ✅ | ✅ | ✅ | ✅ | 清除类缓存 |
-| **状态监控工具** |
+| **状态与传输工具** |
 | `get_decompile_status` | ✅ | ✅ | ✅ | ✅ | 获取反编译状态和指标 |
+| `create_transfer_token` | ✅ | ✅ | ✅ | ✅ | 创建 HTTP 下载令牌，绕过 MCP 大小限制 |
 
 ---
 
@@ -83,7 +74,9 @@
 | 工具 | 参数 | 说明 |
 |:-----|:-----|:-----|
 | `get_file_info()` | `instance_id?` | **推荐首先调用**。返回文件类型、类数量、推荐使用的工具 |
-| `get_class_source(class_name)` | `class_name`, `instance_id?` | 获取完整类源码 |
+| `fetch_current_class()` | `chunk=0`, `instance_id?` | 获取 JADX-GUI 当前活动类。**大响应自动分片** |
+| `get_selected_text()` | `instance_id?` | 获取 JADX-GUI 代码视图中选中的文本 |
+| `get_class_source(class_name)` | `class_name`, `chunk=0`, `instance_id?` | 获取完整类源码。**大响应自动分片** |
 | `get_method_by_name(class_name, method_name)` | `class_name`, `method_name`, `instance_id?` | 获取方法源码 |
 | `get_class_info(class_name)` | `class_name`, `instance_id?` | 类结构：继承、接口、方法数、字段数、native 方法列表 |
 | `get_method_signature(class_name, method_name)` | `class_name`, `method_name`, `instance_id?` | 返回 Frida 兼容签名 (`frida_overload`) |
@@ -101,13 +94,19 @@
 | `search_method_by_name(method_name)` | `method_name`, `offset=0`, `count=50`, `instance_id?` | 全局方法搜索 |
 | `search_native_methods(package)` | `package=""`, `offset=0`, `count=50`, `instance_id?` | 搜索 JNI native 方法 |
 
+#### 交叉引用工具
+
+| 工具 | 参数 | 说明 |
+|:-----|:-----|:-----|
+| `get_xrefs(target_type, class_name)` | `target_type`（`class`/`method`/`field`），`class_name`，`member_name?`，`offset=0`，`count=20`，`instance_id?` | 查找类、方法或字段的所有引用 |
+| `batch_get_xrefs(targets)` | `targets[]` (格式: `type:class:member`), `instance_id?` | 最多 10 个目标 |
+
 #### 批量工具
 
 | 工具 | 参数 | 说明 |
 |:-----|:-----|:-----|
 | `batch_get_class_source(class_names)` | `class_names[]`, `chunk=0`, `force=False`, `instance_id?` | 最多 20 个类。智能大小管理，支持分片 |
 | `batch_get_method_by_name(methods)` | `methods[]` (格式: `class:method`), `chunk=0`, `force=False`, `instance_id?` | 最多 20 个方法。智能大小管理，支持分片 |
-| `batch_get_xrefs(targets)` | `targets[]` (格式: `type:class:member`), `instance_id?` | 最多 10 个目标 |
 
 #### JAR 专用工具
 
@@ -125,17 +124,29 @@
 |:-----|:-----|:-----|
 | `get_android_manifest()` | `instance_id?` | 获取 AndroidManifest.xml |
 | `get_main_activity_class()` | `instance_id?` | 从 Manifest 获取主 Activity |
+| `get_main_application_classes_names()` | `instance_id?` | 列出主应用类名（排除库类） |
+| `get_main_application_classes_code()` | `offset=0`, `count=0`, `instance_id?` | 主应用类源码（建议 count=1-5 避免超时） |
 | `get_strings(mode, query, key)` | `mode="summary"`, `query?`, `key?`, `locale="values"`, `offset=0`, `limit=50`, `instance_id?` | 模式: `summary`/`list`/`search`/`get` |
-| `get_smali_of_class(class_name)` | `class_name`, `instance_id?` | Dalvik 字节码 |
+| `get_smali_of_class(class_name)` | `class_name`, `chunk=0`, `instance_id?` | Dalvik 字节码。**大响应自动分片** |
 
 #### 重命名工具
 
+统一的 `rename` 工具通过 `target_type` 参数处理所有重命名操作。
+所有重命名操作都会触发 30 秒 ClassCacheManager 冷却。
+
 | 工具 | 参数 | 说明 |
 |:-----|:-----|:-----|
-| `rename_class(class_name, new_name)` | `class_name`, `new_name`, `instance_id?` | 重命名类 |
-| `rename_method(method_name, new_name)` | `method_name`, `new_name`, `instance_id?` | 重命名方法 |
-| `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | 重命名字段 |
-| `rename_package(old_name, new_name)` | `old_package_name`, `new_package_name`, `instance_id?` | 重命名包 |
+| `rename(target_type, old_name, new_name)` | `target_type`（`class`/`method`/`field`/`package`/`variable`），`old_name`，`new_name`，`class_name?`，`method_name?`，`instance_id?` | 统一重命名任意符号类型 |
+
+**`target_type` 值及所需额外参数：**
+
+| `target_type` | 必需额外参数 | 示例 |
+|:-------------|:------------|:-----|
+| `class` | — | `rename("class", "com.example.OldClass", "NewClass")` |
+| `method` | `class_name` | `rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")` |
+| `field` | `class_name` | `rename("field", "oldField", "newField", class_name="com.example.MyClass")` |
+| `package` | — | `rename("package", "com.example.old", "com.example.new")` |
+| `variable` | `class_name`, `method_name` | `rename("variable", "a", "userId", class_name="com.example.MyClass", method_name="login")` |
 
 #### 实例管理工具
 
@@ -147,9 +158,14 @@
 | `set_default_jadx_instance(name)` | `name` | 设置默认实例 |
 | `get_jadx_instance_info(name)` | `name` | 获取实例详情 |
 | `health_check_jadx_instances()` | - | 检查所有实例健康状态 |
-| `check_instance_status(instance_name)` | `instance_name?` | 检查实例是否忙碌 |
 | `clear_class_cache()` | `instance_id?` | 清除类缓存（30秒冷却） |
-| `get_decompile_status()` | `instance_id?` | 获取缓存、内存、线程指标 |
+
+#### 状态与传输工具
+
+| 工具 | 参数 | 说明 |
+|:-----|:-----|:-----|
+| `get_decompile_status()` | `instance_id?` | 获取缓存命中率、内存、线程指标 |
+| `create_transfer_token()` | `operation="download"`, `resource_type="batch_classes"`, `timeout_seconds=120`, `params?`, `instance_id?` | 创建 HTTP 下载令牌，绕过 MCP 大小限制 |
 
 ---
 

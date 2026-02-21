@@ -81,7 +81,7 @@ open http://localhost:6080
 
 | Document | Description |
 |:---------|:------------|
-| [Tools Reference](docs/reference/tools.md) | Complete 45 MCP tools matrix |
+| [Tools Reference](docs/reference/tools.md) | Complete 43 MCP tools matrix |
 | [Configuration Reference](docs/reference/configuration.md) | All configuration options |
 | [Security Policy](docs/security/security.md) | Authentication, permissions, SSRF protection |
 

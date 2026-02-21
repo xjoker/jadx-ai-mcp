@@ -97,6 +97,61 @@ from typing import Optional
 
 @mcp.tool()
 @with_busy_check
+async def fetch_current_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
+    """Retrieves the currently opened/active class in JADX-GUI.
+
+    CHUNKING: Large classes (>8KB) are automatically chunked. If response contains
+    `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+
+    Args:
+        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.fetch_current_class(chunk=chunk, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def get_selected_text(instance_id: Optional[str] = None) -> dict:
+    """Returns the currently selected text in the JADX-GUI decompiled code view.
+
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.get_selected_text(instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def get_main_application_classes_names(instance_id: Optional[str] = None) -> dict:
+    """Fetch all main application class names based on the package defined in AndroidManifest.xml.
+
+    Returns class names belonging to the main application package (excludes libraries).
+
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.get_main_application_classes_names(instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def get_main_application_classes_code(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
+    """Fetch main application classes' decompiled source code with pagination.
+
+    WARNING: Large responses may timeout. Use small count values (1-5).
+    Prefer get_main_application_classes_names first, then get_class_source for specific classes.
+
+    Args:
+        offset: Starting index for pagination (default: 0)
+        count: Number of classes to return (0=all). Recommended: 1-5 to avoid timeout.
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+    """
+    return await tools.class_tools.get_main_application_classes_code(offset, count, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
 async def get_method_by_name(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
     """Fetch the source code of a method from a specific class.
 
@@ -634,38 +689,43 @@ async def rename(
     old_name: str,
     new_name: str,
     class_name: str = "",
+    method_name: str = "",
     instance_id: Optional[str] = None
 ) -> dict:
-    """Unified rename tool for classes, methods, fields, and packages.
-    
+    """Unified rename tool for classes, methods, fields, packages, and variables.
+
     Args:
-        target_type: Type of target to rename: "class" | "method" | "field" | "package"
-        old_name: Current name (fully qualified for class/package, simple name for method/field)
+        target_type: Type of target to rename: "class" | "method" | "field" | "package" | "variable"
+        old_name: Current name (fully qualified for class/package, simple name for method/field/variable)
         new_name: New name (simple name)
-        class_name: Required for method/field - the class containing the member
+        class_name: Required for method/field/variable - the class containing the member
+        method_name: Required for variable - the method containing the variable
         instance_id: Target JADX instance name
-    
+
     Returns:
         dict: {success: bool, message: str, renamed_count: int (for package only)}
-    
+
     Examples:
         # Rename class
         rename("class", "com.example.OldClass", "NewClass")
-        
+
         # Rename method
         rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
-        
+
         # Rename field
         rename("field", "oldField", "newField", class_name="com.example.MyClass")
-        
+
         # Rename package
         rename("package", "com.example.old", "com.example.new")
-    
+
+        # Rename local variable
+        rename("variable", "a", "userId", class_name="com.example.MyClass", method_name="login")
+
     Note:
         Triggers 30s class cache cooldown.
     """
     target_type = target_type.lower()
-    
+
     if target_type == "class":
         return await tools.refactor_tools.rename_class(old_name, new_name, instance_id=instance_id)
     elif target_type == "method":
@@ -678,8 +738,14 @@ async def rename(
         return await tools.refactor_tools.rename_field(class_name, old_name, new_name, instance_id=instance_id)
     elif target_type == "package":
         return await tools.refactor_tools.rename_package(old_name, new_name, instance_id=instance_id)
+    elif target_type == "variable":
+        if not class_name:
+            return {"success": False, "error": "class_name required for variable rename"}
+        if not method_name:
+            return {"success": False, "error": "method_name required for variable rename"}
+        return await tools.refactor_tools.rename_variable(class_name, method_name, old_name, new_name, instance_id=instance_id)
     else:
-        return {"success": False, "error": f"Invalid target_type: {target_type}. Use: class, method, field, package"}
+        return {"success": False, "error": f"Invalid target_type: {target_type}. Use: class, method, field, package, variable"}
 
 
 @mcp.tool()

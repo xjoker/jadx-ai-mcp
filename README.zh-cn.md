@@ -80,7 +80,7 @@ open http://localhost:6080
 
 | 文档 | 说明 |
 |:-----|:-----|
-| [工具参考](docs/reference/tools.zh-cn.md) | 完整的 45 个 MCP 工具矩阵 |
+| [工具参考](docs/reference/tools.zh-cn.md) | 完整的 43 个 MCP 工具矩阵 |
 | [配置参考](docs/reference/configuration.zh-cn.md) | 所有配置项详解 |
 | [安全策略](docs/security/security.zh-cn.md) | 认证、权限、SSRF 防护 |
 

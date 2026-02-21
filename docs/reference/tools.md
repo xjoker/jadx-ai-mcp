@@ -28,13 +28,11 @@
 | `search_method_by_name` | ✅ | ✅ | ✅ | ✅ | Search method by name |
 | `search_native_methods` | ✅ | ❌ | ✅ | ✅ | Search native methods (JNI) |
 | **Cross-Reference Tools** |
-| `get_xrefs_to_class` | ✅ | ✅ | ✅ | ✅ | Find class references |
-| `get_xrefs_to_method` | ✅ | ✅ | ✅ | ✅ | Find method references |
-| `get_xrefs_to_field` | ✅ | ✅ | ✅ | ✅ | Find field references |
+| `get_xrefs` | ✅ | ✅ | ✅ | ✅ | Find references (class/method/field) via `target_type` param |
+| `batch_get_xrefs` | ✅ | ✅ | ✅ | ✅ | Batch find references (max 10) |
 | **Batch Tools** |
 | `batch_get_class_source` | ✅ | ✅ | ✅ | ✅ | Batch get class sources (max 20) |
 | `batch_get_method_by_name` | ✅ | ✅ | ✅ | ✅ | Batch get methods (max 20) |
-| `batch_get_xrefs` | ✅ | ✅ | ✅ | ✅ | Batch find references (max 10) |
 | **Android-Specific Tools** |
 | `get_android_manifest` | ✅ | 🔄 | ✅ | ❌ | Get AndroidManifest.xml |
 | `get_main_activity_class` | ✅ | 🔄 | ✅ | ❌ | Get main Activity |
@@ -54,14 +52,7 @@
 | `get_all_resource_file_names` | ✅ | ✅ | ✅ | ❌ | List all resource files |
 | `get_resource_file` | ✅ | ✅ | ✅ | ❌ | Get resource file content |
 | **Rename Tools** |
-| `rename_class` | ✅ | ✅ | ✅ | ✅ | Rename class |
-| `rename_method` | ✅ | ✅ | ✅ | ✅ | Rename method |
-| `rename_field` | ✅ | ✅ | ✅ | ✅ | Rename field |
-| `rename_package` | ✅ | ✅ | ✅ | ✅ | Rename package |
-| **Debug Tools** |
-| `debug_get_stack_frames` | ✅ | ❌ | ✅ | ✅ | Get stack frames |
-| `debug_get_threads` | ✅ | ❌ | ✅ | ✅ | Get thread info |
-| `debug_get_variables` | ✅ | ❌ | ✅ | ✅ | Get variables |
+| `rename` | ✅ | ✅ | ✅ | ✅ | Rename class/method/field/package/variable via `target_type` param |
 | **Instance Management Tools** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | List all instances |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | Add new instance |
@@ -69,10 +60,10 @@
 | `set_default_jadx_instance` | ✅ | ✅ | ✅ | ✅ | Set default instance |
 | `get_jadx_instance_info` | ✅ | ✅ | ✅ | ✅ | Get instance details |
 | `health_check_jadx_instances` | ✅ | ✅ | ✅ | ✅ | Health check |
-| `check_instance_status` | ✅ | ✅ | ✅ | ✅ | Check instance busy status |
 | `clear_class_cache` | ✅ | ✅ | ✅ | ✅ | Clear class cache |
-| **Status Monitor Tools** |
+| **Status & Transfer Tools** |
 | `get_decompile_status` | ✅ | ✅ | ✅ | ✅ | Get decompile status and metrics |
+| `create_transfer_token` | ✅ | ✅ | ✅ | ✅ | Create token to download large batches via HTTP |
 
 ---
 
@@ -83,6 +74,8 @@
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
 | `get_file_info()` | `instance_id?` | **Recommended first call**. Returns file type, class count, recommended tools |
+| `fetch_current_class()` | `chunk=0`, `instance_id?` | Get active class in JADX-GUI. **Auto-chunks >8KB responses** |
+| `get_selected_text()` | `instance_id?` | Get selected text from JADX-GUI code view |
 | `get_class_source(class_name)` | `class_name`, `chunk=0`, `instance_id?` | Get full class source. **Auto-chunks >8KB responses** |
 | `get_method_by_name(class_name, method_name)` | `class_name`, `method_name`, `instance_id?` | Get method source |
 | `get_class_info(class_name)` | `class_name`, `instance_id?` | Class structure: inheritance, interfaces, method/field count, native methods |
@@ -101,13 +94,19 @@
 | `search_method_by_name(method_name)` | `method_name`, `offset=0`, `count=50`, `instance_id?` | Global method search |
 | `search_native_methods(package)` | `package=""`, `offset=0`, `count=50`, `instance_id?` | Search JNI native methods |
 
+### Cross-Reference Tools
+
+| Tool | Parameters | Description |
+|:-----|:-----------|:------------|
+| `get_xrefs(target_type, class_name)` | `target_type` (`class`/`method`/`field`), `class_name`, `member_name?`, `offset=0`, `count=20`, `instance_id?` | Find all references to a class, method, or field |
+| `batch_get_xrefs(targets)` | `targets[]` (format: `type:class:member`), `instance_id?` | Max 10 targets |
+
 ### Batch Tools
 
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
 | `batch_get_class_source(class_names)` | `class_names[]`, `chunk=0`, `force=False`, `instance_id?` | Max 20 classes. Smart size management with chunking support |
 | `batch_get_method_by_name(methods)` | `methods[]` (format: `class:method`), `chunk=0`, `force=False`, `instance_id?` | Max 20 methods. Smart size management with chunking support |
-| `batch_get_xrefs(targets)` | `targets[]` (format: `type:class:member`), `instance_id?` | Max 10 targets |
 
 ### JAR-Specific Tools
 
@@ -125,17 +124,29 @@
 |:-----|:-----------|:------------|
 | `get_android_manifest()` | `instance_id?` | Get AndroidManifest.xml |
 | `get_main_activity_class()` | `instance_id?` | Get main Activity from Manifest |
+| `get_main_application_classes_names()` | `instance_id?` | List main app class names (excludes libraries) |
+| `get_main_application_classes_code()` | `offset=0`, `count=0`, `instance_id?` | Main app class sources (use count=1-5 to avoid timeout) |
 | `get_strings(mode, query, key)` | `mode="summary"`, `query?`, `key?`, `locale="values"`, `offset=0`, `limit=50`, `instance_id?` | Modes: `summary`/`list`/`search`/`get` |
 | `get_smali_of_class(class_name)` | `class_name`, `chunk=0`, `instance_id?` | Dalvik bytecode. **Auto-chunks >8KB responses** |
 
 ### Rename Tools
 
+The unified `rename` tool handles all rename operations via the `target_type` parameter.
+All rename operations trigger a 30s ClassCacheManager cooldown.
+
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
-| `rename_class(class_name, new_name)` | `class_name`, `new_name`, `instance_id?` | Rename class |
-| `rename_method(method_name, new_name)` | `method_name`, `new_name`, `instance_id?` | Rename method |
-| `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | Rename field |
-| `rename_package(old_name, new_name)` | `old_package_name`, `new_package_name`, `instance_id?` | Rename package |
+| `rename(target_type, old_name, new_name)` | `target_type` (`class`/`method`/`field`/`package`/`variable`), `old_name`, `new_name`, `class_name?`, `method_name?`, `instance_id?` | Unified rename for any symbol type |
+
+**`target_type` values and required parameters:**
+
+| `target_type` | Required extra params | Example |
+|:-------------|:----------------------|:--------|
+| `class` | — | `rename("class", "com.example.OldClass", "NewClass")` |
+| `method` | `class_name` | `rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")` |
+| `field` | `class_name` | `rename("field", "oldField", "newField", class_name="com.example.MyClass")` |
+| `package` | — | `rename("package", "com.example.old", "com.example.new")` |
+| `variable` | `class_name`, `method_name` | `rename("variable", "a", "userId", class_name="com.example.MyClass", method_name="login")` |
 
 ### Instance Management Tools
 
@@ -147,9 +158,14 @@
 | `set_default_jadx_instance(name)` | `name` | Set default instance |
 | `get_jadx_instance_info(name)` | `name` | Get instance details |
 | `health_check_jadx_instances()` | - | Check all instances health |
-| `check_instance_status(instance_name)` | `instance_name?` | Check if instance is busy |
 | `clear_class_cache()` | `instance_id?` | Clear class cache (30s cooldown) |
-| `get_decompile_status()` | `instance_id?` | Get cache, memory, thread metrics |
+
+### Status & Transfer Tools
+
+| Tool | Parameters | Description |
+|:-----|:-----------|:------------|
+| `get_decompile_status()` | `instance_id?` | Get cache hit rate, memory, and thread metrics |
+| `create_transfer_token()` | `operation="download"`, `resource_type="batch_classes"`, `timeout_seconds=120`, `params?`, `instance_id?` | Create HTTP token to download large batches, bypassing MCP size limits |
 
 ---
 
