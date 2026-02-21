@@ -684,6 +684,103 @@ async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
 
 @mcp.tool()
 @with_busy_check
+async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+    """Rename a class across the entire decompiled codebase.
+
+    NOTE: Triggers 30s ClassCacheManager reload cooldown. Rapid successive renames are debounced.
+
+    Args:
+        class_name: Fully qualified current class name (e.g., com.example.OldClass)
+        new_name: New simple class name, without package (e.g., NewClass)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {success: bool, message: str}
+    """
+    return await tools.refactor_tools.rename_class(class_name, new_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def rename_method(class_name: str, method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+    """Rename a method and update all call sites.
+
+    NOTE: Triggers 30s ClassCacheManager reload cooldown. Rapid successive renames are debounced.
+
+    Args:
+        class_name: Fully qualified class name containing the method (e.g., com.example.MyClass)
+        method_name: Current method name (can include signature)
+        new_name: New method name
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {success: bool, message: str}
+    """
+    return await tools.refactor_tools.rename_method(class_name, method_name, new_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+    """Rename a field and update all references.
+
+    NOTE: Triggers 30s ClassCacheManager reload cooldown. Rapid successive renames are debounced.
+
+    Args:
+        class_name: Fully qualified class name containing the field (e.g., com.example.MyClass)
+        field_name: Current field name
+        new_name: New field name
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {success: bool, message: str}
+    """
+    return await tools.refactor_tools.rename_field(class_name, field_name, new_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
+    """Rename a package and all classes within it.
+
+    NOTE: Triggers 30s ClassCacheManager reload cooldown. Rapid successive renames are debounced.
+
+    Args:
+        old_package_name: Current package name (e.g., com.example.old)
+        new_package_name: New package name (e.g., com.example.new)
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {success: bool, message: str, renamed_count: int}
+    """
+    return await tools.refactor_tools.rename_package(old_package_name, new_package_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
+async def rename_variable(class_name: str, method_name: str, variable_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+    """Rename a local variable within a method to improve code readability.
+
+    Scoped to the method body. Use to replace obfuscated variable names
+    (e.g., rename 'a', 'b', 'c' to meaningful names like 'userId', 'tokenStr').
+
+    NOTE: Triggers 30s ClassCacheManager reload cooldown. Rapid successive renames are debounced.
+
+    Args:
+        class_name: Fully qualified class name containing the method (e.g., com.example.MyClass)
+        method_name: Method name containing the variable (e.g., onCreate)
+        variable_name: Current variable name to rename
+        new_name: New descriptive name for the variable
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {success: bool, message: str}
+    """
+    return await tools.refactor_tools.rename_variable(class_name, method_name, variable_name, new_name, instance_id=instance_id)
+
+
+@mcp.tool()
+@with_busy_check
 async def rename(
     target_type: str,
     old_name: str,

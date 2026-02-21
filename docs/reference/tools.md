@@ -52,7 +52,11 @@
 | `get_all_resource_file_names` | ✅ | ✅ | ✅ | ❌ | List all resource files |
 | `get_resource_file` | ✅ | ✅ | ✅ | ❌ | Get resource file content |
 | **Rename Tools** |
-| `rename` | ✅ | ✅ | ✅ | ✅ | Rename class/method/field/package/variable via `target_type` param |
+| `rename_class` | ✅ | ✅ | ✅ | ✅ | Rename a class across the codebase |
+| `rename_method` | ✅ | ✅ | ✅ | ✅ | Rename a method and update all call sites |
+| `rename_field` | ✅ | ✅ | ✅ | ✅ | Rename a field and update all references |
+| `rename_package` | ✅ | ✅ | ✅ | ✅ | Rename a package and all its classes |
+| `rename_variable` | ✅ | ✅ | ✅ | ✅ | Rename a local variable within a method |
 | **Instance Management Tools** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | List all instances |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | Add new instance |
@@ -131,22 +135,17 @@
 
 ### Rename Tools
 
-The unified `rename` tool handles all rename operations via the `target_type` parameter.
-All rename operations trigger a 30s ClassCacheManager cooldown.
+All rename operations trigger a 30s ClassCacheManager reload cooldown. Rapid successive renames are debounced.
 
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
-| `rename(target_type, old_name, new_name)` | `target_type` (`class`/`method`/`field`/`package`/`variable`), `old_name`, `new_name`, `class_name?`, `method_name?`, `instance_id?` | Unified rename for any symbol type |
+| `rename_class(class_name, new_name)` | `class_name`, `new_name`, `instance_id?` | Rename class across codebase |
+| `rename_method(class_name, method_name, new_name)` | `class_name`, `method_name`, `new_name`, `instance_id?` | Rename method and update all call sites |
+| `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | Rename field and update all references |
+| `rename_package(old_package_name, new_package_name)` | `old_package_name`, `new_package_name`, `instance_id?` | Rename entire package structure |
+| `rename_variable(class_name, method_name, variable_name, new_name)` | `class_name`, `method_name`, `variable_name`, `new_name`, `instance_id?` | Rename local variable within method |
 
-**`target_type` values and required parameters:**
-
-| `target_type` | Required extra params | Example |
-|:-------------|:----------------------|:--------|
-| `class` | — | `rename("class", "com.example.OldClass", "NewClass")` |
-| `method` | `class_name` | `rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")` |
-| `field` | `class_name` | `rename("field", "oldField", "newField", class_name="com.example.MyClass")` |
-| `package` | — | `rename("package", "com.example.old", "com.example.new")` |
-| `variable` | `class_name`, `method_name` | `rename("variable", "a", "userId", class_name="com.example.MyClass", method_name="login")` |
+> **Also available:** unified `rename(target_type, old_name, new_name, ...)` tool that routes to the above via `target_type` (`class`/`method`/`field`/`package`/`variable`).
 
 ### Instance Management Tools
 
