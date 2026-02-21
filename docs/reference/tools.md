@@ -105,6 +105,29 @@
 | `get_xrefs(target_type, class_name)` | `target_type` (`class`/`method`/`field`), `class_name`, `member_name?`, `offset=0`, `count=20`, `instance_id?` | Find all references to a class, method, or field |
 | `batch_get_xrefs(targets)` | `targets[]` (format: `type:class:member`), `instance_id?` | Max 10 targets |
 
+**`get_xrefs` examples:**
+
+```python
+# Find all usages of a class
+get_xrefs(target_type="class", class_name="com.example.Helper")
+
+# Find all callers of a method
+get_xrefs(target_type="method", class_name="com.example.MyClass", member_name="myMethod")
+
+# Find all references to a field
+get_xrefs(target_type="field", class_name="com.example.MyClass", member_name="secretKey")
+```
+
+**`batch_get_xrefs` target format:** `"type:class_name:member_name"` (member_name omitted for class type)
+
+```python
+batch_get_xrefs(targets=[
+    "class:com.example.Helper",
+    "method:com.example.Auth:login",
+    "field:com.example.Config:API_KEY"
+])
+```
+
 ### Batch Tools
 
 | Tool | Parameters | Description |

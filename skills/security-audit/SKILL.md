@@ -20,19 +20,19 @@ Systematic security audit workflow for Android APKs using JADX-AI-MCP tools.
 
 | Category | Focus Areas | MCP Tools |
 |:---------|:------------|:----------|
-| Manifest | Exported components, permissions, backup flags | `get_manifest`, `search_code` |
-| Secrets | API keys, passwords, tokens, credentials | `search_code`, `get_field` |
-| Network | HTTP usage, certificate pinning, SSL/TLS | `search_code`, `get_method` |
-| Crypto | Weak algorithms, hardcoded keys, insecure random | `search_code`, `get_class` |
-| Injection | SQL, command, path traversal, intent redirect | `search_code`, `get_method` |
-| Storage | SharedPrefs, SQLite, file permissions | `search_code`, `get_class` |
+| Manifest | Exported components, permissions, backup flags | `get_android_manifest` |
+| Secrets | API keys, passwords, tokens, credentials | `search_classes_by_keyword(search_in="code")` |
+| Network | HTTP usage, certificate pinning, SSL/TLS | `search_classes_by_keyword(search_in="code")`, `get_method_by_name` |
+| Crypto | Weak algorithms, hardcoded keys, insecure random | `search_classes_by_keyword(search_in="code")`, `get_class_source` |
+| Injection | SQL, command, path traversal, intent redirect | `search_classes_by_keyword(search_in="code")`, `get_method_by_name` |
+| Storage | SharedPrefs, SQLite, file permissions | `search_classes_by_keyword(search_in="code")`, `get_fields_of_class` |
 
 ## Audit Workflow
 
 ### Step 1: Manifest Analysis
 
 ```
-1. Get AndroidManifest.xml using get_manifest tool
+1. Get AndroidManifest.xml using get_android_manifest tool
 2. Check for:
    - android:debuggable="true"
    - android:allowBackup="true"
@@ -43,87 +43,82 @@ Systematic security audit workflow for Android APKs using JADX-AI-MCP tools.
 
 ### Step 2: Hardcoded Secrets Search
 
-Search patterns for common secrets:
+Search patterns for common secrets using `search_classes_by_keyword(search_in="code")`:
 
-```
+```python
 # API Keys and Tokens
-search_code: "api[_-]?key"
-search_code: "secret[_-]?key"
-search_code: "access[_-]?token"
-search_code: "bearer"
-search_code: "authorization"
+search_classes_by_keyword("api_key", search_in="code")
+search_classes_by_keyword("secret_key", search_in="code")
+search_classes_by_keyword("access_token", search_in="code")
+search_classes_by_keyword("bearer", search_in="code")
 
 # Credentials
-search_code: "password"
-search_code: "passwd"
-search_code: "credential"
+search_classes_by_keyword("password", search_in="code")
+search_classes_by_keyword("credential", search_in="code")
 
 # Cloud Services
-search_code: "aws[_-]?"
-search_code: "firebase"
-search_code: "google[_-]?api"
+search_classes_by_keyword("firebase", search_in="code")
+search_classes_by_keyword("aws", search_in="code")
 ```
+
+> **Note**: Check `get_decompile_status()` first. Use `search_in="code"` only when `cached_percentage > 20%`.
 
 ### Step 3: Network Security
 
-```
+```python
 # Insecure HTTP
-search_code: "http://"
-search_code: "setHostnameVerifier"
-search_code: "TrustAllCerts"
-search_code: "ALLOW_ALL_HOSTNAME"
+search_classes_by_keyword("http://", search_in="code")
+search_classes_by_keyword("setHostnameVerifier", search_in="code")
+search_classes_by_keyword("TrustAllCerts", search_in="code")
+search_classes_by_keyword("ALLOW_ALL_HOSTNAME", search_in="code")
 
 # Certificate Pinning Bypass
-search_code: "X509TrustManager"
-search_code: "checkServerTrusted"
+search_classes_by_keyword("X509TrustManager", search_in="code")
+search_classes_by_keyword("checkServerTrusted", search_in="code")
 ```
 
 ### Step 4: Cryptographic Issues
 
-```
+```python
 # Weak Algorithms
-search_code: "DES"
-search_code: "MD5"
-search_code: "SHA1"
-search_code: "ECB"
+search_classes_by_keyword("DES", search_in="code")
+search_classes_by_keyword("MD5", search_in="code")
+search_classes_by_keyword("ECB", search_in="code")
 
 # Insecure Random
-search_code: "java.util.Random"
-search_code: "setSeed"
+search_classes_by_keyword("java.util.Random", search_in="code")
 
 # Hardcoded Crypto Keys
-search_code: "SecretKeySpec"
-search_code: "IvParameterSpec"
+search_classes_by_keyword("SecretKeySpec", search_in="code")
+search_classes_by_keyword("IvParameterSpec", search_in="code")
 ```
 
 ### Step 5: Injection Vulnerabilities
 
-```
+```python
 # SQL Injection
-search_code: "rawQuery"
-search_code: "execSQL"
+search_classes_by_keyword("rawQuery", search_in="code")
+search_classes_by_keyword("execSQL", search_in="code")
 
 # Path Traversal
-search_code: "getExternalStorage"
-search_code: "openFileInput"
-search_code: "../"
+search_classes_by_keyword("getExternalStorage", search_in="code")
+search_classes_by_keyword("openFileInput", search_in="code")
 
 # Intent Redirect
-search_code: "getParcelableExtra"
-search_code: "startActivity.*getIntent"
+search_classes_by_keyword("getParcelableExtra", search_in="code")
 ```
 
 ### Step 6: Data Storage
 
-```
+```python
 # Insecure SharedPreferences
-search_code: "MODE_WORLD_READABLE"
-search_code: "MODE_WORLD_WRITEABLE"
-search_code: "getSharedPreferences"
+search_classes_by_keyword("MODE_WORLD_READABLE", search_in="code")
+search_classes_by_keyword("MODE_WORLD_WRITEABLE", search_in="code")
+search_classes_by_keyword("getSharedPreferences", search_in="code")
 
 # SQLite without encryption
-search_code: "SQLiteDatabase"
-search_code: "openOrCreateDatabase"
+search_classes_by_keyword("SQLiteDatabase", search_in="code")
+search_classes_by_keyword("openOrCreateDatabase", search_in="code")
 ```
 
 ## Report Format

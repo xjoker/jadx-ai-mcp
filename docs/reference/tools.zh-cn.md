@@ -105,6 +105,29 @@
 | `get_xrefs(target_type, class_name)` | `target_type`（`class`/`method`/`field`），`class_name`，`member_name?`，`offset=0`，`count=20`，`instance_id?` | 查找类、方法或字段的所有引用 |
 | `batch_get_xrefs(targets)` | `targets[]` (格式: `type:class:member`), `instance_id?` | 最多 10 个目标 |
 
+**`get_xrefs` 调用示例：**
+
+```python
+# 查找类的所有使用位置
+get_xrefs(target_type="class", class_name="com.example.Helper")
+
+# 查找方法的所有调用者
+get_xrefs(target_type="method", class_name="com.example.MyClass", member_name="myMethod")
+
+# 查找字段的所有引用
+get_xrefs(target_type="field", class_name="com.example.MyClass", member_name="secretKey")
+```
+
+**`batch_get_xrefs` 目标格式：** `"type:class_name:member_name"`（class 类型省略 member_name）
+
+```python
+batch_get_xrefs(targets=[
+    "class:com.example.Helper",
+    "method:com.example.Auth:login",
+    "field:com.example.Config:API_KEY"
+])
+```
+
 #### 批量工具
 
 | 工具 | 参数 | 说明 |
