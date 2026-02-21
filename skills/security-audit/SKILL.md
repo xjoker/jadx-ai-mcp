@@ -145,7 +145,7 @@ search_classes_by_keyword("openOrCreateDatabase", search_in="code")
 ## Common Pitfalls
 
 - **False positives**: Verify findings in decompiled code context before reporting
-- **Obfuscated code**: Use `get_class` to understand obfuscated class relationships
+- **Obfuscated code**: Use `get_class_source` to understand obfuscated class relationships
 - **Native libraries**: Note that .so files require separate analysis
 - **Third-party SDKs**: Distinguish app code from SDK vulnerabilities
 - **ProGuard mapping**: Check if mapping file available for better analysis

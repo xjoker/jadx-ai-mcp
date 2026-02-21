@@ -55,7 +55,7 @@ Start from a method and find everything that calls it.
 
 ```
 1. Identify target method (e.g., sensitive API call)
-2. Use get_xrefs_to_method to find all callers
+2. Use get_xrefs(target_type="method", ...) to find all callers
 3. For each caller, trace upward to find entry points
 4. Build reverse call graph
 ```
