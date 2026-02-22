@@ -155,7 +155,17 @@ public class SettingsDialog extends JDialog {
         JLabel warningLabel = new JLabel("<html><font color='#CC6600'>[!] Binding to 0.0.0.0 exposes service to network</font></html>");
         warningLabel.setFont(warningLabel.getFont().deriveFont(Font.PLAIN, 11f));
         panel.add(warningLabel, gbc);
-        
+
+        // Auto-rename notice
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 5;
+        JLabel renameNoticeLabel = new JLabel(
+            "<html><font color='#0055AA'>[i] Auto-rename is disabled when the server starts — " +
+            "method/field names will match actual APK bytecode names (required for Frida/Xposed hooks). " +
+            "Reload your APK if display names appear obfuscated after start.</font></html>"
+        );
+        renameNoticeLabel.setFont(renameNoticeLabel.getFont().deriveFont(Font.PLAIN, 11f));
+        panel.add(renameNoticeLabel, gbc);
+
         return panel;
     }
     

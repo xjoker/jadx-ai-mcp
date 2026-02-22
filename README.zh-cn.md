@@ -27,6 +27,7 @@
 | 💼 **完整 JVM 支持** | APK、JAR、AAR、DEX 全支持。5 个 JAR 专用工具（manifest、入口点、依赖、服务、字节码）。 |
 | ⚡ **ClassCacheManager** | 后台缓存 + 自动失效，重复分析快 10-50 倍。 |
 | 🐳 **All-in-One Docker** | 一键部署 GUI + AI 服务器。多平台支持（amd64/arm64）。 |
+| 🔗 **Frida/Xposed Hook 准确性** | 服务器启动时自动禁用 JADX auto-rename，确保方法/字段名与 APK 字节码中的真实名称一致。 |
 
 > 📚 **44 篇中英双语指南**，涵盖部署、工具、故障排查和 AI 测试提示词。
 
@@ -47,6 +48,8 @@ open http://localhost:6080
 > 💡 **自动加载**：将文件命名为 `target.apk`、`target.jar`、`target.aar` 或 `target.dex`，JADX 启动时自动加载。
 
 > ⚠️ **重要**：AI 连接前必须先在 JADX 中加载文件（APK/JAR/AAR/DEX）。插件只有在加载文件后才会初始化，未加载时 MCP Server 无法连接到 JADX。
+
+> 🔗 **Auto-Rename 行为**：MCP 服务器启动时会**自动禁用** JADX 的 auto-rename 功能。这是有意为之——Frida/Xposed 的 hook 脚本必须使用 APK 字节码中的原始混淆名（如 `a()`、`b`），而非 JADX 生成的可读名称（如 `getUserData()`、`mContext`）。使用重命名后的名称编写 hook 会导致运行时静默失败。服务器启动后若显示名称变为混淆状态，在 JADX 中执行 **File > Reload** 即可。
 
 ---
 

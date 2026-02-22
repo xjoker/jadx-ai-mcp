@@ -28,6 +28,7 @@ This fork provides **major enhancements** over the original project:
 | 💼 **Full JVM Support** | APK, JAR, AAR, DEX all supported. 5 JAR-specific tools (manifest, entry points, dependencies, services, bytecode). |
 | ⚡ **ClassCacheManager** | 10-50x faster repeated analysis with background caching and auto-invalidation. |
 | 🐳 **All-in-One Docker** | One command deploys GUI + AI server. Multi-platform (amd64/arm64). |
+| 🔗 **Frida/Xposed Hook Accuracy** | Auto-rename disabled on server start — names always match actual APK bytecode, not JADX display names. |
 
 > 📚 **44 bilingual guides** covering deployment, tools, troubleshooting, and AI testing prompts.
 
@@ -48,6 +49,8 @@ open http://localhost:6080
 > 💡 **Auto-load**: Name your file `target.apk`, `target.jar`, `target.aar`, or `target.dex`. JADX loads it automatically on startup.
 
 > ⚠️ **Important**: You MUST load a file (APK/JAR/AAR/DEX) in JADX before AI can connect. The plugin only initializes after loading a file—MCP Server cannot connect to JADX until then.
+
+> 🔗 **Auto-Rename Behavior**: When the MCP server starts, JADX's auto-rename feature is **automatically disabled**. This is intentional — Frida/Xposed hooks must use the original obfuscated names from the APK bytecode (e.g. `a()`, `b`), not the human-readable names JADX generates (e.g. `getUserData()`, `mContext`). Using renamed names in hook scripts causes them to silently fail at runtime. If display names appear obfuscated after server start, use **File > Reload** in JADX.
 
 ---
 

@@ -231,15 +231,31 @@ public class JadxAIMCP implements JadxPlugin {
                     pluginServer.stop();
                 }
                 
-                // === Disable JADX auto-rename for accurate Hook development ===
-                // This ensures field/method names match the actual runtime names
+                // === Disable JADX auto-rename — REQUIRED for accurate Frida/Xposed hook development ===
+                //
+                // WHY this is necessary:
+                //   JADX's auto-rename rewrites obfuscated names (e.g. "a()", "b", class "C") into
+                //   human-readable names like "getUserData()", "mContext", class "MainActivity2".
+                //   These renamed names exist ONLY inside JADX's display — they do NOT exist in
+                //   the actual APK bytecode at runtime.
+                //
+                //   Frida hooks, Xposed modules, and any runtime instrumentation MUST reference
+                //   the original bytecode names. Using JADX-renamed names in a hook script will
+                //   cause the hook to silently fail at runtime because the method/field cannot be found.
+                //
+                // EFFECT:
+                //   After the server starts, JADX will show the original obfuscated names.
+                //   If you already have the APK loaded, reload it (File > Reload) for the change
+                //   to take effect in the UI.
+                //
+                // This behavior is intentional and cannot be disabled via settings.
                 try {
                     jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
                     if (wrapper != null && wrapper.getDecompiler() != null) {
                         jadx.api.JadxArgs args = wrapper.getDecompiler().getArgs();
                         if (args != null && args.getRenameFlags() != null) {
                             args.getRenameFlags().clear();
-                            logger.info("JADX-AI-MCP Plugin: Disabled auto-rename for accurate field/method names");
+                            logger.info("JADX-AI-MCP Plugin: Auto-rename disabled — names now match actual APK bytecode for Frida/Xposed hook accuracy");
                         }
                     }
                 } catch (Exception e) {
