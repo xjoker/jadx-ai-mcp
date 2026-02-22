@@ -5,11 +5,10 @@ import io.javalin.http.Context;
 import jadx.api.JavaClass;
 import jadx.api.JavaField;
 import jadx.api.JavaMethod;
+import jadx.api.JadxDecompiler;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.MethodNode;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,11 +28,11 @@ import com.zin.jadxaimcp.utils.ClassCacheManager;
 
 public class XrefsRoutes {
     private static final Logger logger = LoggerFactory.getLogger(XrefsRoutes.class);
-    private final MainWindow mainWindow;
+    private final JadxDecompiler decompiler;
     private final PaginationUtils paginationUtils;
 
-    public XrefsRoutes(MainWindow mainWindow) {
-        this.mainWindow = mainWindow;
+    public XrefsRoutes(JadxDecompiler decompiler) {
+        this.decompiler = decompiler;
         this.paginationUtils = new PaginationUtils();
     }
 
@@ -254,11 +253,10 @@ public class XrefsRoutes {
      */
     private JavaClass findClassByName(Context ctx, String className) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
             
             // Initialize cache if not already done
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Get from cache
@@ -470,11 +468,10 @@ public class XrefsRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
             
             // Initialize cache if not already done
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Check cache status

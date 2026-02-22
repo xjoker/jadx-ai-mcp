@@ -4,8 +4,7 @@ import io.javalin.http.Context;
 
 import jadx.api.JavaClass;
 import jadx.api.JavaMethod;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
+import jadx.api.JadxDecompiler;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +25,11 @@ import com.zin.jadxaimcp.utils.SmartChunker;
 
 public class MethodRoutes {
     private static final Logger logger = LoggerFactory.getLogger(MethodRoutes.class);
-    private final MainWindow mainWindow;
+    private final JadxDecompiler decompiler;
     private final PaginationUtils paginationUtils;
 
-    public MethodRoutes(MainWindow mainWindow, PaginationUtils paginationUtils) {
-        this.mainWindow = mainWindow;
+    public MethodRoutes(JadxDecompiler decompiler, PaginationUtils paginationUtils) {
+        this.decompiler = decompiler;
         this.paginationUtils = paginationUtils;
     }
 
@@ -57,11 +56,7 @@ public class MethodRoutes {
         if (methodName == null) return;
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) {
-                JadxAIMCPPluginError.handleError(ctx, 500, "JadxWrapper not initialized", logger);
-                return;
-            }
+            List<JavaClass> classes = decompiler.getClassesWithInners();
 
             // Case 1: Search in all classes if no class name provided
             // Use ClassNode for fast method name lookup without triggering decompilation
@@ -76,7 +71,7 @@ public class MethodRoutes {
                     return;
                 }
                 try {
-                    for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                    for (JavaClass cls : classes) {
                         jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
                         if (classNode == null) continue;
                         
@@ -98,7 +93,7 @@ public class MethodRoutes {
             } 
             // Case 2: Search in specific class (no global search, minimal lock needed)
             else {
-                for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                for (JavaClass cls : classes) {
                     if (cls.getFullName().equals(className)) {
                         for (JavaMethod method : cls.getMethods()) {
                             if (method.getName().equalsIgnoreCase(methodName)) {
@@ -167,15 +162,11 @@ public class MethodRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) {
-                JadxAIMCPPluginError.handleError(ctx, 500, "JadxWrapper not initialized", logger);
-                return;
-            }
+            List<JavaClass> classes = decompiler.getClassesWithInners();
 
             // Initialize cache if not already done
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Check cache status
@@ -306,7 +297,7 @@ public class MethodRoutes {
         count = Math.min(count, MAX_COUNT);
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
+            List<JavaClass> classes = decompiler.getClassesWithInners();
             List<Map<String, String>> results = new ArrayList<>();
             String searchTerm = methodName.toLowerCase();
             
@@ -328,7 +319,7 @@ public class MethodRoutes {
                 return;
             }
             try {
-                List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+                List<JavaClass> allClasses = classes;
                 int resultsNeeded = offset + count + 1; // +1 to check has_more
                 
                 outerLoop:
@@ -472,8 +463,8 @@ public class MethodRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            List<JavaClass> classes = decompiler.getClassesWithInners();
+            for (JavaClass cls : classes) {
                 if (cls.getFullName().equals(className)) {
                     List<Map<String, Object>> signatures = new ArrayList<>();
                     
@@ -568,11 +559,11 @@ public class MethodRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
+            List<JavaClass> classes = decompiler.getClassesWithInners();
             
             // Initialize cache if not already done
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Get from cache
@@ -665,18 +656,14 @@ public class MethodRoutes {
         }
         
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) {
-                JadxAIMCPPluginError.handleError(ctx, 500, "JadxWrapper not initialized", logger);
-                return;
-            }
+            List<JavaClass> classes = decompiler.getClassesWithInners();
             
             List<Map<String, Object>> nativeMethods = new ArrayList<>();
             int totalFound = 0;
             int skipped = 0;
             
             // Iterate through all classes - only accessing metadata, no decompilation
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            for (JavaClass cls : classes) {
                 String className = cls.getFullName();
                 
                 // Apply package filter if provided

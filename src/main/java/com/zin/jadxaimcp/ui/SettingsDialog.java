@@ -2,7 +2,6 @@ package com.zin.jadxaimcp.ui;
 
 import com.zin.jadxaimcp.JadxAIMCP;
 import com.zin.jadxaimcp.server.AuthConfig;
-import jadx.gui.ui.MainWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,6 +11,7 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.Frame;
 
 /**
  * Unified Settings Dialog
@@ -26,7 +26,7 @@ import java.awt.event.WindowEvent;
 public class SettingsDialog extends JDialog {
     private static final Logger logger = LoggerFactory.getLogger(SettingsDialog.class);
     
-    private final MainWindow mainWindow;
+    private final JFrame ownerFrame;
     private final JadxAIMCP plugin;
     
     // Server configuration components
@@ -46,15 +46,15 @@ public class SettingsDialog extends JDialog {
     private JButton copyTokenButton;
     private JButton regenerateButton;
     
-    public SettingsDialog(MainWindow mainWindow, JadxAIMCP plugin) {
-        super(mainWindow, "JADX AI MCP Plugin Settings", true);
-        this.mainWindow = mainWindow;
+    public SettingsDialog(JFrame ownerFrame, JadxAIMCP plugin) {
+        super(ownerFrame, "JADX AI MCP Plugin Settings", true);
+        this.ownerFrame = ownerFrame;
         this.plugin = plugin;
-        
+
         initComponents();
         loadCurrentSettings();
         pack();
-        setLocationRelativeTo(mainWindow);
+        setLocationRelativeTo(ownerFrame);
         setResizable(false);
     }
     

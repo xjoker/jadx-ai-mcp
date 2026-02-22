@@ -1,8 +1,8 @@
 package com.zin.jadxaimcp.utils;
 
+import jadx.api.JadxDecompiler;
 import jadx.api.ResourceFile;
 import jadx.core.xmlgen.ResContainer;
-import jadx.gui.JadxWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,25 +97,25 @@ public class ResourceCacheManager {
      * @param wrapper JADX wrapper to load resources from
      * @return true if loading was started, false if already cached/loading
      */
-    public static boolean initCache(JadxWrapper wrapper) {
-        if (wrapper == null) {
-            logger.warn("Cannot init cache: wrapper is null");
+    public static boolean initCache(JadxDecompiler decompiler) {
+        if (decompiler == null) {
+            logger.warn("Cannot init cache: decompiler is null");
             return false;
         }
-        
+
         // Fast path: already cached
         if (cachedSubFiles.get() != null) {
             return false;
         }
-        
+
         // Check if already loading (atomic check-and-set)
         if (!isLoading.compareAndSet(false, true)) {
             return false; // Another thread is loading
         }
-        
+
         // Start background loading
         try {
-            final List<ResourceFile> resources = wrapper.getResources();
+            final List<ResourceFile> resources = decompiler.getResources();
             if (resources == null || resources.isEmpty()) {
                 isLoading.set(false);
                 loadError.set("No resources found in APK");

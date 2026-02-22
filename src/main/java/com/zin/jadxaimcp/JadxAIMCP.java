@@ -5,12 +5,11 @@
 
 package com.zin.jadxaimcp;
 
+import jadx.api.JadxDecompiler;
 import jadx.api.plugins.JadxPlugin;
 import jadx.api.plugins.JadxPluginContext;
 import jadx.api.plugins.JadxPluginInfo;
 import jadx.api.plugins.JadxPluginInfoBuilder;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +24,7 @@ import java.util.prefs.Preferences;
 // Importing custom banner string
 import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
 import com.zin.jadxaimcp.utils.PaginationUtils;
-import com.zin.jadxaimcp.ui.PluginMenu;
+import com.zin.jadxaimcp.ui.SettingsDialog;
 import com.zin.jadxaimcp.server.PluginServer;
 
 public class JadxAIMCP implements JadxPlugin {
@@ -50,10 +49,10 @@ public class JadxAIMCP implements JadxPlugin {
     private Preferences prefs;
     private ScheduledExecutorService scheduler;
 
-    // Components
-    private MainWindow mainWindow;
+    // Components — use public plugin API types, no internal MainWindow cast
+    private JadxPluginContext pluginContext;
+    private JFrame mainWindowFrame;
     private PluginServer pluginServer;
-    private PluginMenu pluginMenu;
     
     // Static singleton protection to prevent multiple server instances
     private static volatile PluginServer sharedServer = null;
@@ -80,9 +79,11 @@ public class JadxAIMCP implements JadxPlugin {
         }
 
         try {
-            this.mainWindow = (MainWindow) context.getGuiContext().getMainFrame();
-            if (this.mainWindow == null) {
-                logger.error("JADX-AI-MCP Plugin: Main Window is null.");
+            // Store plugin context and get JFrame via public API — no MainWindow cast
+            this.pluginContext = context;
+            this.mainWindowFrame = context.getGuiContext().getMainFrame();
+            if (this.mainWindowFrame == null) {
+                logger.error("JADX-AI-MCP Plugin: Main Window Frame is null.");
                 return;
             }
 
@@ -91,13 +92,15 @@ public class JadxAIMCP implements JadxPlugin {
             currentPort = prefs.getInt(PREF_KEY_PORT, DEFAULT_PORT);
             currentBindAddress = prefs.get(PREF_KEY_BIND_ADDRESS, DEFAULT_BIND_ADDRESS);
             instanceName = prefs.get(PREF_KEY_INSTANCE_NAME, null);
-            
+
             // 1.1 Override from environment variables (for Docker deployment)
             applyEnvironmentOverrides();
 
-            // 2. Initialize UI
-            this.pluginMenu = new PluginMenu(mainWindow, this);
-            this.pluginMenu.addMenuItems();
+            // 2. Register menu items via public plugin API (no direct JMenuBar manipulation)
+            var guiCtx = context.getGuiContext();
+            guiCtx.addMenuAction("JADX AI MCP: Settings", () ->
+                SwingUtilities.invokeLater(() -> new SettingsDialog(mainWindowFrame, this).setVisible(true)));
+            guiCtx.addMenuAction("JADX AI MCP: Status", this::showQuickStatus);
 
             // 3. Start Server Lifecycle
             logger.info("JADX-AI-MCP Plugin: Initializing...");
@@ -250,9 +253,9 @@ public class JadxAIMCP implements JadxPlugin {
                 //
                 // This behavior is intentional and cannot be disabled via settings.
                 try {
-                    jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
-                    if (wrapper != null && wrapper.getDecompiler() != null) {
-                        jadx.api.JadxArgs args = wrapper.getDecompiler().getArgs();
+                    JadxDecompiler decompiler = pluginContext.getDecompiler();
+                    if (decompiler != null) {
+                        jadx.api.JadxArgs args = decompiler.getArgs();
                         if (args != null && args.getRenameFlags() != null) {
                             args.getRenameFlags().clear();
                             logger.info("JADX-AI-MCP Plugin: Auto-rename disabled — names now match actual APK bytecode for Frida/Xposed hook accuracy");
@@ -261,9 +264,9 @@ public class JadxAIMCP implements JadxPlugin {
                 } catch (Exception e) {
                     logger.warn("JADX-AI-MCP Plugin: Could not disable auto-rename: " + e.getMessage());
                 }
-                
+
                 // Create and start new server
-                pluginServer = new PluginServer(mainWindow, currentPort, currentBindAddress, this);
+                pluginServer = new PluginServer(pluginContext, mainWindowFrame, currentPort, currentBindAddress, this);
                 pluginServer.start();
                 
                 // Store as shared server
@@ -298,7 +301,7 @@ public class JadxAIMCP implements JadxPlugin {
                 Thread.sleep(1000); // Wait for port release
                 startServer();
                 SwingUtilities.invokeLater(() ->
-                    JOptionPane.showMessageDialog(mainWindow,
+                    JOptionPane.showMessageDialog(mainWindowFrame,
                         "Server restarted on port " + currentPort,
                         "Server restarted.", JOptionPane.INFORMATION_MESSAGE));
             } catch (Exception e) {
@@ -428,12 +431,10 @@ public class JadxAIMCP implements JadxPlugin {
      */
     private boolean isJadxFullyLoaded() {
         try {
-            if (mainWindow == null) return false;
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) return false;
-            // Check if we have classes or at least a decompiler instance
-            List<?> classes = wrapper.getIncludedClassesWithInners();
-            return (classes != null && !classes.isEmpty()) || wrapper.getDecompiler() != null;
+            JadxDecompiler decompiler = pluginContext.getDecompiler();
+            if (decompiler == null) return false;
+            List<jadx.api.JavaClass> classes = decompiler.getClassesWithInners();
+            return classes != null && !classes.isEmpty();
         } catch (Exception e) {
             return false;
         }
@@ -466,6 +467,30 @@ public class JadxAIMCP implements JadxPlugin {
     }
 
     /**
+     * Show a quick status dialog from the menu.
+     */
+    private void showQuickStatus() {
+        SwingUtilities.invokeLater(() -> {
+            boolean running = isServerRunning();
+            String status = running ? "● Running" : "○ Stopped";
+            String bindAddr = getCurrentBindAddress();
+            String url = running ? "http://" + bindAddr + ":" + getCurrentPort() + "/" : "N/A";
+
+            String name = instanceName != null && !instanceName.isEmpty() ? instanceName : getAutoInstanceName();
+            String apkInfo = getApkInfo();
+
+            String msg = "Status: " + status + "\n"
+                + "Address: " + bindAddr + ":" + getCurrentPort() + "\n"
+                + "URL: " + url + "\n"
+                + "Instance: " + (name != null ? name : "Not set") + "\n"
+                + "APK: " + (apkInfo != null ? apkInfo : "Not loaded");
+
+            JOptionPane.showMessageDialog(mainWindowFrame, msg,
+                "MCP Server Status", JOptionPane.INFORMATION_MESSAGE);
+        });
+    }
+
+    /**
      * Stops the plugin server.
      */
     public void stopServer() {
@@ -483,11 +508,10 @@ public class JadxAIMCP implements JadxPlugin {
      */
     public String getApkInfo() {
         try {
-            if (mainWindow == null) return null;
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) return null;
-            
-            java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
+            JadxDecompiler decompiler = pluginContext.getDecompiler();
+            if (decompiler == null) return null;
+
+            java.util.List<jadx.api.ResourceFile> resources = decompiler.getResources();
             if (resources == null || resources.isEmpty()) return null;
             
             jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
@@ -533,24 +557,23 @@ public class JadxAIMCP implements JadxPlugin {
      */
     public String getAutoInstanceName() {
         try {
-            if (mainWindow == null) return "jadx-" + currentPort;
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) return "jadx-" + currentPort;
-            
+            JadxDecompiler decompiler = pluginContext.getDecompiler();
+            if (decompiler == null) return "jadx-" + currentPort;
+
             // Detect file type using FileTypeDetector
             java.io.File loadedFile = getLoadedFile();
             if (loadedFile != null) {
-                com.zin.jadxaimcp.utils.FileTypeDetector.FileType fileType = 
+                com.zin.jadxaimcp.utils.FileTypeDetector.FileType fileType =
                     com.zin.jadxaimcp.utils.FileTypeDetector.detectFileType(loadedFile);
-                
+
                 // For JAR files, use JAR-specific naming
                 if (fileType == com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
                     return getJarInstanceName(loadedFile);
                 }
             }
-            
+
             // For APK/AAR/DEX: Use Android manifest-based naming
-            java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
+            java.util.List<jadx.api.ResourceFile> resources = decompiler.getResources();
             if (resources != null && !resources.isEmpty()) {
                 jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
                 if (manifestFile != null) {
@@ -581,13 +604,12 @@ public class JadxAIMCP implements JadxPlugin {
      */
     private java.io.File getLoadedFile() {
         try {
-            if (mainWindow == null) return null;
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) return null;
-            
-            java.util.List<java.nio.file.Path> inputFiles = wrapper.getProject().getFilePaths();
+            JadxDecompiler decompiler = pluginContext.getDecompiler();
+            if (decompiler == null) return null;
+            // JadxArgs.getInputFiles() returns List<File>
+            java.util.List<java.io.File> inputFiles = decompiler.getArgs().getInputFiles();
             if (inputFiles != null && !inputFiles.isEmpty()) {
-                return inputFiles.get(0).toFile();
+                return inputFiles.get(0);
             }
         } catch (Exception e) {
             logger.debug("Failed to get loaded file: " + e.getMessage());

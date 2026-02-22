@@ -1,6 +1,7 @@
 package com.zin.jadxaimcp.utils;
 
 import jadx.api.JadxArgs;
+import jadx.api.JadxDecompiler;
 import jadx.api.ResourceFile;
 import jadx.core.utils.android.AndroidManifestParser;
 import jadx.gui.JadxWrapper;
@@ -130,7 +131,36 @@ public class FileTypeDetector {
     }
 
     /**
-     * Detects file type from JADX wrapper
+     * Detects file type from JadxDecompiler (public API).
+     */
+    public static DetectionResult detect(JadxDecompiler decompiler) {
+        List<FileType> types = new ArrayList<>();
+        List<String> paths = new ArrayList<>();
+        try {
+            if (decompiler == null) return new DetectionResult(types, paths);
+            JadxArgs args = decompiler.getArgs();
+            if (args == null) return new DetectionResult(types, paths);
+            List<File> inputFiles = args.getInputFiles();
+            if (inputFiles == null || inputFiles.isEmpty()) {
+                List<ResourceFile> resources = decompiler.getResources();
+                if (resources != null && !resources.isEmpty()) {
+                    ResourceFile manifest = AndroidManifestParser.getAndroidManifest(resources);
+                    if (manifest != null) { types.add(FileType.APK); paths.add("(detected from manifest)"); }
+                }
+                return new DetectionResult(types, paths);
+            }
+            for (File file : inputFiles) {
+                paths.add(file.getAbsolutePath());
+                types.add(detectFileType(file));
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to detect file type: {}", e.getMessage());
+        }
+        return new DetectionResult(types, paths);
+    }
+
+    /**
+     * Detects file type from JADX wrapper (kept for internal use)
      */
     public static DetectionResult detect(JadxWrapper wrapper) {
         List<FileType> types = new ArrayList<>();

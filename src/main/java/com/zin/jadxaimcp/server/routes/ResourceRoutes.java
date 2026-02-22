@@ -10,8 +10,7 @@ import jadx.core.utils.android.AppAttribute;
 import jadx.core.utils.android.ApplicationParams;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.xmlgen.ResContainer;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
+import jadx.api.JadxDecompiler;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +31,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.io.InputStream;
 import java.util.concurrent.CompletableFuture;
+import javax.swing.JFrame;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
@@ -46,7 +46,8 @@ import com.zin.jadxaimcp.utils.ResourceCacheManager;
 
 public class ResourceRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ResourceRoutes.class);
-    private final MainWindow mainWindow;
+    private final JadxDecompiler decompiler;
+    private final JFrame ownerFrame;
     private final PaginationUtils paginationUtils;
     
     // Dedicated single-thread executor for resource loading
@@ -58,8 +59,9 @@ public class ResourceRoutes {
             return t;
         });
 
-    public ResourceRoutes(MainWindow mainWindow) {
-        this.mainWindow = mainWindow;
+    public ResourceRoutes(JadxDecompiler decompiler, JFrame ownerFrame) {
+        this.decompiler = decompiler;
+        this.ownerFrame = ownerFrame;
         this.paginationUtils = new PaginationUtils();
     }
     
@@ -98,15 +100,14 @@ public class ResourceRoutes {
             }
 
             // Check file type - Manifest only available for Android files
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
             if (!fileType.hasAndroidFeatures()) {
                 com.zin.jadxaimcp.utils.NotApplicableResponse.sendManifestNotAvailable(
                     ctx, fileType.getPrimaryType().getName());
                 return;
             }
-            
+
             ResourceFile manifest = getManifestFile();
             if (manifest == null) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "AndroidManifest.xml not found.", logger);
@@ -148,10 +149,9 @@ public class ResourceRoutes {
      */
     public void handleStrings(Context ctx) {
         try {
-            // Check file type - Strings only available for Android files  
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            // Check file type - Strings only available for Android files
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
             if (!fileType.hasAndroidFeatures()) {
                 com.zin.jadxaimcp.utils.NotApplicableResponse.sendStringsNotAvailable(
                     ctx, fileType.getPrimaryType().getName());
@@ -330,7 +330,7 @@ public class ResourceRoutes {
                 break;
                 
             case NOT_INITIALIZED:
-                boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
+                boolean started = ResourceCacheManager.initCache(decompiler);
                 result.put("status", "loading_started");
                 result.put("message", started ? "Resource cache loading started" : "Cache initialization pending");
                 result.put("health", ResourceCacheManager.getHealthInfo());
@@ -394,13 +394,15 @@ public class ResourceRoutes {
     private List<Map<String, String>> getOpenedResourceTabs(String filenamePattern) {
         List<Map<String, String>> results = new ArrayList<>();
         
-        if (mainWindow == null) {
-            logger.debug("getOpenedResourceTabs: mainWindow is null");
+        jadx.gui.ui.MainWindow mw = ownerFrame instanceof jadx.gui.ui.MainWindow
+            ? (jadx.gui.ui.MainWindow) ownerFrame : null;
+        if (mw == null) {
+            logger.debug("getOpenedResourceTabs: MainWindow not available");
             return results;
         }
-        
+
         try {
-            JTabbedPane tabbedPane = mainWindow.getTabbedPane();
+            JTabbedPane tabbedPane = mw.getTabbedPane();
             if (tabbedPane == null) {
                 logger.debug("getOpenedResourceTabs: tabbedPane is null");
                 return results;
@@ -485,7 +487,7 @@ public class ResourceRoutes {
         try {
             SwingUtilities.invokeAndWait(() -> {
                 try {
-                    List<ResourceFile> resourceFiles = mainWindow.getWrapper().getResources();
+                    List<ResourceFile> resourceFiles = decompiler.getResources();
                     for (ResourceFile resFile : resourceFiles) {
                         if (resFile == null || resFile.getDeobfName() == null) continue;
                         
@@ -710,7 +712,7 @@ public class ResourceRoutes {
                 return;
             } else if (status == ResourceCacheManager.CacheStatus.NOT_INITIALIZED) {
                 // Trigger cache loading
-                boolean started = ResourceCacheManager.initCache(mainWindow.getWrapper());
+                boolean started = ResourceCacheManager.initCache(decompiler);
                 Map<String, Object> result = new HashMap<>();
                 result.put("type", "application-resources");
                 result.put("status", started ? "loading_started" : "loading");
@@ -722,17 +724,14 @@ public class ResourceRoutes {
             // On ERROR status, we still try to get standalone files
             
             // Also add standalone resource files (not in resources.arsc)
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper != null) {
-                List<ResourceFile> resourceFiles = wrapper.getResources();
-                if (resourceFiles != null) {
-                    for (ResourceFile resFile : resourceFiles) {
-                        if (resFile != null && resFile.getDeobfName() != null) {
-                            String name = resFile.getDeobfName();
-                            // Skip resources.arsc as subfiles are already in cache
-                            if (!"resources.arsc".equals(name) && !resourceFileNames.contains(name)) {
-                                resourceFileNames.add(name);
-                            }
+            List<ResourceFile> resourceFiles = decompiler.getResources();
+            if (resourceFiles != null) {
+                for (ResourceFile resFile : resourceFiles) {
+                    if (resFile != null && resFile.getDeobfName() != null) {
+                        String name = resFile.getDeobfName();
+                        // Skip resources.arsc as subfiles are already in cache
+                        if (!"resources.arsc".equals(name) && !resourceFileNames.contains(name)) {
+                            resourceFileNames.add(name);
                         }
                     }
                 }
@@ -773,7 +772,7 @@ public class ResourceRoutes {
      * This helper method is used to get the android manifest file using jadx's AndroidManifestParser class.
      */
     private ResourceFile getManifestFile() {
-        return AndroidManifestParser.getAndroidManifest(mainWindow.getWrapper().getResources());
+        return AndroidManifestParser.getAndroidManifest(decompiler.getResources());
     }
     
     /**
@@ -795,15 +794,14 @@ public class ResourceRoutes {
     public void handleJarManifest(Context ctx) {
         try {
             // Check file type - only available for JAR files
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
-            
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
+
             if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
                 // Not a JAR file - return NOT_APPLICABLE with APK alternative
                 Map<String, Object> response = new HashMap<>();
                 response.put("status", "NOT_APPLICABLE");
-                response.put("reason", "JAR Manifest is only available for JAR files. This is a " + 
+                response.put("reason", "JAR Manifest is only available for JAR files. This is a " +
                     fileType.getPrimaryType().getName().toUpperCase() + " file.");
                 response.put("file_type", fileType.getPrimaryType().getName());
                 response.put("alternatives", List.of(
@@ -812,9 +810,9 @@ public class ResourceRoutes {
                 ctx.json(response);
                 return;
             }
-            
+
             // Get the loaded JAR file
-            java.io.File jarFile = getLoadedFile(wrapper);
+            java.io.File jarFile = getLoadedFile();
             if (jarFile == null || !jarFile.exists()) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "No JAR file loaded.", logger);
                 return;
@@ -904,14 +902,13 @@ public class ResourceRoutes {
     }
     
     /**
-     * Get the loaded file from JADX wrapper.
+     * Get the loaded file from JADX decompiler.
      */
-    private java.io.File getLoadedFile(JadxWrapper wrapper) {
+    private java.io.File getLoadedFile() {
         try {
-            if (wrapper == null) return null;
-            java.util.List<java.nio.file.Path> inputFiles = wrapper.getProject().getFilePaths();
+            java.util.List<java.io.File> inputFiles = decompiler.getArgs().getInputFiles();
             if (inputFiles != null && !inputFiles.isEmpty()) {
-                return inputFiles.get(0).toFile();
+                return inputFiles.get(0);
             }
         } catch (Exception e) {
             logger.debug("Failed to get loaded file: " + e.getMessage());
@@ -937,15 +934,14 @@ public class ResourceRoutes {
     public void handleJarServices(Context ctx) {
         try {
             // Check file type - only available for JAR files
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
-            
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
+
             if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
                 // Not a JAR file - return NOT_APPLICABLE
                 Map<String, Object> response = new HashMap<>();
                 response.put("status", "NOT_APPLICABLE");
-                response.put("reason", "JAR Services (SPI) is only available for JAR files. This is a " + 
+                response.put("reason", "JAR Services (SPI) is only available for JAR files. This is a " +
                     fileType.getPrimaryType().getName().toUpperCase() + " file.");
                 response.put("file_type", fileType.getPrimaryType().getName());
                 response.put("alternatives", List.of(
@@ -954,9 +950,9 @@ public class ResourceRoutes {
                 ctx.json(response);
                 return;
             }
-            
+
             // Get the loaded JAR file
-            java.io.File jarFile = getLoadedFile(wrapper);
+            java.io.File jarFile = getLoadedFile();
             if (jarFile == null || !jarFile.exists()) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "No JAR file loaded.", logger);
                 return;
@@ -1046,25 +1042,24 @@ public class ResourceRoutes {
      */
     public void handleConfigStrings(Context ctx) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
-            
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
+
             String mode = ctx.queryParam("mode");
             if (mode == null) mode = "summary";
-            
+
             Map<String, Object> result = new HashMap<>();
             result.put("type", "config-strings");
-            
+
             if (fileType.hasAndroidFeatures()) {
                 // APK/AAR: Delegate to existing strings handler logic
                 result.put("source_type", "android_strings");
                 result.put("source_file", "res/values/strings.xml");
                 result.put("note", "For full functionality, use get_strings tool with mode parameter");
-                
+
                 // Quick summary of strings availability
                 try {
-                    ResourceFile stringsFile = findStringsXml(wrapper);
+                    ResourceFile stringsFile = findStringsXml();
                     if (stringsFile != null) {
                         result.put("available", true);
                         result.put("recommended_tool", "get_strings");
@@ -1080,8 +1075,9 @@ public class ResourceRoutes {
                 // JAR: Search for .properties files
                 result.put("source_type", "java_properties");
                 
-                java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().isEmpty() ? null 
-                    : wrapper.getProject().getFilePaths().get(0);
+                java.util.List<java.io.File> cfgInputFiles = decompiler.getArgs().getInputFiles();
+                java.nio.file.Path jarPath = (cfgInputFiles == null || cfgInputFiles.isEmpty()) ? null
+                    : cfgInputFiles.get(0).toPath();
                 if (jarPath == null) {
                     ctx.status(404).json(Map.of("error", "No JAR file loaded"));
                     return;
@@ -1187,12 +1183,12 @@ public class ResourceRoutes {
     /**
      * Find strings.xml in resources.
      */
-    private ResourceFile findStringsXml(JadxWrapper wrapper) {
-        List<ResourceFile> resources = wrapper.getResources();
+    private ResourceFile findStringsXml() {
+        List<ResourceFile> resources = decompiler.getResources();
         if (resources == null) return null;
-        
+
         for (ResourceFile res : resources) {
-            if (res.getOriginalName() != null && 
+            if (res.getOriginalName() != null &&
                 res.getOriginalName().contains("strings.xml")) {
                 return res;
             }
@@ -1213,23 +1209,23 @@ public class ResourceRoutes {
      */
     public void handleJarDependencies(Context ctx) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
-            
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
+
             if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
                 List<com.zin.jadxaimcp.utils.NotApplicableResponse.Alternative> alts = new ArrayList<>();
                 alts.add(new com.zin.jadxaimcp.utils.NotApplicableResponse.Alternative(
                     "get_file_info", "Get file type and available features"));
                 com.zin.jadxaimcp.utils.NotApplicableResponse.send(
-                    ctx, "Dependency analysis is only for JAR files. This is a " + 
+                    ctx, "Dependency analysis is only for JAR files. This is a " +
                     fileType.getPrimaryType().getName().toUpperCase() + " file.",
                     fileType.getPrimaryType().getName(), alts);
                 return;
             }
-            
-            java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().isEmpty() ? null 
-                : wrapper.getProject().getFilePaths().get(0);
+
+            java.util.List<java.io.File> depInputFiles = decompiler.getArgs().getInputFiles();
+            java.nio.file.Path jarPath = (depInputFiles == null || depInputFiles.isEmpty()) ? null
+                : depInputFiles.get(0).toPath();
             if (jarPath == null) {
                 ctx.status(404).json(Map.of("error", "No JAR file loaded"));
                 return;

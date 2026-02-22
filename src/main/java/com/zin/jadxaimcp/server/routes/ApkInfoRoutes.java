@@ -4,9 +4,8 @@ import io.javalin.http.Context;
 
 import jadx.api.ResourceFile;
 import jadx.core.utils.android.AndroidManifestParser;
+import jadx.api.JadxDecompiler;
 import jadx.core.xmlgen.ResContainer;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,11 +35,11 @@ import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
  */
 public class ApkInfoRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ApkInfoRoutes.class);
-    private final MainWindow mainWindow;
+    private final JadxDecompiler decompiler;
     private final JadxAIMCP plugin;
 
-    public ApkInfoRoutes(MainWindow mainWindow, JadxAIMCP plugin) {
-        this.mainWindow = mainWindow;
+    public ApkInfoRoutes(JadxDecompiler decompiler, JadxAIMCP plugin) {
+        this.decompiler = decompiler;
         this.plugin = plugin;
     }
 
@@ -67,17 +66,16 @@ public class ApkInfoRoutes {
             }
             result.put("instance_name", instanceName);
             
-            // Get JADX Wrapper
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) {
+            // Check decompiler is available
+            if (decompiler == null) {
                 result.put("loaded", false);
                 result.put("error", "No file loaded");
                 ctx.json(result);
                 return;
             }
-            
+
             // Detect file type
-            FileTypeDetector.DetectionResult detection = FileTypeDetector.detect(wrapper);
+            FileTypeDetector.DetectionResult detection = FileTypeDetector.detect(decompiler);
             result.putAll(detection.toMap());
             
             // Add unavailable tools for AI guidance
@@ -87,7 +85,7 @@ public class ApkInfoRoutes {
             }
             
             // Check if we have classes loaded
-            List<?> classes = wrapper.getIncludedClassesWithInners();
+            List<?> classes = decompiler.getClassesWithInners();
             if (classes == null || classes.isEmpty()) {
                 result.put("loaded", false);
                 result.put("error", "No classes available");
@@ -100,7 +98,7 @@ public class ApkInfoRoutes {
             
             // Try to get Android manifest info (only for APK/AAR)
             if (detection.hasAndroidFeatures()) {
-                parseAndroidManifest(wrapper, result);
+                parseAndroidManifest(decompiler, result);
             }
             
             // Server info
@@ -124,9 +122,9 @@ public class ApkInfoRoutes {
      * Parses AndroidManifest.xml to extract package and version info.
      * Only called when android_features is true.
      */
-    private void parseAndroidManifest(JadxWrapper wrapper, Map<String, Object> result) {
+    private void parseAndroidManifest(JadxDecompiler decompiler, Map<String, Object> result) {
         try {
-            List<ResourceFile> resources = wrapper.getResources();
+            List<ResourceFile> resources = decompiler.getResources();
             if (resources == null || resources.isEmpty()) {
                 return;
             }
@@ -197,30 +195,32 @@ public class ApkInfoRoutes {
         try {
             Map<String, Object> result = new HashMap<>();
             result.put("type", "file-info");
-            
-            // Get JADX Wrapper
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            if (wrapper == null) {
+
+            // Check decompiler is available
+            if (decompiler == null) {
                 result.put("loaded", false);
                 result.put("error", "No file loaded");
                 ctx.json(result);
                 return;
             }
-            
+
             // Detect file type
-            FileTypeDetector.DetectionResult detection = FileTypeDetector.detect(wrapper);
+            FileTypeDetector.DetectionResult detection = FileTypeDetector.detect(decompiler);
             result.put("file_type", detection.getPrimaryType().getName());
             result.put("android_features", detection.hasAndroidFeatures());
             result.put("smali_available", detection.isSmaliAvailable());
             
             // Get file name
-            List<java.nio.file.Path> filePaths = wrapper.getProject().getFilePaths();
+            List<java.io.File> inputFiles = decompiler.getArgs().getInputFiles();
+            List<java.nio.file.Path> filePaths = inputFiles != null
+                ? inputFiles.stream().map(java.io.File::toPath).collect(java.util.stream.Collectors.toList())
+                : java.util.Collections.emptyList();
             if (!filePaths.isEmpty()) {
                 result.put("file_name", filePaths.get(0).getFileName().toString());
             }
             
             // Class count
-            List<?> classes = wrapper.getIncludedClassesWithInners();
+            List<?> classes = decompiler.getClassesWithInners();
             if (classes == null || classes.isEmpty()) {
                 result.put("loaded", false);
                 result.put("error", "No classes available");
@@ -234,7 +234,7 @@ public class ApkInfoRoutes {
             if (detection.hasAndroidFeatures()) {
                 // APK/AAR specific info
                 result.put("file_category", "android");
-                parseAndroidManifest(wrapper, result);
+                parseAndroidManifest(decompiler, result);
                 result.put("recommended_tools", List.of(
                     "get_android_manifest",
                     "get_main_activity_class", 

@@ -6,9 +6,9 @@ import jadx.api.JavaClass;
 import jadx.api.JavaField;
 import jadx.api.JavaMethod;
 import jadx.api.metadata.ICodeNodeRef;
+import jadx.api.JadxDecompiler;
+import jadx.api.plugins.events.JadxEvents;
 import jadx.api.plugins.events.types.NodeRenamedByUser;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,10 +23,12 @@ import com.zin.jadxaimcp.utils.ClassCacheManager;
 
 public class RefactoringRoutes {
     private static final Logger logger = LoggerFactory.getLogger(RefactoringRoutes.class);
-    private final MainWindow mainWindow;
+    private final JadxDecompiler decompiler;
+    private final JadxEvents events;
     
-    public RefactoringRoutes(MainWindow mainWindow) {
-        this.mainWindow = mainWindow;
+    public RefactoringRoutes(JadxDecompiler decompiler, JadxEvents events) {
+        this.decompiler = decompiler;
+        this.events = events;
     }
 
     /**
@@ -45,11 +47,10 @@ public class RefactoringRoutes {
         if (validateParams(ctx, className, newName)) return;
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
             
             // Initialize cache if needed
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Use cache for fast lookup
@@ -61,7 +62,7 @@ public class RefactoringRoutes {
                 NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, cls.getName(), newName);
                 event.setRenameNode(cls.getClassNode());
                 event.setResetName(newName.isEmpty());
-                mainWindow.events().send(event);
+                events.send(event);
 
                 logger.info("Renaming Class {} to {}", cls.getName(), newName);
                 ctx.json(Map.of("result", "Renamed Class " + cls.getName() + " to " + newName));
@@ -96,11 +97,10 @@ public class RefactoringRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
             
             // Initialize cache if needed
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Extract class name from method_name (format: com.example.Class:methodName or com.example.Class.methodName)
@@ -133,7 +133,7 @@ public class RefactoringRoutes {
                         NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, method.getName(), newName);
                         event.setRenameNode(method.getMethodNode());
                         event.setResetName(newName.isEmpty());
-                        mainWindow.events().send(event);
+                        events.send(event);
 
                         logger.info("Renaming method {} to {}", method.getName(), newName);
                         ctx.json(Map.of("result", "Rename method " + method.getName() + " to " + newName));
@@ -168,11 +168,10 @@ public class RefactoringRoutes {
         if (validateParams(ctx, className, oldFieldName, newFieldName)) return;
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
             
             // Initialize cache if needed
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Use cache for fast lookup
@@ -186,7 +185,7 @@ public class RefactoringRoutes {
                         NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, field.getName(), newFieldName);
                         event.setRenameNode(field.getFieldNode());
                         event.setResetName(newFieldName.isEmpty());
-                        mainWindow.events().send(event);
+                        events.send(event);
 
                         logger.info("Renaming field {} to {}", field.getName(), newFieldName);
                         ctx.json(Map.of("result", "Renamed field " + field.getName() + " to " + newFieldName));
@@ -219,12 +218,11 @@ public class RefactoringRoutes {
         if (validateParams(ctx, oldPackage, newPackage)) return;
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
             List<String> errors = new ArrayList<>();
             int count = 0;
             int total = 0;
 
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            for (JavaClass cls : decompiler.getClassesWithInners()) {
                 String fullName = cls.getFullName();
                 if (fullName.startsWith(oldPackage + ".") || fullName.equals(oldPackage)) {
                     total++;
@@ -235,7 +233,7 @@ public class RefactoringRoutes {
                         NodeRenamedByUser event = new NodeRenamedByUser(cls.getCodeNodeRef(), cls.getName(), newFullName);
                         event.setRenameNode(cls.getClassNode());
                         event.setResetName(false);
-                        mainWindow.events().send(event);
+                        events.send(event);
                         count++;
                     } catch (Exception e) {
                         errors.add("Failed to rename " + fullName + ": " + e.getMessage());

@@ -18,8 +18,7 @@ import jadx.core.utils.android.AndroidManifestParser;
 import jadx.core.utils.android.AppAttribute;
 import jadx.core.utils.android.ApplicationParams;
 import jadx.core.utils.exceptions.JadxRuntimeException;
-import jadx.gui.JadxWrapper;
-import jadx.gui.ui.MainWindow;
+import jadx.api.JadxDecompiler;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -29,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
+import javax.swing.JFrame;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -42,13 +42,6 @@ import java.util.Set;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.regex.Pattern;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -62,13 +55,10 @@ import com.zin.jadxaimcp.utils.SmartChunker;
 
 public class ClassRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ClassRoutes.class);
-    private final MainWindow mainWindow;
+    private final JadxDecompiler decompiler;
+    private final JFrame ownerFrame;
     private final PaginationUtils paginationUtils;
     
-    // Thread pool for parallel batch search
-    private static final ExecutorService SEARCH_EXECUTOR = Executors.newFixedThreadPool(
-        Math.max(2, Runtime.getRuntime().availableProcessors() - 1));
-
     /**
      * Enum for specifying search locations in handleSearchClassesByKeyword.
      * Supports searching in different parts of decompiled code.
@@ -103,8 +93,9 @@ public class ClassRoutes {
     private static final int MAX_RESULT_LIMIT = 200;      // Maximum results per page
     private static final int SEARCH_TIMEOUT_SECONDS = 60; // Timeout for search operations
 
-    public ClassRoutes(MainWindow mainWindow, PaginationUtils paginationUtils) {
-        this.mainWindow = mainWindow;
+    public ClassRoutes(JadxDecompiler decompiler, JFrame ownerFrame, PaginationUtils paginationUtils) {
+        this.decompiler = decompiler;
+        this.ownerFrame = ownerFrame;
         this.paginationUtils = paginationUtils;
     }
 
@@ -171,8 +162,7 @@ public class ClassRoutes {
      */
     public void handleAllClasses(Context ctx) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            List<JavaClass> classes = wrapper.getIncludedClassesWithInners();
+            List<JavaClass> classes = decompiler.getClassesWithInners();
 
             Map<String, Object> result = paginationUtils.handlePagination(
                     ctx,
@@ -205,7 +195,10 @@ public class ClassRoutes {
      */
     public void handleSelectedText(Context ctx) {
         try {
-            Component selectedComponent = mainWindow.getTabbedPane().getSelectedComponent();
+            jadx.gui.ui.MainWindow mw = ownerFrame instanceof jadx.gui.ui.MainWindow
+                ? (jadx.gui.ui.MainWindow) ownerFrame : null;
+            Component selectedComponent = (mw != null && mw.getTabbedPane() != null)
+                ? mw.getTabbedPane().getSelectedComponent() : null;
             JTextArea textArea = findTextArea(selectedComponent);
             String selectedText = textArea != null ? textArea.getSelectedText() : null;
 
@@ -255,11 +248,10 @@ public class ClassRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            for (JavaClass cls : decompiler.getClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
                     String code = cls.getCode();
-                    
+
                     // Use SmartChunker for automatic chunking of large responses
                     Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
                         code, chunk, "response");
@@ -322,11 +314,9 @@ public class ClassRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            
             // Initialize cache if not already done
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
-                ClassCacheManager.initCache(wrapper);
+                ClassCacheManager.initCache(decompiler);
             }
             
             // Check cache status
@@ -430,8 +420,7 @@ public class ClassRoutes {
         // className = className.replace('$', '.');
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            for (JavaClass cls : decompiler.getClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
                     // First pass: count overloads for each method name
                     Map<String, Integer> overloadCounts = new HashMap<>();
@@ -520,8 +509,7 @@ public class ClassRoutes {
             return;
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            for (JavaClass cls : decompiler.getClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
                     List<Map<String, Object>> fieldsList = new ArrayList<>();
                     
@@ -611,18 +599,16 @@ public class ClassRoutes {
         }
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            
             // Check file type - Smali only available for DEX-based files
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
             if (!fileType.isSmaliAvailable()) {
                 com.zin.jadxaimcp.utils.NotApplicableResponse.sendSmaliNotAvailable(
                     ctx, fileType.getPrimaryType().getName());
                 return;
             }
-            
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+
+            for (JavaClass cls : decompiler.getClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
                     String smali = cls.getSmali();
                     if (smali == null || smali.isEmpty()) {
@@ -671,8 +657,7 @@ public class ClassRoutes {
             return;
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            for (JavaClass cls : decompiler.getClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
                     Map<String, Object> info = new HashMap<>();
                     info.put("class_name", cls.getFullName());
@@ -804,18 +789,16 @@ public class ClassRoutes {
                 }
             }
 
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            
             // Check file type - Main Activity only available for Android files
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
             if (!fileType.hasAndroidFeatures()) {
                 com.zin.jadxaimcp.utils.NotApplicableResponse.sendMainActivityNotAvailable(
                     ctx, fileType.getPrimaryType().getName());
                 return;
             }
-            
-            ResourceFile manifestRes = AndroidManifestParser.getAndroidManifest(mainWindow.getWrapper().getResources());
+
+            ResourceFile manifestRes = AndroidManifestParser.getAndroidManifest(decompiler.getResources());
             if (manifestRes == null) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "AndroidManifest.xml not found", logger);
                 return;
@@ -824,7 +807,7 @@ public class ClassRoutes {
             AndroidManifestParser parser = new AndroidManifestParser(
                     manifestRes,
                     EnumSet.of(AppAttribute.MAIN_ACTIVITY),
-                    wrapper.getArgs().getSecurity());
+                    decompiler.getArgs().getSecurity());
 
             if (!parser.isManifestFound()) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "AndroidManifest.xml not found.", logger);
@@ -837,7 +820,7 @@ public class ClassRoutes {
                 return;
             }
 
-            JavaClass mainActivityClass = results.getMainActivityJavaClass(wrapper.getDecompiler());
+            JavaClass mainActivityClass = results.getMainActivityJavaClass(decompiler);
             if (mainActivityClass == null) {
                 JadxAIMCPPluginError.handleError(ctx, 404, "Failed to get activity class: " + results.getApplication(),
                         logger);
@@ -876,8 +859,7 @@ public class ClassRoutes {
      */
     public void handleMainApplicationClassesNames(Context ctx) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            List<ResourceFile> resources = wrapper.getResources();
+            List<ResourceFile> resources = decompiler.getResources();
 
             // get the manifest resource file
             ResourceFile manifestRes = AndroidManifestParser.getAndroidManifest(resources);
@@ -890,7 +872,7 @@ public class ClassRoutes {
             String manifestXml = manifestRes.loadContent()
                     .getText()
                     .getCodeStr();
-            Document manifestDoc = parseManifestXml(manifestXml, wrapper.getArgs().getSecurity());
+            Document manifestDoc = parseManifestXml(manifestXml, decompiler.getArgs().getSecurity());
 
             // Extract the package name from the <manifest> tag
             Element manifestElement = (Element) manifestDoc.getElementsByTagName("manifest").item(0);
@@ -902,8 +884,7 @@ public class ClassRoutes {
             }
 
             // Changed the getClasses() to getClassesWithInners()
-            List<JavaClass> matchedClasses = wrapper.getDecompiler()
-                    .getClassesWithInners()
+            List<JavaClass> matchedClasses = decompiler.getClassesWithInners()
                     .stream()
                     .filter(cls -> cls.getFullName().startsWith(packageName))
                     .collect(Collectors.toList());
@@ -949,8 +930,7 @@ public class ClassRoutes {
      */
     public void handleMainApplicationClassesCode(Context ctx) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            List<ResourceFile> resources = wrapper.getResources();
+            List<ResourceFile> resources = decompiler.getResources();
 
             // get the manifest resource file
             ResourceFile manifestRes = AndroidManifestParser.getAndroidManifest(resources);
@@ -963,7 +943,7 @@ public class ClassRoutes {
             String manifestXml = manifestRes.loadContent()
                     .getText()
                     .getCodeStr();
-            Document manifestDoc = parseManifestXml(manifestXml, wrapper.getArgs().getSecurity());
+            Document manifestDoc = parseManifestXml(manifestXml, decompiler.getArgs().getSecurity());
 
             // Extract the package name from the <manifest> tag
             Element manifestElement = (Element) manifestDoc.getElementsByTagName("manifest").item(0);
@@ -977,8 +957,7 @@ public class ClassRoutes {
             logger.info("JADX AI MCP: Package name: " + packageName);
             // filter classes under this package
             // Changed the getClasses() to getClassesWithInners()
-            List<JavaClass> matchedClasses = wrapper.getDecompiler()
-                    .getClassesWithInners()
+            List<JavaClass> matchedClasses = decompiler.getClassesWithInners()
                     .stream()
                     .filter(cls -> cls.getFullName().startsWith(packageName))
                     .collect(Collectors.toList());
@@ -1085,8 +1064,7 @@ public class ClassRoutes {
         count = Math.min(count, MAX_RESULT_LIMIT);
 
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+            List<JavaClass> allClasses = decompiler.getClassesWithInners();
             final String term = searchTerm.toLowerCase();
 
             // Apply package filter and exclusions first
@@ -1133,88 +1111,22 @@ public class ClassRoutes {
                 long startTime = System.currentTimeMillis();
                 int batchCount = 0;
                 
-                if (isCodeSearch && filteredClasses.size() > 100) {
-                    // Use JADX's smart batching for code search
-                    List<JavaClass> topClasses = new ArrayList<>();
-                    for (JavaClass cls : filteredClasses) {
-                        if (!cls.isInner()) {
-                            topClasses.add(cls);
+                // Sequential search for all class sets
+                for (JavaClass cls : filteredClasses) {
+                    if (cancelled.get()) break;
+
+                    boolean matches = false;
+                    for (SearchLocation location : searchLocations) {
+                        if (classMatchesInLocation(cls, term, location)) {
+                            matches = true;
+                            break;
                         }
                     }
-                    
-                    List<List<JavaClass>> batches = wrapper.buildDecompileBatches(topClasses);
-                    batchCount = batches.size();
-                    
-                    logger.info("JADX AI MCP: Code search '{}' using {} parallel batches", searchTerm, batchCount);
-                    
-                    // Create search tasks for each batch
-                    Set<JavaClass> includedSet = new HashSet<>(filteredClasses);
-                    List<Future<?>> futures = new ArrayList<>();
-                    
-                    for (List<JavaClass> batch : batches) {
-                        Future<?> future = SEARCH_EXECUTOR.submit(() -> {
-                            for (JavaClass cls : batch) {
-                                if (cancelled.get()) return;
-                                if (!includedSet.contains(cls) && !cls.isInner()) continue;
-                                
-                                try {
-                                    boolean matches = false;
-                                    for (SearchLocation location : searchLocations) {
-                                        if (classMatchesInLocation(cls, term, location)) {
-                                            matches = true;
-                                            break;
-                                        }
-                                    }
-                                    if (matches) {
-                                        int total = totalMatches.incrementAndGet();
-                                        results.add(cls.getFullName());
-                                        // Early exit when we have enough
-                                        if (total >= resultsNeeded) {
-                                            cancelled.set(true);
-                                        }
-                                    }
-                                } catch (Exception e) {
-                                    // Skip failed classes
-                                }
-                            }
-                        });
-                        futures.add(future);
-                    }
-                    
-                    // Wait for all batches with timeout
-                    for (Future<?> future : futures) {
-                        try {
-                            long elapsed = System.currentTimeMillis() - startTime;
-                            long remaining = SEARCH_TIMEOUT_SECONDS * 1000 - elapsed;
-                            if (remaining > 0) {
-                                future.get(remaining, TimeUnit.MILLISECONDS);
-                            } else {
-                                future.cancel(true);
-                            }
-                        } catch (TimeoutException e) {
-                            future.cancel(true);
-                        } catch (Exception e) {
-                            // Continue with other batches
-                        }
-                    }
-                } else {
-                    // Simple sequential search for metadata search or small class sets
-                    for (JavaClass cls : filteredClasses) {
-                        if (cancelled.get()) break;
-                        
-                        boolean matches = false;
-                        for (SearchLocation location : searchLocations) {
-                            if (classMatchesInLocation(cls, term, location)) {
-                                matches = true;
-                                break;
-                            }
-                        }
-                        if (matches) {
-                            int total = totalMatches.incrementAndGet();
-                            results.add(cls.getFullName());
-                            if (total >= resultsNeeded) {
-                                cancelled.set(true);
-                            }
+                    if (matches) {
+                        int total = totalMatches.incrementAndGet();
+                        results.add(cls.getFullName());
+                        if (total >= resultsNeeded) {
+                            cancelled.set(true);
                         }
                     }
                 }
@@ -1615,12 +1527,14 @@ public class ClassRoutes {
      *         as String.
      */
     private String getSelectedTabTitle() {
-        if (mainWindow == null || mainWindow.getTabbedPane() == null)
+        jadx.gui.ui.MainWindow mw = ownerFrame instanceof jadx.gui.ui.MainWindow
+            ? (jadx.gui.ui.MainWindow) ownerFrame : null;
+        if (mw == null || mw.getTabbedPane() == null)
             return null;
 
-        int index = mainWindow.getTabbedPane().getSelectedIndex();
+        int index = mw.getTabbedPane().getSelectedIndex();
         if (index != -1) {
-            return mainWindow.getTabbedPane().getTitleAt(index);
+            return mw.getTabbedPane().getTitleAt(index);
         }
 
         return null;
@@ -1643,10 +1557,12 @@ public class ClassRoutes {
      *         checking for null.
      */
     private String extractTextFromCurrentTab() {
-        if (mainWindow == null)
+        jadx.gui.ui.MainWindow mw = ownerFrame instanceof jadx.gui.ui.MainWindow
+            ? (jadx.gui.ui.MainWindow) ownerFrame : null;
+        if (mw == null || mw.getTabbedPane() == null)
             return null;
 
-        Component component = mainWindow.getTabbedPane().getSelectedComponent();
+        Component component = mw.getTabbedPane().getSelectedComponent();
         JTextArea textArea = findTextArea(component);
 
         return textArea != null ? textArea.getText() : null;
@@ -1713,15 +1629,14 @@ public class ClassRoutes {
     public void handleJarEntryPoints(Context ctx) {
         try {
             // Check file type
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
-            
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
+
             if (fileType.getPrimaryType() != com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
                 // Not a JAR file - return NOT_APPLICABLE with APK alternative
                 Map<String, Object> response = new HashMap<>();
                 response.put("status", "NOT_APPLICABLE");
-                response.put("reason", "JAR entry points detection is only for JAR files. This is a " + 
+                response.put("reason", "JAR entry points detection is only for JAR files. This is a " +
                     fileType.getPrimaryType().getName().toUpperCase() + " file.");
                 response.put("file_type", fileType.getPrimaryType().getName());
                 response.put("alternatives", List.of(
@@ -1730,10 +1645,11 @@ public class ClassRoutes {
                 ctx.json(response);
                 return;
             }
-            
+
             // Get the loaded JAR file
-            java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().isEmpty() ? null 
-                : wrapper.getProject().getFilePaths().get(0);
+            java.util.List<java.io.File> epInputFiles = decompiler.getArgs().getInputFiles();
+            java.nio.file.Path jarPath = (epInputFiles == null || epInputFiles.isEmpty()) ? null
+                : epInputFiles.get(0).toPath();
             if (jarPath == null || !jarPath.toFile().exists()) {
                 ctx.status(404).json(Map.of("error", "No JAR file loaded"));
                 return;
@@ -1789,7 +1705,7 @@ public class ClassRoutes {
             
             // 2. Search for Spring Boot application classes by class name pattern
             // Note: Full annotation detection requires decompilation, skipped for performance
-            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+            List<JavaClass> allClasses = decompiler.getClassesWithInners();
             for (JavaClass cls : allClasses) {
                 try {
                     String className = cls.getFullName();
@@ -1889,9 +1805,8 @@ public class ClassRoutes {
      */
     public void handlePackageClasses(Context ctx) {
         try {
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
             
             String packagePrefix = ctx.queryParam("package");
             boolean autoDetect = "true".equalsIgnoreCase(ctx.queryParam("auto"));
@@ -1902,11 +1817,11 @@ public class ClassRoutes {
                 if (fileType.hasAndroidFeatures()) {
                     // APK/AAR: Get package from AndroidManifest.xml
                     try {
-                        List<ResourceFile> resources = wrapper.getResources();
+                        List<ResourceFile> resources = decompiler.getResources();
                         ResourceFile manifestRes = AndroidManifestParser.getAndroidManifest(resources);
                         if (manifestRes != null) {
                             String manifestXml = manifestRes.loadContent().getText().getCodeStr();
-                            Document manifestDoc = parseManifestXml(manifestXml, wrapper.getArgs().getSecurity());
+                            Document manifestDoc = parseManifestXml(manifestXml, decompiler.getArgs().getSecurity());
                             Element manifestElement = (Element) manifestDoc.getElementsByTagName("manifest").item(0);
                             packagePrefix = manifestElement.getAttribute("package");
                         }
@@ -1916,7 +1831,10 @@ public class ClassRoutes {
                 } else if (fileType.getPrimaryType() == com.zin.jadxaimcp.utils.FileTypeDetector.FileType.JAR) {
                     // JAR: Try to detect main package from manifest or top-level classes
                     try {
-                        java.nio.file.Path jarPath = wrapper.getProject().getFilePaths().get(0);
+                        java.util.List<java.io.File> pkgInputFiles = decompiler.getArgs().getInputFiles();
+                        java.nio.file.Path jarPath = (pkgInputFiles == null || pkgInputFiles.isEmpty()) ? null
+                            : pkgInputFiles.get(0).toPath();
+                        if (jarPath == null) throw new IllegalStateException("No JAR file loaded");
                         try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarPath.toFile())) {
                             java.util.jar.Manifest manifest = jar.getManifest();
                             if (manifest != null) {
@@ -1948,9 +1866,9 @@ public class ClassRoutes {
             
             // Filter classes
             final String pkgPrefix = packagePrefix;
-            List<JavaClass> allClasses = includeInner 
-                ? wrapper.getIncludedClassesWithInners()
-                : wrapper.getDecompiler().getClasses();
+            List<JavaClass> allClasses = includeInner
+                ? decompiler.getClassesWithInners()
+                : decompiler.getClasses();
                 
             List<JavaClass> matchedClasses = allClasses.stream()
                 .filter(cls -> cls.getFullName().startsWith(pkgPrefix + ".") || 
@@ -2009,13 +1927,12 @@ public class ClassRoutes {
                 return;
             }
             
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType = 
-                com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
-            
+            com.zin.jadxaimcp.utils.FileTypeDetector.DetectionResult fileType =
+                com.zin.jadxaimcp.utils.FileTypeDetector.detect(decompiler);
+
             // Find the class
             JavaClass targetClass = null;
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            for (JavaClass cls : decompiler.getClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
                     targetClass = cls;
                     break;

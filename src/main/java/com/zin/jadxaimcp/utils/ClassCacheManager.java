@@ -1,7 +1,7 @@
 package com.zin.jadxaimcp.utils;
 
 import jadx.api.JavaClass;
-import jadx.gui.JadxWrapper;
+import jadx.api.JadxDecompiler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,17 +37,18 @@ public class ClassCacheManager {
     }
     
     /**
-     * Initialize the cache asynchronously
+     * Initialize the cache asynchronously.
+     * Uses JadxDecompiler (public API) instead of JadxWrapper (internal API).
      */
-    public static void initCache(JadxWrapper wrapper) {
+    public static void initCache(JadxDecompiler decompiler) {
         if (isInitialized.compareAndSet(false, true)) {
             startTime.set(System.currentTimeMillis());
             currentPhase.set("LOADING");
-            
+
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                 try {
                     logger.info("[JAI] Loading class cache...");
-                    List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+                    List<JavaClass> allClasses = decompiler.getClassesWithInners();
                     
                     Map<String, JavaClass> temp = new HashMap<>();
                     for (JavaClass cls : allClasses) {

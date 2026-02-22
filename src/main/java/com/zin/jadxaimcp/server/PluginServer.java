@@ -1,8 +1,9 @@
 package com.zin.jadxaimcp.server;
 
 import io.javalin.Javalin;
-import jadx.gui.ui.MainWindow;
-import jadx.api.plugins.events.types.NodeRenamedByUser;
+import jadx.api.JadxDecompiler;
+import jadx.api.plugins.JadxPluginContext;
+import jadx.api.plugins.events.JadxEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,9 +13,12 @@ import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
 import com.zin.jadxaimcp.server.routes.*; // MCP tool call's request handlers
 
+import javax.swing.JFrame;
+
 public class PluginServer {
     private static final Logger logger = LoggerFactory.getLogger(PluginServer.class);
-    private final MainWindow mainWindow;
+    private final JadxPluginContext pluginContext;
+    private final JFrame ownerFrame;
     private final int port;
     private final String bindAddress;
     private Javalin app;
@@ -24,35 +28,39 @@ public class PluginServer {
     private volatile boolean isRunning = false;
 
     /**
-     * @param mainWindows - The main Jadx window context
-     * @param port        - The port to listen on
+     * @param pluginContext - The jadx plugin context (public API)
+     * @param ownerFrame    - The main window frame (for dialog ownership)
+     * @param port          - The port to listen on
      */
-    public PluginServer(MainWindow mainWindow, int port) {
-        this(mainWindow, port, "0.0.0.0");
+    public PluginServer(JadxPluginContext pluginContext, JFrame ownerFrame, int port) {
+        this(pluginContext, ownerFrame, port, "0.0.0.0");
     }
 
     /**
-     * @param mainWindow  - The main Jadx window context
-     * @param port        - The port to listen on
-     * @param bindAddress - The address to bind to (e.g., "127.0.0.1" or "0.0.0.0")
+     * @param pluginContext - The jadx plugin context (public API)
+     * @param ownerFrame    - The main window frame
+     * @param port          - The port to listen on
+     * @param bindAddress   - The address to bind to (e.g., "127.0.0.1" or "0.0.0.0")
      */
-    public PluginServer(MainWindow mainWindow, int port, String bindAddress) {
-        this(mainWindow, port, bindAddress, null);
+    public PluginServer(JadxPluginContext pluginContext, JFrame ownerFrame, int port, String bindAddress) {
+        this(pluginContext, ownerFrame, port, bindAddress, null);
     }
 
     /**
-     * @param mainWindow  - The main Jadx window context
-     * @param port        - The port to listen on
-     * @param bindAddress - The address to bind to
-     * @param plugin      - The plugin instance for APK info access and environment config
+     * @param pluginContext - The jadx plugin context (public API)
+     * @param ownerFrame    - The main window frame
+     * @param port          - The port to listen on
+     * @param bindAddress   - The address to bind to
+     * @param plugin        - The plugin instance for APK info access and environment config
      */
-    public PluginServer(MainWindow mainWindow, int port, String bindAddress, JadxAIMCP plugin) {
-        this.mainWindow = mainWindow;
+    public PluginServer(JadxPluginContext pluginContext, JFrame ownerFrame, int port, String bindAddress, JadxAIMCP plugin) {
+        this.pluginContext = pluginContext;
+        this.ownerFrame = ownerFrame;
         this.port = port;
         this.bindAddress = bindAddress;
         this.paginationUtils = new PaginationUtils();
         this.plugin = plugin;
-        
+
         // Initialize AuthConfig with environment overrides if plugin is available
         if (plugin != null) {
             this.authConfig = new AuthConfig(plugin.getEnvAuthToken(), plugin.getEnvAuthEnabled());
@@ -152,7 +160,7 @@ public class PluginServer {
                     // Show GUI warning dialog on EDT
                     javax.swing.SwingUtilities.invokeLater(() -> {
                         javax.swing.JOptionPane.showMessageDialog(
-                            mainWindow,
+                            ownerFrame,
                             "<html><b>[!] Security Warning</b><br><br>" +
                             "Server is bound to <b>0.0.0.0</b> (all network interfaces),<br>" +
                             "but <font color='red'>authentication is disabled</font>!<br><br>" +
@@ -174,8 +182,11 @@ public class PluginServer {
 
                     // Warmup class cache
                     try {
-                        ClassCacheManager.initCache(mainWindow.getWrapper());
-                        logger.info("[JAI] Class cache warmup initiated");
+                        JadxDecompiler decompiler = pluginContext.getDecompiler();
+                        if (decompiler != null) {
+                            ClassCacheManager.initCache(decompiler);
+                            logger.info("[JAI] Class cache warmup initiated");
+                        }
                     } catch (Exception e) {
                         logger.warn("[JAI] Failed to warmup class cache: " + e.getMessage());
                     }
@@ -296,21 +307,23 @@ public class PluginServer {
      * JADX API and providing consistent pagination across endpoints.
      */
     private void registerRoutes() {
-        // Instantiate Route Controllers
-        // Passing 'mainWindow' and 'paginationUtils' to them so they can do their work
-        GeneralRoutes generalRoutes = new GeneralRoutes(mainWindow, port, this);
-        ClassRoutes classRoutes = new ClassRoutes(mainWindow, paginationUtils);
-        MethodRoutes methodRoutes = new MethodRoutes(mainWindow, paginationUtils);
-        ResourceRoutes resourceRoutes = new ResourceRoutes(mainWindow);
-        RefactoringRoutes refactoringRoutes = new RefactoringRoutes(mainWindow);
-        XrefsRoutes xrefsRoutes = new XrefsRoutes(mainWindow);
+        // Instantiate Route Controllers using public plugin API types
+        JadxDecompiler decompiler = pluginContext.getDecompiler();
+        JadxEvents events = pluginContext.events();
+
+        GeneralRoutes generalRoutes = new GeneralRoutes(this);
+        ClassRoutes classRoutes = new ClassRoutes(decompiler, ownerFrame, paginationUtils);
+        MethodRoutes methodRoutes = new MethodRoutes(decompiler, paginationUtils);
+        ResourceRoutes resourceRoutes = new ResourceRoutes(decompiler, ownerFrame);
+        RefactoringRoutes refactoringRoutes = new RefactoringRoutes(decompiler, events);
+        XrefsRoutes xrefsRoutes = new XrefsRoutes(decompiler);
 
         // --- General & Health ---
         app.get("/health", generalRoutes::handleHealth);
 
         // --- APK Info (for multi-instance management) ---
         if (plugin != null) {
-            ApkInfoRoutes apkInfoRoutes = new ApkInfoRoutes(mainWindow, plugin);
+            ApkInfoRoutes apkInfoRoutes = new ApkInfoRoutes(decompiler, plugin);
             app.get("/apk-info", apkInfoRoutes::handleApkInfo);
             app.get("/file-info", apkInfoRoutes::handleFileInfo);
         }
@@ -372,15 +385,15 @@ public class PluginServer {
         // --- Decompilation Status ---
         app.get("/decompile-status", ctx -> {
             try {
-                jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
-                if (wrapper == null) {
+                JadxDecompiler statusDecompiler = pluginContext.getDecompiler();
+                if (statusDecompiler == null) {
                     ctx.status(503).json(java.util.Map.of(
-                        "error", "JADX wrapper not initialized"
+                        "error", "Decompiler not initialized — load a file in JADX first"
                     ));
                     return;
                 }
-                
-                java.util.List<jadx.api.JavaClass> classes = wrapper.getIncludedClassesWithInners();
+
+                java.util.List<jadx.api.JavaClass> classes = statusDecompiler.getClassesWithInners();
                 int total = classes.size();
                 int processed = 0;
                 
@@ -424,19 +437,8 @@ public class PluginServer {
                 threadInfo.put("daemon_count", threadMXBean.getDaemonThreadCount());
                 response.put("threads", threadInfo);
                 
-                // === JADX Settings (real config from settings) ===
-                try {
-                    jadx.gui.settings.JadxSettings settings = mainWindow.getSettings();
-                    if (settings != null) {
-                        java.util.Map<String, Object> jadxConfig = new java.util.LinkedHashMap<>();
-                        jadxConfig.put("threads_count", settings.getThreadsCount());
-                        jadxConfig.put("code_cache_mode", settings.getCodeCacheMode().name());
-                        response.put("jadx_config", jadxConfig);
-                    }
-                } catch (Exception e) {
-                    // Settings access may fail, ignore
-                }
-                
+                // jadx_config omitted — JadxSettings is an internal API not exposed via plugin context
+
                 // === Search Lock Status (from JadxSearchLock) ===
                 response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
                 
@@ -484,7 +486,7 @@ public class PluginServer {
      * Automatically clears ClassCacheManager when any rename event occurs.
      */
     private void setupCacheInvalidation() {
-        mainWindow.events().addListener(jadx.api.plugins.events.JadxEvents.NODE_RENAMED_BY_USER, event -> {
+        pluginContext.events().addListener(jadx.api.plugins.events.JadxEvents.NODE_RENAMED_BY_USER, event -> {
             logger.info("[JAI] Rename detected, clearing class cache");
             ClassCacheManager.clearCache();
         });
