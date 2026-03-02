@@ -12,6 +12,48 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.1.4] - 2026-03-02
+
+### 🐛 Bug 修复
+
+**跨 ClassLoader 端口泄漏**
+- 修复 JADX 执行"重置代码缓存"（classloader 重载）时的端口泄漏问题
+- 使用 JVM 全局 `System.getProperties()` 存储 `ServerSocketChannel` 引用，跨 classloader 存活
+- 重新绑定前自动关闭孤立的 server socket，防止 `BindException`
+
+**菜单残留清理**
+- 修复 classloader 重载后出现重复 "JADX AI MCP Server" 菜单的问题
+- 添加新菜单前按文本匹配移除旧菜单项（倒序遍历，EDT 线程安全）
+
+### 🛡️ MCP 错误处理
+
+**结构化错误响应**
+- 添加实例状态预检：实例处于 `disconnected` 或 `pending` 状态时返回结构化错误
+- 细粒度 HTTP 异常处理：`ConnectError`、`ConnectTimeout`、`ReadTimeout` 各返回可操作的 `suggestion` 字段
+- 增强 HTTP 500 响应，包含截断的错误详情和恢复指导
+- 增强 HTTP 503 响应，解析 `retry_after` 和初始化状态
+
+### 📚 文档
+
+- 文档系统全面重构：整合 44 篇双语指南
+- 新增架构概述和项目介绍页面
+- 统一常见问题指南，替换原有 FAQ/Windows 故障排除
+- 精简 README，聚焦功能特性表
+
+### ⚙️ CI/CD
+
+- 基础镜像构建拆分为独立的 `docker-base.yml` 工作流
+- 矩阵构建使用原生 ARM runner（`ubuntu-24.04-arm`）— 3分钟 vs QEMU 的 20分钟
+- 更新 `JADX_VERSION` 至 1.5.5，`BASE_IMAGE_VERSION` 至 1.2
+- 移除未使用的 `test.yml` 工作流
+
+### 🔧 代码质量
+
+- 移除调试工具（`DebugRoutes.java`、`debug_tools.py`）
+- 代码审查修复和调试代码清理
+
+---
+
 ## [6.1.2] - 2026-02-06
 
 ### 🐛 Bug 修复

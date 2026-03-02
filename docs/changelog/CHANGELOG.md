@@ -12,6 +12,48 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.4] - 2026-03-02
+
+### 🐛 Bug Fixes
+
+**Cross-Classloader Port Leak**
+- Fixed port leak when JADX performs "Reset Code Cache" (classloader reload)
+- Uses JVM-global `System.getProperties()` to store `ServerSocketChannel` reference across classloaders
+- Automatically closes orphaned server sockets before rebinding, preventing `BindException`
+
+**Stale Menu Cleanup**
+- Fixed duplicate "JADX AI MCP Server" menu entries after classloader reload
+- Removes stale menu items by text-match before adding new ones (reverse-iteration, EDT-safe)
+
+### 🛡️ MCP Error Handling
+
+**Structured Error Responses**
+- Added instance status pre-check: returns structured error when instance is `disconnected` or `pending`
+- Fine-grained HTTP exception handling: `ConnectError`, `ConnectTimeout`, `ReadTimeout` each return actionable `suggestion` field
+- Enhanced HTTP 500 responses with truncated error details and recovery guidance
+- Enhanced HTTP 503 responses with `retry_after` parsing and initialization status
+
+### 📚 Documentation
+
+- Complete documentation restructure: consolidated 44 bilingual guides
+- Added architecture overview and introduction pages
+- Replaced FAQ/Windows troubleshooting with unified common-issues guide
+- Streamlined README with focused feature table
+
+### ⚙️ CI/CD
+
+- Split base image build into standalone `docker-base.yml` workflow
+- Matrix builds with native ARM runners (`ubuntu-24.04-arm`) — 3min vs 20min with QEMU
+- Updated `JADX_VERSION` to 1.5.5, `BASE_IMAGE_VERSION` to 1.2
+- Removed unused `test.yml` workflow
+
+### 🔧 Code Quality
+
+- Removed debug tools (`DebugRoutes.java`, `debug_tools.py`)
+- Code review fixes and debug code removal
+
+---
+
 ## [6.1.2] - 2026-02-06
 
 ### 🐛 Bug Fixes
