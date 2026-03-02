@@ -1,0 +1,46 @@
+name: Build Base Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: 'Base image version tag (e.g., 1.2)'
+        required: true
+        default: '1.2'
+
+env:
+  BASE_IMAGE_VERSION: ${{ github.event.inputs.base_version || '1.2' }}
+
+jobs:
+  docker-base:
+    name: Build Base Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.base
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            xjoker/jadx-ai-mcp-base:${{ env.BASE_IMAGE_VERSION }}
+            xjoker/jadx-ai-mcp-base:latest
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
