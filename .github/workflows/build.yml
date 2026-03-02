@@ -8,7 +8,7 @@ on:
 
 env:
   BASE_IMAGE_VERSION: "1.2"
-  JADX_VERSION: "1.5.3"
+  JADX_VERSION: "1.5.5"
 
 jobs:
   build:

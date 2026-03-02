@@ -1,8 +1,11 @@
 package com.zin.jadxaimcp.server;
 
+import java.nio.channels.ServerSocketChannel;
+
 import io.javalin.Javalin;
 import jadx.gui.ui.MainWindow;
 import jadx.api.plugins.events.types.NodeRenamedByUser;
+import org.eclipse.jetty.server.ServerConnector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +17,7 @@ import com.zin.jadxaimcp.server.routes.*; // MCP tool call's request handlers
 
 public class PluginServer {
     private static final Logger logger = LoggerFactory.getLogger(PluginServer.class);
+    private static final String JVM_SERVER_KEY = "jadx-ai-mcp-server-channel";
     private final MainWindow mainWindow;
     private final int port;
     private final String bindAddress;
@@ -88,6 +92,9 @@ public class PluginServer {
      */
     public void start() {
         try {
+            // Close orphaned server socket from previous classloader (e.g., after "Reset Code Cache")
+            closePreviousServerSocket();
+
             // Configure and start Javalin
             app = Javalin.create(config -> {
                 config.showJavalinBanner = false;
@@ -126,7 +133,11 @@ public class PluginServer {
 
             // Register all route handlers
             registerRoutes();
-            
+
+            // Store the underlying ServerSocketChannel in JVM-global properties
+            // so the next classloader can close it before rebinding
+            storeServerSocketChannel();
+
             // Register event listener for cache invalidation
             setupCacheInvalidation();
 
@@ -218,6 +229,7 @@ public class PluginServer {
             } finally {
                 app = null;
                 isRunning = false;
+                System.getProperties().remove(JVM_SERVER_KEY);
             }
         }
     }
@@ -256,6 +268,53 @@ public class PluginServer {
      */
     public String getBindAddress() {
         return bindAddress;
+    }
+
+    /**
+     * Closes any orphaned ServerSocketChannel left by a previous classloader.
+     * When JADX performs "Reset Code Cache", it creates a new classloader and
+     * the old static fields are lost—but the OS-level socket remains open.
+     * We use JVM-global System.getProperties() to pass the channel reference
+     * across classloader boundaries.
+     */
+    private void closePreviousServerSocket() {
+        try {
+            Object prev = System.getProperties().get(JVM_SERVER_KEY);
+            if (prev instanceof ServerSocketChannel) {
+                ServerSocketChannel oldChannel = (ServerSocketChannel) prev;
+                if (oldChannel.isOpen()) {
+                    logger.info("Closing orphaned ServerSocketChannel from previous classloader");
+                    oldChannel.close();
+                    // Brief wait for OS to release the port
+                    Thread.sleep(500);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to close previous server socket: " + e.getMessage(), e);
+        } finally {
+            System.getProperties().remove(JVM_SERVER_KEY);
+        }
+    }
+
+    /**
+     * Stores the underlying ServerSocketChannel in JVM-global properties so
+     * the next classloader instance can close it before rebinding.
+     */
+    private void storeServerSocketChannel() {
+        try {
+            org.eclipse.jetty.server.Server jettyServer = app.jettyServer().server();
+            org.eclipse.jetty.server.Connector[] connectors = jettyServer.getConnectors();
+            if (connectors.length > 0 && connectors[0] instanceof ServerConnector) {
+                ServerConnector connector = (ServerConnector) connectors[0];
+                Object transport = connector.getTransport();
+                if (transport instanceof ServerSocketChannel) {
+                    System.getProperties().put(JVM_SERVER_KEY, transport);
+                    logger.debug("Stored ServerSocketChannel in JVM-global properties for cross-classloader cleanup");
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not store ServerSocketChannel (non-fatal): " + e.getMessage());
+        }
     }
 
     /**

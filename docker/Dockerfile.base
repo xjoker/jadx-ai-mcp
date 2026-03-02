@@ -26,6 +26,8 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean \
 
 # First update and upgrade existing packages to fix security vulnerabilities
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    # CA certificates for HTTPS
+    ca-certificates \
     # X11 and VNC
     xvfb \
     x11vnc \

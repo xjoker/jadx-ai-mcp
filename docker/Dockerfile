@@ -22,7 +22,7 @@ ENV JADX_API_PORT=8650
 # Layer 1: Download JADX (changes only when JADX_VERSION changes)
 # This layer can be updated independently by changing JADX_VERSION
 # ============================================================================
-ARG JADX_VERSION=1.5.3
+ARG JADX_VERSION=1.5.5
 RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip \
     && unzip -q /tmp/jadx.zip -d /opt/jadx \
     && rm /tmp/jadx.zip \
