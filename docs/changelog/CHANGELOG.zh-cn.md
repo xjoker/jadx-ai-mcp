@@ -1,5 +1,9 @@
 # 更新日志
 
+[English](CHANGELOG.md) | **简体中文**
+
+---
+
 JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范。
@@ -62,7 +66,7 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 **部署场景**
 - 新增三种部署场景指南：
   - **标准模式**（GUI + AI）：`docker run -p 6080:6080 -p 8651:8651 ...`
-  - **无头模式**（仅 AI）：`docker run -p 8651:8651 ...`
+  - **仅 AI 模式**（不暴露 GUI 端口）：`docker run -p 8651:8651 ...`
   - **开发模式**（完整端口）：`docker run -p 6080:6080 -p 8650:8650 -p 8651:8651 ...`
 
 - 完善快速启动命令的端口映射说明

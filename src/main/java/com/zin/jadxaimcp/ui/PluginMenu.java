@@ -38,6 +38,16 @@ public class PluginMenu {
                 }
 
                 JMenu pluginsMenu = findOrCreatePluginsMenu(menuBar);
+
+                // Remove stale menu from previous classloader
+                for (int i = pluginsMenu.getItemCount() - 1; i >= 0; i--) {
+                    java.awt.Component item = pluginsMenu.getMenuComponent(i);
+                    if (item instanceof JMenu && "JADX AI MCP Server".equals(((JMenu) item).getText())) {
+                        pluginsMenu.remove(i);
+                        logger.debug("JADX-AI-MCP Plugin: Removed stale menu from previous classloader");
+                    }
+                }
+
                 JMenu mcpMenu = new JMenu("JADX AI MCP Server");
 
                 // Settings entry

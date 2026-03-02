@@ -4,55 +4,69 @@
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
 | Document | Description |
 |:---------|:------------|
-| [Quick Start](getting-started/quickstart.md) | 5-minute Docker deployment |
-| [Installation Guide](getting-started/installation.md) | Detailed installation for all platforms |
+| **[Introduction](overview/introduction.md)** | Understand core concepts, capabilities, use cases |
+| **[System Architecture](overview/architecture.md)** | Three-tier design, port reference, component communication |
+| **[5-Minute Quick Start](getting-started/quickstart.md)** | One-command Docker deployment |
 
 ---
 
-## Deployment Guides
+## 🐳 Deployment Guides
 
 | Document | Description |
 |:---------|:------------|
-| [Docker Deployment](deployment/docker.md) | Single container quick start |
-| [Docker Compose](deployment/docker-compose.md) | Multi-instance deployment |
-| [Local Installation](deployment/local.md) | Local development environment |
+| **[Docker Complete Guide](deployment/docker.md)** | Single container, multi-container, standalone MCP Server |
+| [Docker Compose](deployment/docker-compose.md) | Multi-instance setup (team collaboration, version comparison) |
+| [Local Installation](deployment/local.md) | Without Docker |
 
 ---
 
-## Guides
+## 🔧 Configuration & Integration
 
 | Document | Description |
 |:---------|:------------|
-| [AI Integration](guides/ai-integration.md) | Claude/Cursor/Continue configuration |
-| [AI Test Prompt](guides/ai-test-prompt.md) | Feature testing prompts |
+| **[AI Client Configuration](guides/ai-clients.md)** | Claude, Cursor, Continue, etc. |
+| [Multi-Instance Management](guides/multi-instance.md) | Parallel analysis of multiple APKs |
+| [AI Testing Prompts](guides/ai-prompts.md) | Automated testing templates |
 
 ---
 
-## Reference
+## 📚 Reference
 
 | Document | Description |
 |:---------|:------------|
 | [Tools Reference](reference/tools.md) | Complete 45 MCP tools matrix |
-| [Configuration](reference/configuration.md) | Detailed configuration options |
+| [Configuration Reference](reference/configuration.md) | All configuration options |
+| [Security Policy](security/security.md) | Authentication, permissions, SSRF protection |
 
 ---
 
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 | Document | Description |
 |:---------|:------------|
-| [FAQ](troubleshooting/faq.md) | Frequently Asked Questions |
-| [Windows Issues](troubleshooting/windows.md) | Windows-specific troubleshooting |
-
----
-
-## Other
-
-| Document | Description |
-|:---------|:------------|
-| [Security](security/security.md) | Authentication and permissions |
+| **[Common Issues](troubleshooting/common-issues.md)** | FAQ + Windows/Linux/macOS specific issues |
 | [Changelog](changelog/CHANGELOG.md) | Version history |
+
+---
+
+## 💡 Recommended Reading Path
+
+### New Users (First Time)
+1. [Introduction](overview/introduction.md) - Understand what this is
+2. [System Architecture](overview/architecture.md) - Understand how it works
+3. [Quick Start](getting-started/quickstart.md) - 5-minute deployment
+4. [AI Client Configuration](guides/ai-clients.md) - Connect your AI assistant
+
+### Troubleshooting
+1. [Common Issues](troubleshooting/common-issues.md) - Find solutions
+2. [System Architecture](overview/architecture.md) - Understand ports and communication
+3. [GitHub Issues](https://github.com/xjoker/jadx-ai-mcp/issues) - Submit issues
+
+### Advanced Users
+1. [Multi-Instance Management](guides/multi-instance.md) - Parallel analysis
+2. [Configuration Reference](reference/configuration.md) - Custom configuration
+3. [Security Policy](security/security.md) - Multi-user authentication

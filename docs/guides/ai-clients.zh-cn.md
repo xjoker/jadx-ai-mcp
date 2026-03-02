@@ -1,6 +1,6 @@
 # AI 集成指南
 
-[English](ai-integration.md) | **简体中文**
+[English](ai-clients.md) | **简体中文**
 
 ---
 
@@ -119,4 +119,4 @@
 
 - [配置参考](../reference/configuration.zh-cn.md)
 - [Docker 部署](../deployment/docker.zh-cn.md)
-- [常见问题](../troubleshooting/faq.zh-cn.md)
+- [常见问题](../troubleshooting/common-issues.zh-cn.md)

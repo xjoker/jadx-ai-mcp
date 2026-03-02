@@ -106,19 +106,8 @@ public final class JadxSearchLock {
     }
     
     /**
-     * Acquire the global search lock (blocking).
-     * Blocks indefinitely if another thread holds the lock.
-     * @deprecated Use tryAcquire() for fast-fail pattern
-     */
-    @Deprecated
-    public static void lock() {
-        LOCK.lock();
-        lockAcquireTime.set(System.currentTimeMillis());
-    }
-    
-    /**
      * Release the global search lock.
-     * Must be called in a finally block after tryAcquire()/lock().
+     * Must be called in a finally block after tryAcquire().
      */
     public static void release() {
         if (LOCK.isHeldByCurrentThread()) {
@@ -126,15 +115,7 @@ public final class JadxSearchLock {
             LOCK.unlock();
         }
     }
-    
-    /**
-     * @deprecated Use release() instead
-     */
-    @Deprecated
-    public static void unlock() {
-        release();
-    }
-    
+
     /**
      * Check if the lock is currently held by any thread.
      * Useful for status checking.

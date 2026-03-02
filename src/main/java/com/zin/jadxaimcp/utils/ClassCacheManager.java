@@ -128,7 +128,8 @@ public class ClassCacheManager {
     // All cache clear operations share this global 30-second cooldown
     private static final long CLEAR_DEBOUNCE_MS = 30000; // 30 seconds cooldown
     private static final AtomicLong lastClearTime = new AtomicLong(0);
-    
+    private static final Object clearLock = new Object();
+
     /**
      * Clear the cache with global 30-second cooldown (shared across all cache clear triggers).
      * Returns true if cache was cleared, false if debounced.
@@ -136,16 +137,23 @@ public class ClassCacheManager {
     public static boolean clearCache() {
         long now = System.currentTimeMillis();
         long lastClear = lastClearTime.get();
-        
+
         // Debounce: skip if cleared within cooldown period
         if (now - lastClear < CLEAR_DEBOUNCE_MS) {
             long remainingSecs = (CLEAR_DEBOUNCE_MS - (now - lastClear)) / 1000;
             logger.info("[JAI] Cache clear debounced (cooldown: {}s remaining)", remainingSecs);
             return false;
         }
-        
-        // Only clear if we can set the timestamp (atomic)
-        if (lastClearTime.compareAndSet(lastClear, now)) {
+
+        // Use synchronized block to ensure atomic update of all cache state
+        synchronized (clearLock) {
+            // Double-check after acquiring lock
+            lastClear = lastClearTime.get();
+            if (now - lastClear < CLEAR_DEBOUNCE_MS) {
+                return false;
+            }
+
+            lastClearTime.set(now);
             classCache.set(null);
             isInitialized.set(false);
             initFuture.set(null);
@@ -153,8 +161,6 @@ public class ClassCacheManager {
             logger.info("[JAI] Class cache cleared");
             return true;
         }
-        
-        return false;
     }
     
     /**

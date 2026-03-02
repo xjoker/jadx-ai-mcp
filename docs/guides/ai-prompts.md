@@ -1,5 +1,9 @@
 # JADX MCP Server AI Automated Testing Prompt
 
+**English** | [简体中文](ai-prompts.zh-cn.md)
+
+---
+
 This document provides a complete prompt template for AI-assisted testing of JADX MCP Server.
 
 ## Usage

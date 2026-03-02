@@ -1,5 +1,9 @@
 # JADX MCP Server AI 自动化测试提示词
 
+[English](ai-prompts.md) | **简体中文**
+
+---
+
 本文档提供用于 AI 辅助测试 JADX MCP Server 的完整提示词模板。
 
 ## 使用方法

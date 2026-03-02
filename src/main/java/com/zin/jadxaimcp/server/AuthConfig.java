@@ -198,12 +198,13 @@ public class AuthConfig {
         byte[] aBytes = a.getBytes(StandardCharsets.UTF_8);
         byte[] bBytes = b.getBytes(StandardCharsets.UTF_8);
 
-        if (aBytes.length != bBytes.length) {
-            return false;
-        }
+        // Prevent timing attack: always compare using the longer length
+        // XOR length difference into result to ensure different lengths fail
+        int result = aBytes.length ^ bBytes.length;
 
-        int result = 0;
-        for (int i = 0; i < aBytes.length; i++) {
+        // Compare up to the length of the shorter array
+        int minLen = Math.min(aBytes.length, bBytes.length);
+        for (int i = 0; i < minLen; i++) {
             result |= aBytes[i] ^ bBytes[i];
         }
 

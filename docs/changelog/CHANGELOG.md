@@ -1,5 +1,9 @@
 # Changelog
 
+**English** | [简体中文](CHANGELOG.zh-cn.md)
+
+---
+
 All notable changes to JADX-AI-MCP are documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
@@ -62,7 +66,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 **Deployment Scenarios**
 - Added three deployment scenario guides:
   - **Standard Mode** (GUI + AI): `docker run -p 6080:6080 -p 8651:8651 ...`
-  - **Headless Mode** (AI only): `docker run -p 8651:8651 ...`
+  - **AI-Only Mode** (No GUI port exposed): `docker run -p 8651:8651 ...`
   - **Development Mode** (Full ports): `docker run -p 6080:6080 -p 8650:8650 -p 8651:8651 ...`
 
 - Improved quick start commands with complete port mapping instructions
