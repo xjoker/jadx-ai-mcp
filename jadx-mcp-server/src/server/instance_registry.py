@@ -261,7 +261,7 @@ class InstanceRegistry:
         headers = {}
         if cls._shared_auth_token:
             headers["Authorization"] = f"Bearer {cls._shared_auth_token}"
-        
+
         try:
             async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
                 response = await client.get(url, headers=headers)
@@ -271,6 +271,25 @@ class InstanceRegistry:
         except Exception as e:
             logger.debug(f"Health check {host}:{port} failed: {e}")
             return False
+
+    @classmethod
+    async def _fetch_health_info(cls, host: str, port: int, token: str = None) -> dict:
+        """
+        Fetch full health info from JADX /health endpoint.
+
+        Returns dict with memory stats, OOM flag, etc.
+        Raises on connection failure.
+        """
+        url = f"http://{host}:{port}/health"
+        headers = {}
+        actual_token = token or cls._shared_auth_token
+        if actual_token:
+            headers["Authorization"] = f"Bearer {actual_token}"
+
+        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
     
     @classmethod
     def remove_instance(cls, name: str, username: str = None, is_admin: bool = False) -> dict:

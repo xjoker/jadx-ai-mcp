@@ -193,6 +193,21 @@ async def get_from_jadx(
             "suggestion": "Use 'list_instances' tool to check instance status. "
                           "If the instance was restarted, wait a few seconds and try again.",
         }
+
+    # Pre-check: warn AI client if instance is in degraded state (OOM or critical memory)
+    if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status == "degraded":
+        instance_name = getattr(instance_obj, 'name', instance_id or 'default')
+        return {
+            "error": f"JADX instance '{instance_name}' is degraded (out of memory)",
+            "status": "degraded",
+            "detail": "The JADX instance has encountered an OutOfMemoryError or is critically low on memory. "
+                       "Requests may fail or return incomplete results. "
+                       "The JVM is still running but cannot reliably process decompilation.",
+            "suggestion": "1. Restart JADX to recover from OOM state. "
+                          "2. If using Docker, increase memory limit (e.g., --memory=4g). "
+                          "3. For native JADX, increase JVM heap: edit jadx-gui script, add -Xmx4g. "
+                          "4. Try analyzing a smaller file or fewer classes at once.",
+        }
     
     url = f"{base_url}/{endpoint.lstrip('/')}"
     headers = {}

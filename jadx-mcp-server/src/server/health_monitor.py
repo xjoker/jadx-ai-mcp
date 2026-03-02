@@ -153,12 +153,11 @@ class HealthMonitor:
                     logger.debug(f"[HEALTH] Instance '{name}' still unavailable: {e}")
                     unhealthy_count += 1
             else:
-                # For connected instances, fetch apk_info to detect file changes
+                # For connected/degraded instances, fetch apk_info and health info
                 try:
                     apk_info = await InstanceRegistry._fetch_apk_info(
                         instance.host, instance.port, instance.token
                     )
-                    healthy_count += 1
 
                     # Detect if loaded file changed
                     old_pkg = instance.apk_info.get("apk_package")
@@ -166,9 +165,44 @@ class HealthMonitor:
                     if old_pkg != new_pkg:
                         logger.info(f"[HEALTH] Instance '{name}' loaded file changed: {old_pkg} -> {new_pkg}")
 
+                    # Check for OOM and high memory via /health endpoint
+                    new_status = "connected"
+                    try:
+                        health_info = await InstanceRegistry._fetch_health_info(
+                            instance.host, instance.port, instance.token
+                        )
+                        memory = health_info.get("memory", {})
+                        oom_detected = memory.get("oom_detected", False)
+                        mem_percent = memory.get("percent", 0)
+
+                        if oom_detected:
+                            new_status = "degraded"
+                            logger.error(
+                                f"[HEALTH] Instance '{name}' OOM detected! "
+                                f"Memory: {memory.get('used_mb', '?')}MB/{memory.get('max_mb', '?')}MB ({mem_percent}%). "
+                                f"Restart JADX to recover."
+                            )
+                        elif mem_percent >= 95:
+                            new_status = "degraded"
+                            logger.warning(
+                                f"[HEALTH] Instance '{name}' critically low memory: "
+                                f"{memory.get('used_mb', '?')}MB/{memory.get('max_mb', '?')}MB ({mem_percent}%)"
+                            )
+                        elif mem_percent >= 85:
+                            logger.warning(
+                                f"[HEALTH] Instance '{name}' high memory usage: "
+                                f"{memory.get('used_mb', '?')}MB/{memory.get('max_mb', '?')}MB ({mem_percent}%)"
+                            )
+                    except Exception:
+                        pass  # /health failed but /apk-info succeeded, keep connected
+
+                    if old_status == "degraded" and new_status == "connected":
+                        logger.info(f"[HEALTH] Instance '{name}' recovered from degraded state")
+
+                    healthy_count += 1
                     InstanceRegistry.update_instance_status(
                         name=name,
-                        status="connected",
+                        status=new_status,
                         apk_info=apk_info,
                         last_check=now_iso
                     )

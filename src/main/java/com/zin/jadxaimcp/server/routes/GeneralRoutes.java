@@ -52,6 +52,7 @@ public class GeneralRoutes {
             memory.put("used_mb", usedMb);
             memory.put("max_mb", maxMb);
             memory.put("percent", memPercent);
+            memory.put("oom_detected", PluginServer.isOomDetected());
             result.put("memory", memory);
             
             // JADX class loading stats (lightweight - just counts, no decompilation triggered)
