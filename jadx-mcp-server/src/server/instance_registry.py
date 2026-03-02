@@ -58,12 +58,13 @@ class JadxInstance:
 class InstanceRegistry:
     """
     JADX Instance Registry (Singleton)
-    
+
     Thread-safe implementation supporting concurrent access from:
     - Main async event loop (MCP tool calls)
     - Background health monitor thread
     """
-    
+
+    HEALTH_TIMEOUT = HEALTH_TIMEOUT  # Expose for external callers (e.g., HealthMonitor)
     _instances: Dict[str, JadxInstance] = {}
     _default_instance: Optional[str] = None
     _shared_auth_token: Optional[str] = None
@@ -238,16 +239,17 @@ class InstanceRegistry:
             }
     
     @classmethod
-    async def _fetch_apk_info(cls, host: str, port: int, token: str = None) -> dict:
+    async def _fetch_apk_info(cls, host: str, port: int, token: str = None, timeout: float = None) -> dict:
         """Fetch APK info from JADX instance"""
         url = f"http://{host}:{port}/apk-info"
         headers = {}
         actual_token = token or cls._shared_auth_token
         if actual_token:
             headers["Authorization"] = f"Bearer {actual_token}"
-        
+
+        actual_timeout = timeout if timeout is not None else CONNECT_TIMEOUT
         logger.info(f"Connecting to JADX instance: {url}")
-        async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=actual_timeout) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             data = response.json()
@@ -531,14 +533,32 @@ class InstanceRegistry:
         for name, instance in instances_snapshot:
             new_status = "unknown"
             error_msg = ""
+            old_status = instance.status
             try:
                 # Fetch apk_info to also refresh metadata (detect file changes)
                 apk_info = await cls._fetch_apk_info(
-                    instance.host, instance.port, instance.token
+                    instance.host, instance.port, instance.token,
+                    timeout=HEALTH_TIMEOUT
                 )
                 new_status = "connected"
-                healthy_count += 1
                 error_msg = ""
+
+                # Check OOM/memory via /health (preserve degraded if OOM persists)
+                try:
+                    health_info = await cls._fetch_health_info(
+                        instance.host, instance.port, instance.token
+                    )
+                    memory = health_info.get("memory", {})
+                    if memory.get("oom_detected", False) or memory.get("percent", 0) >= 95:
+                        new_status = "degraded"
+                        error_msg = "Out of memory"
+                except Exception:
+                    # /health failed; if previously degraded, keep degraded
+                    if old_status == "degraded":
+                        new_status = "degraded"
+
+                if new_status != "degraded":
+                    healthy_count += 1
 
                 with cls._thread_lock:
                     if name in cls._instances:
@@ -552,7 +572,8 @@ class InstanceRegistry:
                 try:
                     is_healthy = await cls._check_health(instance.host, instance.port)
                     if is_healthy:
-                        new_status = "connected"
+                        # Preserve degraded if previously degraded
+                        new_status = "degraded" if old_status == "degraded" else "connected"
                         healthy_count += 1
                         error_msg = ""
                     else:

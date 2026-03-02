@@ -128,7 +128,8 @@ class HealthMonitor:
                 pending_count += 1
                 try:
                     apk_info = await InstanceRegistry._fetch_apk_info(
-                        instance.host, instance.port, instance.token
+                        instance.host, instance.port, instance.token,
+                        timeout=InstanceRegistry.HEALTH_TIMEOUT
                     )
                     # Success! Update instance using thread-safe method
                     InstanceRegistry.update_instance_status(
@@ -156,7 +157,8 @@ class HealthMonitor:
                 # For connected/degraded instances, fetch apk_info and health info
                 try:
                     apk_info = await InstanceRegistry._fetch_apk_info(
-                        instance.host, instance.port, instance.token
+                        instance.host, instance.port, instance.token,
+                        timeout=InstanceRegistry.HEALTH_TIMEOUT
                     )
 
                     # Detect if loaded file changed
@@ -193,8 +195,12 @@ class HealthMonitor:
                                 f"[HEALTH] Instance '{name}' high memory usage: "
                                 f"{memory.get('used_mb', '?')}MB/{memory.get('max_mb', '?')}MB ({mem_percent}%)"
                             )
-                    except Exception:
-                        pass  # /health failed but /apk-info succeeded, keep connected
+                    except Exception as e:
+                        # /health failed but /apk-info succeeded
+                        # If previously degraded, keep degraded (can't verify OOM cleared)
+                        if old_status == "degraded":
+                            new_status = "degraded"
+                        logger.warning(f"[HEALTH] Instance '{name}' /health endpoint failed: {type(e).__name__}. Keeping status '{new_status}'.")
 
                     if old_status == "degraded" and new_status == "connected":
                         logger.info(f"[HEALTH] Instance '{name}' recovered from degraded state")
@@ -209,11 +215,13 @@ class HealthMonitor:
                 except Exception:
                     # apk-info failed, fall back to lightweight health check
                     is_healthy = await InstanceRegistry._check_health(instance.host, instance.port)
-                    new_status = "connected" if is_healthy else "disconnected"
 
                     if is_healthy:
+                        # If previously degraded and apk-info still fails, keep degraded
+                        new_status = "degraded" if old_status == "degraded" else "connected"
                         healthy_count += 1
                     else:
+                        new_status = "disconnected"
                         unhealthy_count += 1
 
                     if old_status != new_status:
@@ -223,9 +231,9 @@ class HealthMonitor:
                             last_check=now_iso
                         )
 
-                        if is_healthy:
+                        if new_status == "connected":
                             logger.info(f"[HEALTH] Instance '{name}' recovered: {old_status} -> connected")
-                        else:
+                        elif new_status == "disconnected":
                             logger.warning(f"[HEALTH] Instance '{name}' became unavailable: {old_status} -> disconnected")
         
         # Summary log

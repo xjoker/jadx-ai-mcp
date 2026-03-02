@@ -563,9 +563,15 @@ public class PluginServer {
         Thread.UncaughtExceptionHandler existing = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             if (isOomRelated(throwable)) {
+                // Write flag first — this must succeed even if heap is exhausted
                 System.getProperties().put(JVM_OOM_KEY, System.currentTimeMillis());
-                logger.error("[JAI] OutOfMemoryError detected on thread '{}'. "
-                        + "Instance marked as degraded. Restart JADX to recover.", thread.getName());
+                // Best-effort logging; may fail if heap is fully exhausted
+                try {
+                    logger.error("[JAI] OutOfMemoryError detected on thread '{}'. "
+                            + "Instance marked as degraded. Restart JADX to recover.", thread.getName());
+                } catch (OutOfMemoryError ignored) {
+                    // Flag already set above, logging is non-critical
+                }
             }
             // Delegate to previous handler if any
             if (existing != null) {
@@ -577,13 +583,16 @@ public class PluginServer {
 
     /**
      * Checks if a throwable or any of its causes is an OutOfMemoryError.
+     * Uses a depth limit to guard against circular cause chains.
      */
     private static boolean isOomRelated(Throwable t) {
-        while (t != null) {
+        int depth = 0;
+        while (t != null && depth < 50) {
             if (t instanceof OutOfMemoryError) {
                 return true;
             }
             t = t.getCause();
+            depth++;
         }
         return false;
     }
