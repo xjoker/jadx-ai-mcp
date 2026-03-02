@@ -513,26 +513,43 @@ class InstanceRegistry:
             new_status = "unknown"
             error_msg = ""
             try:
-                is_healthy = await cls._check_health(instance.host, instance.port)
-                if is_healthy:
-                    new_status = "connected"
-                    healthy_count += 1
-                    error_msg = ""
-                else:
-                    new_status = "disconnected"
-                    error_msg = "Health check failed"
+                # Fetch apk_info to also refresh metadata (detect file changes)
+                apk_info = await cls._fetch_apk_info(
+                    instance.host, instance.port, instance.token
+                )
+                new_status = "connected"
+                healthy_count += 1
+                error_msg = ""
+
+                with cls._thread_lock:
+                    if name in cls._instances:
+                        inst = cls._instances[name]
+                        inst.status = new_status
+                        inst.apk_info = apk_info
+                        inst.last_health_check = datetime.now()
+                        inst.error_message = error_msg
             except Exception as e:
-                new_status = "error"
-                error_msg = f"{type(e).__name__}: {str(e) or '(no details)'}"
-            
-            # Thread-safe update via lock
-            with cls._thread_lock:
-                if name in cls._instances:
-                    inst = cls._instances[name]
-                    inst.status = new_status
-                    inst.last_health_check = datetime.now()
-                    inst.error_message = error_msg
-            
+                # apk-info failed, fall back to lightweight health check
+                try:
+                    is_healthy = await cls._check_health(instance.host, instance.port)
+                    if is_healthy:
+                        new_status = "connected"
+                        healthy_count += 1
+                        error_msg = ""
+                    else:
+                        new_status = "disconnected"
+                        error_msg = "Health check failed"
+                except Exception as he:
+                    new_status = "error"
+                    error_msg = f"{type(he).__name__}: {str(he) or '(no details)'}"
+
+                with cls._thread_lock:
+                    if name in cls._instances:
+                        inst = cls._instances[name]
+                        inst.status = new_status
+                        inst.last_health_check = datetime.now()
+                        inst.error_message = error_msg
+
             results.append({
                 "name": name,
                 "status": new_status,

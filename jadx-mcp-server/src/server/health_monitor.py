@@ -153,27 +153,46 @@ class HealthMonitor:
                     logger.debug(f"[HEALTH] Instance '{name}' still unavailable: {e}")
                     unhealthy_count += 1
             else:
-                # For connected instances, just check health
-                is_healthy = await InstanceRegistry._check_health(instance.host, instance.port)
-                new_status = "connected" if is_healthy else "disconnected"
-                
-                if is_healthy:
+                # For connected instances, fetch apk_info to detect file changes
+                try:
+                    apk_info = await InstanceRegistry._fetch_apk_info(
+                        instance.host, instance.port, instance.token
+                    )
                     healthy_count += 1
-                else:
-                    unhealthy_count += 1
-                
-                # Update status using thread-safe method
-                if old_status != new_status:
+
+                    # Detect if loaded file changed
+                    old_pkg = instance.apk_info.get("apk_package")
+                    new_pkg = apk_info.get("apk_package")
+                    if old_pkg != new_pkg:
+                        logger.info(f"[HEALTH] Instance '{name}' loaded file changed: {old_pkg} -> {new_pkg}")
+
                     InstanceRegistry.update_instance_status(
                         name=name,
-                        status=new_status,
+                        status="connected",
+                        apk_info=apk_info,
                         last_check=now_iso
                     )
-                    
+                except Exception:
+                    # apk-info failed, fall back to lightweight health check
+                    is_healthy = await InstanceRegistry._check_health(instance.host, instance.port)
+                    new_status = "connected" if is_healthy else "disconnected"
+
                     if is_healthy:
-                        logger.info(f"[HEALTH] Instance '{name}' recovered: {old_status} -> connected")
+                        healthy_count += 1
                     else:
-                        logger.warning(f"[HEALTH] Instance '{name}' became unavailable: {old_status} -> disconnected")
+                        unhealthy_count += 1
+
+                    if old_status != new_status:
+                        InstanceRegistry.update_instance_status(
+                            name=name,
+                            status=new_status,
+                            last_check=now_iso
+                        )
+
+                        if is_healthy:
+                            logger.info(f"[HEALTH] Instance '{name}' recovered: {old_status} -> connected")
+                        else:
+                            logger.warning(f"[HEALTH] Instance '{name}' became unavailable: {old_status} -> disconnected")
         
         # Summary log
         total = healthy_count + unhealthy_count
