@@ -1,0 +1,79 @@
+name: Benchmark Smoke
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/benchmark.yml"
+      - "benchmarks/**"
+      - "docker/**"
+      - "jadx-mcp-server/**"
+      - "src/**"
+  pull_request:
+    paths:
+      - ".github/workflows/benchmark.yml"
+      - "benchmarks/**"
+      - "docker/**"
+      - "jadx-mcp-server/**"
+      - "src/**"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Docker Smoke Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare benchmark fixture
+        run: |
+          mkdir -p temp
+          cp tests/fixtures/jadx-test-app-1.0.0.apk temp/target.apk
+
+      - name: Run smoke benchmark
+        run: |
+          ./benchmarks/run_in_container.sh \
+            --build \
+            --image jadx-ai-mcp:ci-benchmark \
+            --container-name jadx-benchmark-ci \
+            --label ci-smoke \
+            --config benchmarks/smoke_matrix.json \
+            --plugin-port 8850 \
+            --mcp-port 8851
+
+      - name: Validate smoke benchmark report
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          reports = sorted(Path("temp/benchmark-results").glob("*ci-smoke.json"))
+          if not reports:
+              raise SystemExit("No benchmark report found")
+
+          report = json.loads(reports[-1].read_text(encoding="utf-8"))
+          summary = report.get("summary") or {}
+          case_count = int(summary.get("case_count", 0))
+          busy_cases = int(summary.get("busy_cases", 0))
+          error_cases = int(summary.get("error_cases", 0))
+
+          if case_count <= 0:
+              raise SystemExit("Benchmark report contains no cases")
+          if busy_cases or error_cases:
+              raise SystemExit(
+                  f"Smoke benchmark reported busy/error cases: "
+                  f"busy_cases={busy_cases}, error_cases={error_cases}"
+              )
+          PY
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-smoke-report
+          path: temp/benchmark-results/*
+          if-no-files-found: error

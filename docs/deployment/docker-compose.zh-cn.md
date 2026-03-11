@@ -75,7 +75,7 @@ docker compose up -d
 name = "jadx-1"
 host = "jadx-1"  # Docker 容器名
 port = 8650
-default = true
+enabled = true
 
 [[jadx_instances]]
 name = "jadx-2"

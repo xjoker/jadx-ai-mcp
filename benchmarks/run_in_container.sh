@@ -18,6 +18,20 @@ PLUGIN_AUTH_TOKEN=""
 MCP_AUTH_TOKEN=""
 COMPARE_ARG=""
 
+resolve_host_path() {
+  case "$1" in
+    "")
+      printf '%s' ""
+      ;;
+    /*)
+      printf '%s' "$1"
+      ;;
+    *)
+      printf '%s/%s' "$REPO_ROOT" "$1"
+      ;;
+  esac
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --build)
@@ -78,6 +92,13 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+APK_DIR=$(resolve_host_path "$APK_DIR")
+RESULTS_DIR=$(resolve_host_path "$RESULTS_DIR")
+CONFIG_PATH=$(resolve_host_path "$CONFIG_PATH")
+if [ -n "$COMPARE_ARG" ]; then
+  COMPARE_ARG=$(resolve_host_path "$COMPARE_ARG")
+fi
 
 mkdir -p "$RESULTS_DIR"
 

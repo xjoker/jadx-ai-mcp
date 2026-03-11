@@ -75,7 +75,7 @@ Create `config/jadx-config.toml`:
 name = "jadx-1"
 host = "jadx-1"  # Docker container name
 port = 8650
-default = true
+enabled = true
 
 [[jadx_instances]]
 name = "jadx-2"
