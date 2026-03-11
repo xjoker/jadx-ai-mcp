@@ -115,6 +115,7 @@ class InstanceInfo:
     error_message: str = ""
     owner: Optional[str] = None
     is_dynamic: bool = False
+    registration_source: str = "runtime"
     is_default: bool = False
 
 

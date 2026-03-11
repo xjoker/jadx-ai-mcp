@@ -67,6 +67,12 @@ from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
 from src.server.auth_middleware import BearerAuthMiddleware
 from src.server.health_monitor import HealthMonitor
 from src.server.logging_config import configure_logging, get_logger
+from src.server.status_page import (
+    status_html_response,
+    status_json_response,
+    status_login_response,
+    status_logout_response,
+)
 from src.server import tools
 
 # Transfer API imports
@@ -1071,6 +1077,7 @@ def main():
                     host=inst_cfg.host, 
                     port=inst_cfg.port,
                     token=inst_cfg.token if inst_cfg.token else None,
+                    registration_source="config",
                 )
                 if result["success"]:
                     print(f"  [OK] Registered: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port}) [pending]")
@@ -1088,7 +1095,9 @@ def main():
                     try:
                         port = int(parts[1])
                         name = parts[2] if len(parts) > 2 else None
-                        result = await InstanceRegistry.add_instance(host, port, name)
+                        result = await InstanceRegistry.add_instance(
+                            host, port, name, registration_source="cli"
+                        )
                         if result["success"]:
                             print(f"  [OK] Added: {result['instance']['name']} ({host}:{port})")
                             instances_added += 1
@@ -1103,7 +1112,9 @@ def main():
         if instances_added == 0 and not args.jadx_instances and not (loaded_config and loaded_config.jadx_instances):
             print(f"\nTesting default JADX connection at {args.jadx_host}:{args.jadx_port}...")
             try:
-                result = await InstanceRegistry.add_instance(args.jadx_host, args.jadx_port)
+                result = await InstanceRegistry.add_instance(
+                    args.jadx_host, args.jadx_port, registration_source="default"
+                )
                 if result["success"]:
                     print(f"[OK] Default JADX instance connected")
                     instances_added += 1
@@ -1140,7 +1151,7 @@ def main():
         for inst_cfg in new_config.jadx_instances:
             if inst_cfg.enabled and inst_cfg.name not in current_names:
                 result = await InstanceRegistry.add_instance(
-                    inst_cfg.host, inst_cfg.port, inst_cfg.name
+                    inst_cfg.host, inst_cfg.port, inst_cfg.name, registration_source="config"
                 )
                 if result["success"]:
                     print(f"  [Hot-Reload] Added: {inst_cfg.name}")
@@ -1167,7 +1178,37 @@ def main():
         print(f"[OK] Authentication middleware enabled (required)")
     else:
         print(f"[OK] Authentication middleware enabled (optional)")
-    
+
+    @mcp.custom_route("/status", methods=["GET"])
+    async def status_page(request):
+        """Human-readable operational status page."""
+        return await status_html_response(
+            request,
+            server_host=args.host,
+            server_port=args.port,
+            require_auth=require_auth,
+        )
+
+    @mcp.custom_route("/status.json", methods=["GET"])
+    async def status_page_json(request):
+        """Machine-readable operational status page."""
+        return await status_json_response(
+            request,
+            server_host=args.host,
+            server_port=args.port,
+            require_auth=require_auth,
+        )
+
+    @mcp.custom_route("/status/login", methods=["POST"])
+    async def status_page_login(request):
+        """Browser login for the status page."""
+        return await status_login_response(request)
+
+    @mcp.custom_route("/status/logout", methods=["POST"])
+    async def status_page_logout(request):
+        """Browser logout for the status page."""
+        return await status_logout_response(request)
+
     if args.http:
         # 设置 MCP Server URL 供 Transfer API 使用（从配置文件读取）
         if loaded_config and loaded_config.server.mcp_url:
@@ -1218,4 +1259,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

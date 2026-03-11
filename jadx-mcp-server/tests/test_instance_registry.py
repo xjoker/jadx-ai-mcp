@@ -38,6 +38,7 @@ class TestJadxInstance:
         assert d["status"] == "connected"
         assert d["owner"] == "alice"
         assert d["is_dynamic"] == True
+        assert d["registration_source"] == "runtime"
 
 
 class TestInstanceRegistryBasic:

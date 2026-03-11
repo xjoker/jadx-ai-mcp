@@ -144,7 +144,8 @@ def register_instance_tools(mcp):
             name=name if name else None,
             token=actual_token,
             owner=username,  # Owned by current user
-            is_dynamic=True  # Dynamic instance (not from config file)
+            is_dynamic=True,  # Dynamic instance (not from config file)
+            registration_source="ai_dynamic"
         )
         return result
     
@@ -329,4 +330,3 @@ def register_instance_tools(mcp):
             # Security: log keeps full details, external returns generic message
             logger.error(f"Failed to clear cache: {type(e).__name__}: {e}")
             return {"error": f"Failed to clear cache: {type(e).__name__}"}
-

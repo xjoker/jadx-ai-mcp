@@ -35,6 +35,7 @@ class JadxInstance:
     token: str = ""           # Instance-specific JADX plugin token
     owner: Optional[str] = None  # Owner username (None = shared/static)
     is_dynamic: bool = False  # True if added via AI conversation
+    registration_source: str = "runtime"  # config | cli | default | ai_dynamic | runtime
     
     @property
     def url(self) -> str:
@@ -52,6 +53,7 @@ class JadxInstance:
             "error_message": self.error_message,
             "owner": self.owner,
             "is_dynamic": self.is_dynamic,
+            "registration_source": self.registration_source,
         }
 
 
@@ -90,7 +92,8 @@ class InstanceRegistry:
         name: str = None,
         token: str = None,
         owner: str = None,
-        is_dynamic: bool = False
+        is_dynamic: bool = False,
+        registration_source: str = "runtime"
     ) -> dict:
         """
         Add a new JADX instance
@@ -102,6 +105,7 @@ class InstanceRegistry:
             token: Instance-specific JADX plugin token (uses default if not provided)
             owner: Owner username (None = shared/static instance)
             is_dynamic: True if added via AI conversation
+            registration_source: How the instance was added (config/cli/default/ai_dynamic/runtime)
             
         Returns:
             {"success": bool, "instance": dict, "message": str}
@@ -136,6 +140,7 @@ class InstanceRegistry:
                     token=actual_token or "",
                     owner=owner,
                     is_dynamic=is_dynamic,
+                    registration_source=registration_source,
                 )
                 cls._instances[name] = instance
                 
@@ -183,7 +188,8 @@ class InstanceRegistry:
         port: int, 
         token: str = None,
         owner: str = None,
-        is_dynamic: bool = False
+        is_dynamic: bool = False,
+        registration_source: str = "config"
     ) -> dict:
         """
         Register a JADX instance from config file without requiring immediate connection.
@@ -200,6 +206,7 @@ class InstanceRegistry:
             token: Instance-specific JADX plugin token
             owner: Owner username (None = shared/static instance)
             is_dynamic: True if added via AI conversation
+            registration_source: How the instance was registered (typically config)
             
         Returns:
             {"success": bool, "message": str}
@@ -223,6 +230,7 @@ class InstanceRegistry:
                 token=actual_token or "",
                 owner=owner,
                 is_dynamic=is_dynamic,
+                registration_source=registration_source,
             )
             cls._instances[name] = instance
             

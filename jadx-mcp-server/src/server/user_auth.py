@@ -116,6 +116,11 @@ class UserAuthManager:
         return len(cls._users)
     
     @classmethod
+    def allows_anonymous(cls) -> bool:
+        """Whether requests without MCP auth are currently allowed."""
+        return cls._allow_anonymous
+
+    @classmethod
     def list_users(cls) -> list[str]:
         """List all configured usernames"""
         return [user.name for user in cls._users.values()]

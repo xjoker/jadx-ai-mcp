@@ -93,3 +93,4 @@ htmlcov/
 !tests/fixtures/*.apk
 docker/apks/*/
 !docker/apks/.gitkeep
+temp

@@ -34,13 +34,15 @@ class TestInstanceRegistryAsync:
             host="192.168.1.10",
             port=8650,
             owner="alice",
-            is_dynamic=True
+            is_dynamic=True,
+            registration_source="ai_dynamic"
         )
         
         assert result["success"] == True
         assert result["instance"]["name"] == "example-v1"
         assert result["instance"]["owner"] == "alice"
         assert result["instance"]["status"] == "connected"
+        assert result["instance"]["registration_source"] == "ai_dynamic"
 
     @respx.mock
     @pytest.mark.asyncio
