@@ -11,6 +11,7 @@ import pytest
 from starlette.requests import Request
 
 from server.config_loader import UserConfig
+from server.busy_tracker import InstanceBusyTracker
 from server.instance_registry import InstanceRegistry
 from server.status_page import (
     STATUS_AUTH_COOKIE,
@@ -61,6 +62,12 @@ def make_form_request(path: str, form_data: dict[str, str]) -> Request:
 class TestStatusPage:
     """Tests for status snapshot generation and auth gating."""
 
+    @pytest.fixture(autouse=True)
+    def reset_tracker(self):
+        InstanceBusyTracker.force_release_all()
+        yield
+        InstanceBusyTracker.force_release_all()
+
     def test_build_status_snapshot_filters_instances_for_regular_user(self):
         """Regular users should only see shared instances and their own dynamic ones."""
         UserAuthManager.configure([], allow_anonymous=True)
@@ -101,12 +108,24 @@ class TestStatusPage:
         assert snapshot["summary"]["total_instances"] == 2
         assert snapshot["summary"]["default_instance"] == "cfg-shared"
         assert snapshot["summary"]["source_counts"] == {"config": 1, "ai_dynamic": 1}
+        assert snapshot["summary"]["scheduler_counts"] == {
+            "metadata_inflight": 0,
+            "code_read_inflight": 0,
+            "exclusive_inflight": 0,
+            "queue_depth": 0,
+            "queue_limit": 8,
+            "active_limit": 4,
+        }
 
         instance_map = {inst["name"]: inst for inst in snapshot["instances"]}
         assert instance_map["cfg-shared"]["source_label"] == "Config File"
         assert instance_map["cfg-shared"]["scope_label"] == "shared"
         assert instance_map["alice-ai"]["source_label"] == "AI Dynamic"
         assert instance_map["alice-ai"]["scope_label"] == "user:alice"
+        assert instance_map["cfg-shared"]["scheduler"]["metadata_inflight"] == 0
+        assert instance_map["cfg-shared"]["scheduler"]["queue_limit"] == 4
+        assert instance_map["cfg-shared"]["scheduler"]["active_limit"] == 2
+        assert instance_map["cfg-shared"]["scheduler_label"] == "m:0 c:0/2 x:0 q:0/4"
 
     @pytest.mark.asyncio
     async def test_status_html_response_renders_login_form_when_auth_required(self):

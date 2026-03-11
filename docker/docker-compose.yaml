@@ -7,6 +7,10 @@
 # 快速启动:
 #   docker compose up -d
 #
+# 默认 APK 挂载:
+#   - 所有实例默认挂载项目根目录的 ../temp 到 /apks
+#   - 可通过 JADX1_APK_DIR / JADX2_APK_DIR / JADX3_APK_DIR 分别覆盖
+#
 # 访问:
 #   - MCP Server: http://localhost:8651/mcp (连接 LLM)
 #   - JADX #1: http://localhost:6080 (noVNC)
@@ -14,7 +18,8 @@
 #   - JADX #3: http://localhost:6082 (noVNC)
 #
 # 加载 APK:
-#   1. 将 APK 放入 ./apks/ 目录
+#   1. 将 target.apk 放入 ../temp/ 目录以自动加载
+#   2. 或者将应用文件放入你自定义的 APK 挂载目录
 #   2. 访问对应的 noVNC 页面
 #   3. 在 JADX GUI 中打开 /apks/your-app.apk
 
@@ -38,7 +43,7 @@ services:
       - jadx-3
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8651/health" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8651/transfer/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -55,7 +60,7 @@ services:
       - "6080:6080" # noVNC Web Desktop
       - "8650:8650" # Plugin API
     volumes:
-      - /Volumes/2TB_Disk/Temp:/apks:ro
+      - ${JADX1_APK_DIR:-../temp}:/apks:ro
       - jadx-1-cache:/root/.cache
       - jadx-1-gui:/root/.jadx-gui
     environment:
@@ -76,7 +81,7 @@ services:
       - "6081:6080" # noVNC Web Desktop
       - "8660:8650" # Plugin API (mapped to 8660 on host)
     volumes:
-      - /Volumes/2TB_Disk/Temp:/apks:ro
+      - ${JADX2_APK_DIR:-../temp}:/apks:ro
       - jadx-2-cache:/root/.cache
       - jadx-2-gui:/root/.jadx-gui
     environment:
@@ -97,7 +102,7 @@ services:
       - "6082:6080" # noVNC Web Desktop
       - "8670:8650" # Plugin API (mapped to 8670 on host)
     volumes:
-      - /Volumes/2TB_Disk/Temp:/apks:ro
+      - ${JADX3_APK_DIR:-../temp}:/apks:ro
       - jadx-3-cache:/root/.cache
       - jadx-3-gui:/root/.jadx-gui
     environment:

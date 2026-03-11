@@ -75,11 +75,12 @@ class HealthMonitor:
         from .instance_registry import InstanceRegistry
         
         # Wait a bit before first check to let server fully start
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
         
         while cls._running:
+            cycle = {"retry_needed": False}
             try:
-                await cls._run_health_check()
+                cycle = await cls._run_health_check()
                 
                 # Execute callbacks
                 for callback in cls._callbacks:
@@ -97,7 +98,9 @@ class HealthMonitor:
                 logger.error(f"Health monitor error: {e}")
             
             # Wait for next check
-            await asyncio.sleep(cls._interval)
+            retry_needed = bool(cycle.get("retry_needed")) if isinstance(cycle, dict) else False
+            sleep_seconds = min(5, cls._interval) if retry_needed else cls._interval
+            await asyncio.sleep(sleep_seconds)
     
     @classmethod
     async def _run_health_check(cls):
@@ -113,7 +116,7 @@ class HealthMonitor:
         instances = InstanceRegistry.get_all_instances()
         if not instances:
             logger.debug("No JADX instances registered, skipping health check")
-            return
+            return {"retry_needed": False}
         
         healthy_count = 0
         unhealthy_count = 0
@@ -242,6 +245,12 @@ class HealthMonitor:
             logger.info(f"[HEALTH] Check complete: {healthy_count}/{total} healthy, {unhealthy_count} unhealthy")
         else:
             logger.debug(f"[HEALTH] Check complete: {healthy_count}/{total} healthy")
+        return {
+            "retry_needed": pending_count > 0 or unhealthy_count > 0,
+            "healthy_count": healthy_count,
+            "unhealthy_count": unhealthy_count,
+            "pending_count": pending_count,
+        }
     
     @classmethod
     def is_running(cls) -> bool:

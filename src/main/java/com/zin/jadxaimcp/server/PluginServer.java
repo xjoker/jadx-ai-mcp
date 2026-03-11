@@ -13,6 +13,7 @@ import com.zin.jadxaimcp.JadxAIMCP;
 import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.CodeSearchCoordinator;
 import com.zin.jadxaimcp.server.routes.*; // MCP tool call's request handlers
 
 public class PluginServer {
@@ -502,6 +503,7 @@ public class PluginServer {
                 
                 // === Search Lock Status (from JadxSearchLock) ===
                 response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
+                response.put("search_coordinator", CodeSearchCoordinator.getStatus());
                 
                 ctx.json(response);
             } catch (Exception e) {
@@ -515,9 +517,10 @@ public class PluginServer {
         // --- Cache Management ---
         app.post("/cache/clear", ctx -> {
             try {
+                CodeSearchCoordinator.clearCache();
                 boolean cleared = ClassCacheManager.clearCache();
                 if (cleared) {
-                    logger.info("[JAI] Class cache cleared manually via API");
+                    logger.info("[JAI] Class cache and code search cache cleared manually via API");
                     ctx.json(java.util.Map.of(
                         "success", true,
                         "message", "Class cache cleared successfully",
@@ -550,6 +553,7 @@ public class PluginServer {
         mainWindow.events().addListener(jadx.api.plugins.events.JadxEvents.NODE_RENAMED_BY_USER, event -> {
             logger.info("[JAI] Rename detected, clearing class cache");
             ClassCacheManager.clearCache();
+            CodeSearchCoordinator.clearCache();
         });
         logger.info("[JAI] Cache invalidation listener registered");
     }

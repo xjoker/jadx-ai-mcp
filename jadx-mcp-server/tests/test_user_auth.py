@@ -5,6 +5,7 @@ Tests user authentication and permission logic without external dependencies.
 """
 
 import pytest
+from fastmcp.server.auth import AccessToken
 
 from server.user_auth import UserAuthManager, AuthenticatedUser
 from server.config_loader import UserConfig
@@ -55,6 +56,39 @@ class TestUserAuthManager:
         
         user = UserAuthManager.authenticate("bad-token")
         assert user is None
+
+    def test_authenticate_access_token_by_token_lookup(self):
+        """FastMCP access token should map back to configured users by raw token."""
+        users = [UserConfig(name="alice", token="token-alice", is_admin=True)]
+        UserAuthManager.configure(users)
+
+        access_token = AccessToken(
+            token="token-alice",
+            client_id="alice",
+            scopes=["mcp:admin"],
+            claims={"username": "alice", "is_admin": True},
+        )
+
+        user = UserAuthManager.authenticate_access_token(access_token)
+        assert user is not None
+        assert user.name == "alice"
+        assert user.is_admin is True
+
+    def test_authenticate_access_token_claims_fallback(self):
+        """Claims should still build a user if the raw token is not in the local table."""
+        UserAuthManager.configure([])
+
+        access_token = AccessToken(
+            token="opaque-token",
+            client_id="service-user",
+            scopes=["mcp:user"],
+            claims={"username": "service-user", "is_admin": False},
+        )
+
+        user = UserAuthManager.authenticate_access_token(access_token)
+        assert user is not None
+        assert user.name == "service-user"
+        assert user.is_admin is False
 
     def test_authenticate_anonymous_disabled(self):
         """Empty token should fail when anonymous disabled"""

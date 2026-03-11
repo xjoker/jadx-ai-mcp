@@ -82,6 +82,34 @@ class UserAuthManager:
             return AuthenticatedUser(name="anonymous", token="", is_admin=False)
         
         return cls._users.get(token)
+
+    @classmethod
+    def authenticate_access_token(cls, access_token) -> Optional[AuthenticatedUser]:
+        """
+        Authenticate from a FastMCP AccessToken object.
+
+        This keeps the rest of the codebase on the existing AuthenticatedUser model
+        while the MCP transport moves onto FastMCP's official auth provider API.
+        """
+        if access_token is None:
+            return cls.authenticate("")
+
+        token_value = getattr(access_token, "token", "")
+        if token_value:
+            user = cls.authenticate(token_value)
+            if user is not None:
+                return user
+
+        claims = getattr(access_token, "claims", {}) or {}
+        username = claims.get("username") or claims.get("sub") or claims.get("client_id")
+        if username:
+            return AuthenticatedUser(
+                name=str(username),
+                token=token_value,
+                is_admin=bool(claims.get("is_admin", False)),
+            )
+
+        return None
     
     @classmethod
     def set_current_user(cls, user: Optional[AuthenticatedUser]) -> None:

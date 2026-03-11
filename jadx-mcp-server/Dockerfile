@@ -5,9 +5,9 @@ RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Upgrade pip and build tools, then install uv
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir uv
+# Install pinned Python build tools, then install uv
+RUN pip install --no-cache-dir --upgrade setuptools==80.9.0 wheel==0.46.3 && \
+    pip install --no-cache-dir uv==0.10.9
 
 # Copy project files
 COPY pyproject.toml uv.lock ./

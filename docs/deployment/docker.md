@@ -150,13 +150,13 @@ docker run -d --name jadx ^
 
 > **Important**: Set `JADX_MCP_BIND_ADDRESS=0.0.0.0` for multi-container deployments.
 
-### MCP Server (Python)
+### MCP Server / Transfer API
 
 | Variable | Description | Default |
 |:---------|:------------|:--------|
-| `JADX_MCP_HOST` | MCP Server bind address | `0.0.0.0` |
-| `JADX_HOST` | Default JADX plugin host | `127.0.0.1` |
-| `JADX_PORT` | Default JADX plugin port | `8650` |
+| `MCP_SERVER_URL` | Public MCP Server URL used in generated Transfer API download links | `http://localhost:8651` fallback |
+
+> Standalone MCP Server instances are configured via `jadx-config.toml` or CLI arguments. There are no dedicated `JADX_HOST` / `JADX_PORT` runtime environment variables for instance discovery.
 
 For complete environment variables list, see [Configuration Reference](../reference/configuration.md).
 
@@ -212,18 +212,18 @@ docker run -d --name jadx-mcp-server \
 
 > **Docker Networking**: When the MCP Server container connects to JADX on the host, use `host.docker.internal` as the host address. On Linux, add `--add-host=host.docker.internal:host-gateway` to the `docker run` command.
 
-### Option 2: With Environment Variables
+### Option 2: Single Instance via CLI Arguments
 
 ```bash
 docker run -d --name jadx-mcp-server \
   -p 8651:8651 \
-  -e JADX_HOST=192.168.1.10 \
-  -e JADX_PORT=8650 \
-  -e JADX_MCP_AUTH_TOKEN=your-token \
-  xjoker/jadx-mcp-server
+  xjoker/jadx-mcp-server \
+  jadx_mcp_server --http --host 0.0.0.0 --port 8651 \
+    --jadx-host 192.168.1.10 --jadx-port 8650 \
+    --mcp-auth-token your-token
 ```
 
-### Option 3: CLI Arguments
+### Option 3: Multiple Instances via CLI Arguments
 
 ```bash
 docker run -d --name jadx-mcp-server \
@@ -232,6 +232,8 @@ docker run -d --name jadx-mcp-server \
   jadx_mcp_server --http --host 0.0.0.0 \
     --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
+
+> Pure pull mode: the standalone MCP Server does not auto-discover Docker containers. Register each JADX instance explicitly through the config file or CLI.
 
 ---
 

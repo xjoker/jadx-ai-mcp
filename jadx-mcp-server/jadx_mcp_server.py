@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = [ "fastmcp", "httpx" ]
+# dependencies = [
+#   "fastmcp==3.1.0",
+#   "httpx==0.28.1",
+#   "tomli==2.4.0; python_version < '3.11'",
+#   "brotli==1.1.0",
+# ]
 # ///
 
 """
@@ -14,6 +19,11 @@ import sys
 from fastmcp import FastMCP
 from src.banner import jadx_mcp_server_banner
 from src.server import config, tools
+from src.server.mcp_auth import (
+    ReloadableStaticTokenVerifier,
+    build_auth_provider,
+    build_legacy_cli_user,
+)
 
 # Initialize MCP Server with stateless HTTP mode (no session required)
 # Instructions are shown to AI when connecting to help with proper tool usage
@@ -1017,26 +1027,29 @@ def main():
         print("[WARN] No default JADX plugin token (instances may need individual tokens)")
     
     # Configure multi-user authentication
+    auth_users = [user for user in (loaded_config.users if loaded_config and loaded_config.users else []) if user.token]
     allow_anonymous = True  # Allow anonymous if no users configured
-    if loaded_config and loaded_config.users:
+    if auth_users:
         UserAuthManager.configure(
-            users=loaded_config.users,
+            users=auth_users,
             default_jadx_token=default_jadx_token,
             allow_anonymous=False  # Require auth if users are configured
         )
-        print(f"[OK] Multi-user authentication enabled ({len(loaded_config.users)} users)")
-        for user in loaded_config.users:
+        print(f"[OK] Multi-user authentication enabled ({len(auth_users)} users)")
+        for user in auth_users:
             role = "admin" if user.is_admin else "user"
             print(f"  - {user.name} ({role})")
         allow_anonymous = False
     elif args.mcp_auth_token:
         # Single token mode (legacy)
+        auth_users = [build_legacy_cli_user(args.mcp_auth_token)]
         UserAuthManager.configure(
-            users=[],
+            users=auth_users,
             default_jadx_token=default_jadx_token,
-            allow_anonymous=True
+            allow_anonymous=False
         )
         print(f"[OK] Single-token authentication mode")
+        allow_anonymous = False
     else:
         # No authentication
         UserAuthManager.configure(
@@ -1120,8 +1133,30 @@ def main():
                     instances_added += 1
                 else:
                     print(f"[WARN] Could not connect to default JADX: {result['message']}")
+                    default_name = f"default-{args.jadx_host.replace('.', '-').replace(':', '-')}-{args.jadx_port}"
+                    pending = InstanceRegistry.register_pending_instance(
+                        name=default_name,
+                        host=args.jadx_host,
+                        port=args.jadx_port,
+                        registration_source="default",
+                    )
+                    if pending["success"]:
+                        print(f"[OK] Registered default JADX instance as pending: {default_name}")
+                        print("  Health monitor will keep retrying until the plugin becomes available.")
+                        instances_added += 1
             except Exception as e:
                 print(f"[WARN] Default connection failed: {e}")
+                default_name = f"default-{args.jadx_host.replace('.', '-').replace(':', '-')}-{args.jadx_port}"
+                pending = InstanceRegistry.register_pending_instance(
+                    name=default_name,
+                    host=args.jadx_host,
+                    port=args.jadx_port,
+                    registration_source="default",
+                )
+                if pending["success"]:
+                    print(f"[OK] Registered default JADX instance as pending: {default_name}")
+                    print("  Health monitor will keep retrying until the plugin becomes available.")
+                    instances_added += 1
         
         return instances_added
     
@@ -1134,6 +1169,7 @@ def main():
     # ========== Config Hot-Reload Callback ==========
     async def on_config_change(new_config: AppConfig):
         """Handle configuration file changes"""
+        nonlocal auth_users, allow_anonymous, require_auth
         print(f"\n[Hot-Reload] Configuration changed, updating instances...")
         
         # Get current instance names
@@ -1157,6 +1193,34 @@ def main():
                     print(f"  [Hot-Reload] Added: {inst_cfg.name}")
                 else:
                     print(f"  [Hot-Reload] Failed to add {inst_cfg.name}: {result['message']}")
+
+        # Reload MCP auth/users when possible without rebuilding the HTTP app.
+        if args.mcp_auth_token:
+            print("  [Hot-Reload] MCP auth unchanged (CLI --mcp-auth-token takes precedence)")
+        else:
+            new_auth_users = [user for user in new_config.users if user.token]
+            auth_mode_before = require_auth
+            auth_mode_after = bool(new_auth_users)
+
+            if auth_mode_before == auth_mode_after:
+                auth_users = new_auth_users
+                allow_anonymous = not auth_mode_after
+                require_auth = auth_mode_after
+                UserAuthManager.configure(
+                    users=auth_users,
+                    default_jadx_token=default_jadx_token,
+                    allow_anonymous=allow_anonymous,
+                )
+
+                if auth_mode_after and isinstance(mcp.auth, ReloadableStaticTokenVerifier):
+                    mcp.auth.reload_users(auth_users)
+                    print(f"  [Hot-Reload] Reloaded MCP auth users: {len(auth_users)}")
+                elif not auth_mode_after:
+                    print("  [Hot-Reload] Auth unchanged (anonymous mode)")
+                else:
+                    print("  [Hot-Reload] Auth refresh skipped: runtime provider is not reloadable")
+            else:
+                print("  [Hot-Reload] Auth mode change detected (enable/disable). Restart required to apply MCP auth changes.")
         
         print(f"  [Hot-Reload] Complete. Instances: {InstanceRegistry.get_instance_count()}")
 
@@ -1170,14 +1234,21 @@ def main():
     # Register Resources (usage guide, decision matrix, benchmarks)
     register_resources(mcp)
     
-    # Register authentication middleware (HTTP mode only)
-    require_auth = bool(loaded_config and loaded_config.users) and not allow_anonymous
+    # Register official FastMCP auth provider for the MCP endpoint
+    require_auth = bool(auth_users) and not allow_anonymous
+    mcp.auth = build_auth_provider(auth_users)
+    if mcp.auth:
+        print("[OK] FastMCP TokenVerifier enabled for /mcp")
+    else:
+        print("[OK] MCP endpoint running without FastMCP auth")
+
+    # Register user-context middleware for tool permission checks
     auth_middleware = BearerAuthMiddleware(require_auth=require_auth)
     mcp.add_middleware(auth_middleware)
     if require_auth:
-        print(f"[OK] Authentication middleware enabled (required)")
+        print(f"[OK] User context middleware enabled (required)")
     else:
-        print(f"[OK] Authentication middleware enabled (optional)")
+        print(f"[OK] User context middleware enabled (optional)")
 
     @mcp.custom_route("/status", methods=["GET"])
     async def status_page(request):
@@ -1216,13 +1287,30 @@ def main():
             print(f"[OK] Transfer API URL: {loaded_config.server.mcp_url}")
         
         print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
-        if args.mcp_auth_token or (loaded_config and loaded_config.users):
+        if require_auth:
             print(f"  Clients must provide: Authorization: Bearer <token>")
+
+        import threading
         
         # Start config watcher in background (for HTTP mode only)
         if config_loader:
-            config_loader.add_change_callback(on_config_change)
-            # Note: Hot-reload watcher runs in the async event loop managed by FastMCP
+            def run_config_watcher():
+                """Run the config file watcher in a dedicated event loop."""
+                import asyncio
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    config_loader.add_change_callback(on_config_change)
+                    loop.run_until_complete(config_loader.start_watching())
+                    loop.run_forever()
+                except Exception as e:
+                    print(f"Config watcher error: {e}")
+                finally:
+                    loop.close()
+
+            config_thread = threading.Thread(target=run_config_watcher, daemon=True)
+            config_thread.start()
             print(f"  Config hot-reload: enabled")
         
         # Start background health monitor for JADX instances
@@ -1230,7 +1318,6 @@ def main():
         HealthMonitor.configure(interval=health_interval)
         
         # Start health monitor in a background thread with its own event loop
-        import threading
         import signal
         
         def run_health_monitor():
@@ -1251,7 +1338,7 @@ def main():
         
         print(f"  Health monitor: enabled (interval: {health_interval}s)")
         
-        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+        mcp.run(transport="http", host=args.host, port=args.port)
     else:
         print("\nStarting MCP server in stdio mode...")
         mcp.run()

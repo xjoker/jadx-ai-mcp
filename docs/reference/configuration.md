@@ -53,7 +53,7 @@ is_admin = true  # Can manage instances
 name = "local"
 host = "127.0.0.1"
 port = 8650
-default = true
+enabled = true
 
 [[jadx_instances]]
 name = "remote-server"
@@ -74,17 +74,16 @@ port = 8650
 
 > 💡 Set `JADX_MCP_BIND_ADDRESS=0.0.0.0` to allow remote connections (Docker required).
 
-#### MCP Server (Python) Environment Variables
+#### MCP Server / Transfer API Environment Variables
 
 | Variable | Description | Default |
 |:---------|:------------|:--------|
-| `JADX_MCP_HOST` | MCP Server bind address | `0.0.0.0` |
-| `JADX_HOST` | Default JADX plugin host | `127.0.0.1` |
-| `JADX_PORT` | Default JADX plugin port | `8650` |
+| `MCP_SERVER_URL` | Public MCP Server URL used when generating Transfer API download links | `http://localhost:8651` fallback |
+
+> The standalone MCP Server does not currently expose `JADX_HOST` / `JADX_PORT` environment variables. Configure bind address, default JADX endpoint, and multi-instance registration with CLI arguments or `jadx-config.toml`.
 
 ### Configuration Priority
 
-1. **Environment variables** (highest)
-2. **Command line arguments**
-3. **Configuration file**
-4. **Default values** (lowest)
+1. **JADX plugin runtime**: environment variables → saved preferences → built-in defaults
+2. **MCP Server bind address / default JADX endpoint**: command line arguments → configuration file → built-in defaults
+3. **Transfer API public URL**: `MCP_SERVER_URL` → `[server].mcp_url` → `http://localhost:8651`

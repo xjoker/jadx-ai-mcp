@@ -33,6 +33,11 @@ Real integration tests against JADX container with actual JAR and APK files.
 - Get instance info
 - Concurrent requests
 
+### Deployment Tests
+- All-in-one container deployment verification
+- MCP <-> JADX state consistency checks
+- Multi-client concurrent MCP access against one server
+
 ## Running Tests
 
 ### Local
@@ -68,3 +73,12 @@ docker stop jadx-test && docker rm jadx-test
 Tests use pre-built fixtures from `/tests/fixtures/`:
 - `jadx-test-library-1.0.0.jar` (6.5KB, 5 classes)
 - `jadx-test-app-1.0.0.apk` (3.6KB, 5 classes)
+
+## Deployment Test Environment Variables
+
+Deployment-level tests can target a running all-in-one container by setting:
+
+- `JADX_BASE_URL` (default `http://localhost:8650`)
+- `MCP_BASE_URL` (default `http://localhost:8651`)
+- `MCP_AUTH_TOKEN` (primary token for `/mcp` and `/status.json`)
+- `MCP_SECONDARY_AUTH_TOKEN` (secondary token for multi-client concurrency tests)

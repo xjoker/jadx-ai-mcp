@@ -1,7 +1,7 @@
 """
 Layer 3 Integration Tests - MCP Server HTTP Mode Testing
 
-Tests the MCP Server running in HTTP/streamable-http mode.
+Tests the MCP Server running in HTTP mode.
 These tests are optional - they skip if MCP Server is not running.
 
 Prerequisites:
@@ -42,8 +42,8 @@ class TestMCPServerHealth:
             pytest.skip("MCP Server not running on port 8651")
 
         resp = mcp_client.get(f"{MCP_SERVER_URL}/mcp")
-        # 200, 405 (method not allowed), or 406 (not acceptable) are valid
-        assert resp.status_code in [200, 405, 406], \
+        # Auth-enabled servers may return 401 here
+        assert resp.status_code in [200, 401, 405, 406], \
             f"Unexpected status: {resp.status_code}"
 
     def test_transfer_health_endpoint(self, mcp_client):
@@ -64,7 +64,7 @@ class TestMCPProtocolBasics:
             pytest.skip("MCP Server not running on port 8651")
 
         resp = mcp_client.options(f"{MCP_SERVER_URL}/mcp")
-        assert resp.status_code in [200, 204, 405]
+        assert resp.status_code in [200, 204, 401, 405]
 
     def test_post_to_mcp_endpoint(self, mcp_client):
         """POST to MCP endpoint should be handled"""

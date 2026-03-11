@@ -18,16 +18,13 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=UTC
 
 # ============================================================================
-# Install uv package manager
+# Install pinned uv package manager
 # ============================================================================
-# Copy binary to /usr/local/bin instead of symlink to avoid permission issues with non-root user
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && cp /root/.local/bin/uv /usr/local/bin/uv \
-    && chmod +x /usr/local/bin/uv
+    && pip install --no-cache-dir uv==0.10.9
 
 # ============================================================================
 # Copy and install MCP Server
@@ -36,7 +33,7 @@ WORKDIR /app
 COPY jadx-mcp-server /app
 
 # Install dependencies
-RUN /usr/local/bin/uv sync --frozen
+RUN uv sync --frozen
 
 # Create config directory
 RUN mkdir -p /app/data/config
@@ -59,4 +56,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8651/health || exit 1
 
 # Default command - can be overridden with --config
-CMD ["/usr/local/bin/uv", "run", "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--port", "8651"]
+CMD ["uv", "run", "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--port", "8651"]

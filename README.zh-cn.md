@@ -16,6 +16,8 @@
 
 ---
 
+> 版本说明：仓库源码里的版本号是开发占位值。正式发布时由 GitHub Actions 在构建阶段把版本写入产物、`pom.xml`、Java Banner 和 Python Server Banner。
+
 ## 🌟 本 Fork 的独特优势
 
 相比原版，本 Fork 提供**重大功能增强**：

@@ -16,6 +16,7 @@ from typing import Any
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from .busy_tracker import InstanceBusyTracker
 from .health_monitor import HealthMonitor
 from .instance_registry import InstanceRegistry
 from .user_auth import AuthenticatedUser, UserAuthManager
@@ -88,6 +89,20 @@ def _format_counts(counts: dict[str, Any]) -> str:
     return ", ".join(f"{key}:{value}" for key, value in sorted(counts.items()))
 
 
+def _format_scheduler_counts(counts: dict[str, Any]) -> str:
+    return (
+        f"m:{counts.get('metadata_inflight', 0)} "
+        f"c:{counts.get('code_read_inflight', 0)}/{counts.get('active_limit', 0)} "
+        f"x:{counts.get('exclusive_inflight', 0)} "
+        f"q:{counts.get('queue_depth', 0)}/{counts.get('queue_limit', 0)}"
+    )
+
+
+def _format_scheduler(instance: dict[str, Any]) -> str:
+    scheduler = instance.get("scheduler") or {}
+    return _format_scheduler_counts(scheduler)
+
+
 def _cookie_settings() -> dict[str, Any]:
     return {
         "httponly": True,
@@ -114,6 +129,14 @@ def build_status_snapshot(
 
     status_counts = Counter(inst.get("status", "unknown") for inst in instances)
     source_counts = Counter(inst.get("registration_source", "runtime") for inst in instances)
+    scheduler_totals = {
+        "metadata_inflight": 0,
+        "code_read_inflight": 0,
+        "exclusive_inflight": 0,
+        "queue_depth": 0,
+        "queue_limit": 0,
+        "active_limit": 0,
+    }
 
     warnings: list[str] = []
     if not instances:
@@ -128,6 +151,13 @@ def build_status_snapshot(
     rendered_instances = []
     for inst in sorted(instances, key=lambda item: (item.get("registration_source", ""), item["name"])):
         apk_info = inst.get("apk_info") or {}
+        scheduler = InstanceBusyTracker.get_snapshot(inst["name"])
+        scheduler_totals["metadata_inflight"] += scheduler["metadata_inflight"]
+        scheduler_totals["code_read_inflight"] += scheduler["code_read_inflight"]
+        scheduler_totals["exclusive_inflight"] += scheduler["exclusive_inflight"]
+        scheduler_totals["queue_depth"] += scheduler["queue_depth"]
+        scheduler_totals["queue_limit"] += scheduler["queue_limit"]
+        scheduler_totals["active_limit"] += scheduler["active_limit"]
         rendered_instances.append(
             {
                 **inst,
@@ -137,6 +167,8 @@ def build_status_snapshot(
                 "version_name": apk_info.get("version_name") or "-",
                 "class_count": apk_info.get("class_count") or "-",
                 "loaded": apk_info.get("loaded"),
+                "scheduler": scheduler,
+                "scheduler_label": _format_scheduler_counts(scheduler),
             }
         )
 
@@ -164,6 +196,7 @@ def build_status_snapshot(
             "default_instance": default.name if default and default.name in visible_instance_names else None,
             "status_counts": dict(status_counts),
             "source_counts": dict(source_counts),
+            "scheduler_counts": scheduler_totals,
         },
         "warnings": warnings,
     }
@@ -177,7 +210,7 @@ def _render_warning_list(warnings: list[str]) -> str:
 
 def _render_instances_table(instances: list[dict[str, Any]]) -> str:
     if not instances:
-        return '<tr><td colspan="10" class="empty">No instances registered.</td></tr>'
+        return '<tr><td colspan="11" class="empty">No instances registered.</td></tr>'
 
     rows = []
     for inst in instances:
@@ -185,6 +218,8 @@ def _render_instances_table(instances: list[dict[str, Any]]) -> str:
         default_badge = " <span class=\"chip\">default</span>" if inst.get("is_default") else ""
         loaded = "yes" if inst.get("loaded") else "no"
         last_check = inst.get("last_health_check") or "-"
+        scheduler = inst.get("scheduler") or {}
+        busy_hint = scheduler.get("last_busy_reason") or "-"
         rows.append(
             "<tr>"
             f"<td><strong>{escape(inst['name'])}</strong>{default_badge}</td>"
@@ -196,6 +231,7 @@ def _render_instances_table(instances: list[dict[str, Any]]) -> str:
             f"<td>{escape(inst.get('version_name', '-'))}</td>"
             f"<td>{escape(str(inst.get('class_count', '-')))}</td>"
             f"<td>{loaded}</td>"
+            f"<td>{escape(inst.get('scheduler_label', '-'))}<div class=\"muted\">busy: {escape(busy_hint)}</div></td>"
             f"<td>{escape(last_check)}</td>"
             "</tr>"
         )
@@ -512,6 +548,7 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
         <div id="registry-default">Default instance: {escape(summary['default_instance'] or '-')}</div>
         <div id="registry-status">Status counts: {escape(_format_counts(summary['status_counts']))}</div>
         <div id="registry-source">Source counts: {escape(_format_counts(summary['source_counts']))}</div>
+        <div id="registry-scheduler">Scheduler: {escape(_format_scheduler_counts(summary['scheduler_counts']))}</div>
       </section>
     </div>
 
@@ -534,6 +571,7 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
             <th>Version</th>
             <th>Classes</th>
             <th>Loaded</th>
+            <th>Scheduler</th>
             <th>Last Check</th>
           </tr>
         </thead>
@@ -572,7 +610,7 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
 
     function renderInstances(instances) {{
       if (!instances || instances.length === 0) {{
-        return '<tr><td colspan="10" class="empty">No instances registered.</td></tr>';
+        return '<tr><td colspan="11" class="empty">No instances registered.</td></tr>';
       }}
 
       return instances.map((inst) => {{
@@ -586,6 +624,10 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
         const defaultBadge = inst.is_default ? ' <span class="chip">default</span>' : "";
         const loaded = inst.loaded ? "yes" : "no";
         const lastCheck = inst.last_health_check || "-";
+        const scheduler = inst.scheduler || {{}};
+        const schedulerLabel = inst.scheduler_label ||
+          `m:${{scheduler.metadata_inflight || 0}} c:${{scheduler.code_read_inflight || 0}}/${{scheduler.active_limit || 0}} x:${{scheduler.exclusive_inflight || 0}} q:${{scheduler.queue_depth || 0}}/${{scheduler.queue_limit || 0}}`;
+        const busyHint = scheduler.last_busy_reason || "-";
         return (
           "<tr>" +
           `<td><strong>${{escapeHtml(inst.name)}}</strong>${{defaultBadge}}</td>` +
@@ -597,6 +639,7 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
           `<td>${{escapeHtml(inst.version_name || "-")}}</td>` +
           `<td>${{escapeHtml(String(inst.class_count ?? "-"))}}</td>` +
           `<td>${{loaded}}</td>` +
+          `<td>${{escapeHtml(schedulerLabel)}}<div class="muted">busy: ${{escapeHtml(busyHint)}}</div></td>` +
           `<td>${{escapeHtml(lastCheck)}}</td>` +
           "</tr>"
         );
@@ -604,6 +647,7 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
     }}
 
     function renderSnapshot(snapshot) {{
+      const schedulerCounts = snapshot.summary.scheduler_counts || {{}};
       document.getElementById("generated-at").textContent = `Generated at ${{snapshot.generated_at}}`;
       document.getElementById("server-bind").textContent =
         `Bind: ${{snapshot.server.host}}:${{snapshot.server.port}}`;
@@ -629,6 +673,8 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
         `Status counts: ${{formatCounts(snapshot.summary.status_counts)}}`;
       document.getElementById("registry-source").textContent =
         `Source counts: ${{formatCounts(snapshot.summary.source_counts)}}`;
+      document.getElementById("registry-scheduler").textContent =
+        `Scheduler: m:${{schedulerCounts.metadata_inflight || 0}} c:${{schedulerCounts.code_read_inflight || 0}}/${{schedulerCounts.active_limit || 0}} x:${{schedulerCounts.exclusive_inflight || 0}} q:${{schedulerCounts.queue_depth || 0}}/${{schedulerCounts.queue_limit || 0}}`;
       document.getElementById("warnings-list").innerHTML = renderWarnings(snapshot.warnings);
       document.getElementById("instances-body").innerHTML = renderInstances(snapshot.instances);
     }}

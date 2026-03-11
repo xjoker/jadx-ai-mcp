@@ -53,7 +53,7 @@ is_admin = true  # 可以管理实例
 name = "local"
 host = "127.0.0.1"
 port = 8650
-default = true
+enabled = true
 
 [[jadx_instances]]
 name = "remote-server"
@@ -74,20 +74,19 @@ port = 8650
 
 > 💡 设置 `JADX_MCP_BIND_ADDRESS=0.0.0.0` 允许远程连接（Docker 部署必需）。
 
-#### MCP Server (Python) 环境变量
+#### MCP Server / Transfer API 环境变量
 
 | 变量 | 说明 | 默认值 |
 |:-----|:-----|:-------|
-| `JADX_MCP_HOST` | MCP Server 绑定地址 | `0.0.0.0` |
-| `JADX_HOST` | 默认 JADX 插件主机 | `127.0.0.1` |
-| `JADX_PORT` | 默认 JADX 插件端口 | `8650` |
+| `MCP_SERVER_URL` | 生成 Transfer API 下载链接时使用的 MCP Server 对外地址 | 回退到 `http://localhost:8651` |
+
+> 独立 MCP Server 当前没有公开 `JADX_HOST` / `JADX_PORT` 这类环境变量入口。绑定地址、默认 JADX 端点和多实例注册请使用命令行参数或 `jadx-config.toml`。
 
 ### 配置优先级
 
-1. **环境变量**（最高）
-2. **命令行参数**
-3. **配置文件**
-4. **默认值**（最低）
+1. **JADX 插件运行时**：环境变量 → 已保存 Preferences → 内建默认值
+2. **MCP Server 绑定地址 / 默认 JADX 端点**：命令行参数 → 配置文件 → 内建默认值
+3. **Transfer API 对外地址**：`MCP_SERVER_URL` → 配置文件 `[server].mcp_url` → `http://localhost:8651`
 
 ---
 

@@ -17,6 +17,8 @@
 
 ---
 
+> Versioning note: source files keep development placeholder versions. GitHub Actions injects the release version into build artifacts, `pom.xml`, the Java banner, and the Python server banner during release builds.
+
 ## 🌟 What Makes This Fork Different?
 
 This fork provides **major enhancements** over the original project:

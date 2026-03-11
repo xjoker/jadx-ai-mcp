@@ -12,8 +12,27 @@ health_check_interval = 30
 
 # ============================================
 # JADX 实例配置
-# 使用 Docker Compose 内部网络名称
+# 纯 pull 模式下必须显式配置实例，否则 MCP Server 不会自动发现容器
+# 这里使用 Docker Compose 内部网络名称预注册 3 个实例
 # ============================================
+
+[[jadx_instances]]
+name = "jadx-1"
+host = "jadx-1"
+port = 8650
+enabled = true
+
+[[jadx_instances]]
+name = "jadx-2"
+host = "jadx-2"
+port = 8650
+enabled = true
+
+[[jadx_instances]]
+name = "jadx-3"
+host = "jadx-3"
+port = 8650
+enabled = true
 
 # ============================================
 # 用户认证 (可选)
