@@ -556,8 +556,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = "==3.1.0" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.0" },
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = "==2.4.0" },
 ]
 
 [[package]]
