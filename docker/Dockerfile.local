@@ -23,7 +23,7 @@ COPY pom.xml .
 COPY src ./src
 
 # Download JADX and install to local Maven repo (to satisfy provided dependency)
-RUN wget -q "https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.zip" -O /tmp/jadx.zip && \
+RUN wget -q "https://github.com/skylot/jadx/releases/download/v1.5.5/jadx-1.5.5.zip" -O /tmp/jadx.zip && \
     unzip -q /tmp/jadx.zip -d /tmp/jadx && \
     echo "=== JADX directory structure ===" && \
     ls -la /tmp/jadx/lib/ && \
@@ -33,7 +33,7 @@ RUN wget -q "https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.
         -Dfile="$JADX_JAR" \
         -DgroupId=io.github.skylot \
         -DartifactId=jadx-all \
-        -Dversion=1.5.3 \
+        -Dversion=1.5.5 \
         -Dpackaging=jar && \
     rm -rf /tmp/jadx.zip /tmp/jadx
 

@@ -1113,17 +1113,21 @@ public class ClassRoutes {
                 }
             }
 
-            // Try to acquire global lock
-            if (!JadxSearchLock.tryAcquire()) {
-                Map<String, Object> busyResponse = new HashMap<>();
-                busyResponse.put("error", "Search operation in progress");
-                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
-                busyResponse.put("busy", true);
-                busyResponse.put("lock_held_seconds", JadxSearchLock.getLockHeldSeconds());
-                ctx.status(503).json(busyResponse);
-                return;
+            boolean lockAcquired = false;
+            if (isCodeSearch) {
+                // Only code/comment search needs JADX decompilation and must be serialized.
+                if (!JadxSearchLock.tryAcquire()) {
+                    Map<String, Object> busyResponse = new HashMap<>();
+                    busyResponse.put("error", "Search operation in progress");
+                    busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                    busyResponse.put("busy", true);
+                    busyResponse.put("lock_held_seconds", JadxSearchLock.getLockHeldSeconds());
+                    ctx.status(503).json(busyResponse);
+                    return;
+                }
+                lockAcquired = true;
             }
-            
+
             try {
                 final int resultsNeeded = offset + count + 1; // +1 to check if has_more
                 final ConcurrentLinkedQueue<String> results = new ConcurrentLinkedQueue<>();
@@ -1258,7 +1262,9 @@ public class ClassRoutes {
                 
                 ctx.json(response);
             } finally {
-                JadxSearchLock.release();
+                if (lockAcquired) {
+                    JadxSearchLock.release();
+                }
             }
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx,
