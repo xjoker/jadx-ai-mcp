@@ -1058,8 +1058,9 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=True
         )
-        print("[WARN] No MCP authentication configured")
-        print("  Add [[users]] to config or use --mcp-auth-token")
+        print("[WARN] No MCP authentication configured — /mcp endpoint is open")
+        print("  This is only safe for local development. For network deployments,")
+        print("  add [[users]] to config or use --mcp-auth-token to enable auth.")
 
     # Banner & Health Check
     try:
@@ -1256,7 +1257,8 @@ def main():
         print("[OK] FastMCP TokenVerifier enabled for /mcp")
     else:
         # No auth users — leave mcp.auth unset so /mcp is open
-        print("[OK] MCP endpoint running without FastMCP auth (no OAuth required)")
+        print("[WARN] MCP endpoint is OPEN — no authentication required")
+        print("  Only safe for local use. Configure [[users]] for network deployments.")
 
     # Register user-context middleware for tool permission checks
     auth_middleware = BearerAuthMiddleware(require_auth=require_auth)
