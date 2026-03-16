@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare benchmark fixture
         run: |
@@ -35,7 +35,7 @@ jobs:
           cp tests/fixtures/jadx-test-app-1.0.0.apk temp/target.apk
 
       - name: Restore baseline report
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: temp/benchmark-baseline/baseline.json
           key: benchmark-baseline-${{ github.ref_name }}
@@ -115,7 +115,7 @@ jobs:
 
       - name: Save baseline cache
         if: success()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: temp/benchmark-baseline/baseline.json
           key: benchmark-baseline-${{ github.ref_name }}-${{ github.sha }}
@@ -130,7 +130,7 @@ jobs:
 
       - name: Upload benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: benchmark-smoke-report
           path: temp/benchmark-results/*

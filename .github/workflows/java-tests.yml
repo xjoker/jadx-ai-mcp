@@ -26,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '11'
           distribution: 'temurin'
@@ -37,7 +37,7 @@ jobs:
 
       - name: Cache JADX dependency
         id: cache-jadx
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2/repository/io/github/skylot
           key: jadx-${{ env.JADX_VERSION }}
@@ -65,10 +65,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '11'
           distribution: 'temurin'
@@ -76,7 +76,7 @@ jobs:
 
       - name: Cache JADX dependency
         id: cache-jadx
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2/repository/io/github/skylot
           key: jadx-${{ env.JADX_VERSION }}
@@ -96,7 +96,7 @@ jobs:
 
       - name: Cache Nexus3 test JAR
         id: cache-nexus
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: temp/nexus-main.jar
           key: nexus-jar-3.68.0
