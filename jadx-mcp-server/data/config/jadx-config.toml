@@ -1,17 +1,23 @@
 # JADX MCP Server 配置文件
 # All-in-One 容器默认配置 - 连接容器内部 JADX 实例
 #
-# !! 安全警告 !!
-# 当前配置未启用认证，/mcp 端点完全开放。
-# 此模式仅适合本地开发和测试使用。
-# 如需在网络中部署（内网/公网），务必配置 [[users]] 启用认证，
-# 否则任何能访问端口的人都可以调用所有 MCP 工具。
+# JADX MCP Server - All-in-One 容器默认配置
+#
+# 认证说明:
+#   容器启动时，如果此文件中没有 [[users]] 段，start.sh 会自动
+#   生成一个随机 admin token 并追加到此文件末尾。
+#   Token 会打印到容器日志中 (docker logs <container>)。
+#
+#   自定义 token 的方式:
+#     1. 设置环境变量: docker run -e MCP_AUTH_TOKEN=your-token ...
+#     2. 在此文件中手动添加 [[users]] 段
+#     3. 挂载外部配置文件覆盖此文件
 
 [security]
 # 允许动态添加 JADX 实例
 allow_dynamic_instances = true
 
-# 默认 JADX 实例配置（All-in-One 容器）
+# 默认 JADX 实例配置（All-in-One 容器内部）
 [[jadx_instances]]
 name = "local"
 host = "127.0.0.1"
@@ -19,31 +25,10 @@ port = 8650
 default = true
 enabled = true
 
-# ============================================
-# 用户认证配置
-# 在网络中部署时必须启用，取消注释并修改 token
-# ============================================
-#
-# [[users]]
-# name = "admin"
-# token = "change-me-to-a-strong-random-token"
-# is_admin = true
-#
-# [[users]]
-# name = "viewer"
-# token = "another-strong-random-token"
-
-# 多实例配置示例（注释掉）
-# 如需连接多个 JADX 实例，请取消注释并修改配置
+# 多实例配置示例（取消注释并修改）
 #
 # [[jadx_instances]]
 # name = "remote-instance"
 # host = "192.168.1.100"
 # port = 8650
 # enabled = true
-#
-# [[jadx_instances]]
-# name = "another-apk"
-# host = "host.docker.internal"
-# port = 8652
-# default = false
