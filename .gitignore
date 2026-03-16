@@ -94,3 +94,4 @@ htmlcov/
 docker/apks/*/
 !docker/apks/.gitkeep
 temp
+.claude
