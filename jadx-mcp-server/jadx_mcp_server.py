@@ -1211,14 +1211,23 @@ def main():
             )
 
             if require_auth:
-                # Build or reload the inner verifier
-                new_inner = build_auth_provider(auth_users)
-                switchable_verifier.set_inner(new_inner)
-                print(f"  [Hot-Reload] Reloaded MCP auth users: {len(auth_users)}")
+                if mcp.auth is switchable_verifier:
+                    # Auth was already enabled at startup — reload users in place
+                    new_inner = build_auth_provider(auth_users)
+                    switchable_verifier.set_inner(new_inner)
+                    print(f"  [Hot-Reload] Reloaded MCP auth users: {len(auth_users)}")
+                else:
+                    # Auth was disabled at startup — can't add OAuth middleware dynamically
+                    print("  [Hot-Reload] Auth users added but OAuth middleware not active.")
+                    print("  [Hot-Reload] *** Restart required to enable MCP auth ***")
             else:
-                # Disable auth — switchable verifier will grant anonymous access
-                switchable_verifier.set_inner(None)
-                print("  [Hot-Reload] Auth disabled (no users configured)")
+                if mcp.auth is switchable_verifier:
+                    # Auth was enabled at startup — can't remove OAuth middleware dynamically
+                    switchable_verifier.set_inner(None)
+                    print("  [Hot-Reload] Auth users removed. Existing OAuth sessions still work.")
+                    print("  [Hot-Reload] *** Restart required to fully disable MCP auth ***")
+                else:
+                    print("  [Hot-Reload] Auth remains disabled (no users configured)")
         
         print(f"  [Hot-Reload] Complete. Instances: {InstanceRegistry.get_instance_count()}")
 
@@ -1233,16 +1242,21 @@ def main():
     register_resources(mcp)
     
     # Register official FastMCP auth provider for the MCP endpoint.
-    # Use SwitchableTokenVerifier so hot-reload can toggle auth on/off
-    # without restarting the server.
+    #
+    # IMPORTANT: Only set mcp.auth when users are actually configured.
+    # FastMCP's HTTP transport wraps /mcp with RequireAuthMiddleware when
+    # auth is set, which rejects ALL requests without a valid OAuth Bearer
+    # token — even if our verifier would accept anonymous access.
+    # Setting mcp.auth = None keeps /mcp open (no OAuth flow required).
     require_auth = bool(auth_users) and not allow_anonymous
     inner_verifier = build_auth_provider(auth_users)
     switchable_verifier = SwitchableTokenVerifier(inner=inner_verifier)
-    mcp.auth = switchable_verifier
     if inner_verifier:
+        mcp.auth = switchable_verifier
         print("[OK] FastMCP TokenVerifier enabled for /mcp")
     else:
-        print("[OK] MCP endpoint running without FastMCP auth")
+        # No auth users — leave mcp.auth unset so /mcp is open
+        print("[OK] MCP endpoint running without FastMCP auth (no OAuth required)")
 
     # Register user-context middleware for tool permission checks
     auth_middleware = BearerAuthMiddleware(require_auth=require_auth)
