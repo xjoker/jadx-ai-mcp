@@ -65,8 +65,8 @@ jobs:
           # Get short commit SHA (7 chars)
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           
-          # Update pom.xml - match any version in the first occurrence
-          sed -i "0,/<version>[0-9.]*<\/version>/s/<version>[0-9.]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
+          # Update pom.xml - match any version (including -dev suffix) in the first occurrence
+          sed -i "0,/<version>[0-9.]*[-a-zA-Z0-9]*<\/version>/s/<version>[0-9.]*[-a-zA-Z0-9]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
           # Update Java banner - version
           sed -i "s|VERSION = \".*\"|VERSION = \"${VERSION}\"|" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
           # Update Java banner - build commit
