@@ -13,8 +13,8 @@ from starlette.requests import Request
 from server.config_loader import UserConfig
 from server.busy_tracker import InstanceBusyTracker
 from server.instance_registry import InstanceRegistry
+from server.http_auth_middleware import STATUS_AUTH_COOKIE
 from server.status_page import (
-    STATUS_AUTH_COOKIE,
     build_status_snapshot,
     status_html_response,
     status_json_response,

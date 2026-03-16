@@ -21,6 +21,7 @@ from src.banner import jadx_mcp_server_banner
 from src.server import config, tools
 from src.server.mcp_auth import (
     ReloadableStaticTokenVerifier,
+    SwitchableTokenVerifier,
     build_auth_provider,
     build_legacy_cli_user,
 )
@@ -1194,33 +1195,30 @@ def main():
                 else:
                     print(f"  [Hot-Reload] Failed to add {inst_cfg.name}: {result['message']}")
 
-        # Reload MCP auth/users when possible without rebuilding the HTTP app.
+        # Reload MCP auth/users via SwitchableTokenVerifier (no restart needed).
         if args.mcp_auth_token:
             print("  [Hot-Reload] MCP auth unchanged (CLI --mcp-auth-token takes precedence)")
         else:
             new_auth_users = [user for user in new_config.users if user.token]
-            auth_mode_before = require_auth
-            auth_mode_after = bool(new_auth_users)
+            auth_users = new_auth_users
+            allow_anonymous = not bool(new_auth_users)
+            require_auth = bool(new_auth_users)
 
-            if auth_mode_before == auth_mode_after:
-                auth_users = new_auth_users
-                allow_anonymous = not auth_mode_after
-                require_auth = auth_mode_after
-                UserAuthManager.configure(
-                    users=auth_users,
-                    default_jadx_token=default_jadx_token,
-                    allow_anonymous=allow_anonymous,
-                )
+            UserAuthManager.configure(
+                users=auth_users,
+                default_jadx_token=default_jadx_token,
+                allow_anonymous=allow_anonymous,
+            )
 
-                if auth_mode_after and isinstance(mcp.auth, ReloadableStaticTokenVerifier):
-                    mcp.auth.reload_users(auth_users)
-                    print(f"  [Hot-Reload] Reloaded MCP auth users: {len(auth_users)}")
-                elif not auth_mode_after:
-                    print("  [Hot-Reload] Auth unchanged (anonymous mode)")
-                else:
-                    print("  [Hot-Reload] Auth refresh skipped: runtime provider is not reloadable")
+            if require_auth:
+                # Build or reload the inner verifier
+                new_inner = build_auth_provider(auth_users)
+                switchable_verifier.set_inner(new_inner)
+                print(f"  [Hot-Reload] Reloaded MCP auth users: {len(auth_users)}")
             else:
-                print("  [Hot-Reload] Auth mode change detected (enable/disable). Restart required to apply MCP auth changes.")
+                # Disable auth — switchable verifier will grant anonymous access
+                switchable_verifier.set_inner(None)
+                print("  [Hot-Reload] Auth disabled (no users configured)")
         
         print(f"  [Hot-Reload] Complete. Instances: {InstanceRegistry.get_instance_count()}")
 
@@ -1234,10 +1232,14 @@ def main():
     # Register Resources (usage guide, decision matrix, benchmarks)
     register_resources(mcp)
     
-    # Register official FastMCP auth provider for the MCP endpoint
+    # Register official FastMCP auth provider for the MCP endpoint.
+    # Use SwitchableTokenVerifier so hot-reload can toggle auth on/off
+    # without restarting the server.
     require_auth = bool(auth_users) and not allow_anonymous
-    mcp.auth = build_auth_provider(auth_users)
-    if mcp.auth:
+    inner_verifier = build_auth_provider(auth_users)
+    switchable_verifier = SwitchableTokenVerifier(inner=inner_verifier)
+    mcp.auth = switchable_verifier
+    if inner_verifier:
         print("[OK] FastMCP TokenVerifier enabled for /mcp")
     else:
         print("[OK] MCP endpoint running without FastMCP auth")

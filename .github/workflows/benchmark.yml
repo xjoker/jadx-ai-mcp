@@ -34,8 +34,23 @@ jobs:
           mkdir -p temp
           cp tests/fixtures/jadx-test-app-1.0.0.apk temp/target.apk
 
+      - name: Restore baseline report
+        uses: actions/cache/restore@v4
+        with:
+          path: temp/benchmark-baseline/baseline.json
+          key: benchmark-baseline-${{ github.ref_name }}
+          restore-keys: benchmark-baseline-jadx-ai
+
       - name: Run smoke benchmark
         run: |
+          COMPARE_FLAG=""
+          if [ -f temp/benchmark-baseline/baseline.json ]; then
+            COMPARE_FLAG="--compare temp/benchmark-baseline/baseline.json"
+            echo "Baseline found, running with comparison"
+          else
+            echo "No baseline found, running without comparison"
+          fi
+
           ./benchmarks/run_in_container.sh \
             --build \
             --image jadx-ai-mcp:ci-benchmark \
@@ -43,7 +58,8 @@ jobs:
             --label ci-smoke \
             --config benchmarks/smoke_matrix.json \
             --plugin-port 8850 \
-            --mcp-port 8851
+            --mcp-port 8851 \
+            $COMPARE_FLAG
 
       - name: Validate smoke benchmark report
         run: |
@@ -68,7 +84,49 @@ jobs:
                   f"Smoke benchmark reported busy/error cases: "
                   f"busy_cases={busy_cases}, error_cases={error_cases}"
               )
+
+          # Check comparison results for regressions (soft warning, does not fail CI)
+          comparisons = report.get("compare") or []
+          regressions = [c for c in comparisons if c.get("verdict") == "regression"]
+          if regressions:
+              for r in regressions:
+                  print(
+                      f"::warning title=Performance Regression::"
+                      f"{r['target']}/{r['scenario']}/{r['workload']}@{r['concurrency']} - "
+                      f"ok_rps delta: {r['ok_rps_delta']}, p95 delta: {r['p95_delta_ms']}ms"
+                  )
+              print(f"\n{len(regressions)} regression(s) detected (soft warning, CI not blocked)")
+          else:
+              if comparisons:
+                  print(f"All {len(comparisons)} comparison(s) passed")
+              else:
+                  print("No baseline comparison available")
           PY
+
+      - name: Update baseline
+        if: success()
+        run: |
+          mkdir -p temp/benchmark-baseline
+          LATEST=$(ls -t temp/benchmark-results/*ci-smoke.json 2>/dev/null | head -1)
+          if [ -n "$LATEST" ]; then
+            cp "$LATEST" temp/benchmark-baseline/baseline.json
+            echo "Updated baseline from $LATEST"
+          fi
+
+      - name: Save baseline cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: temp/benchmark-baseline/baseline.json
+          key: benchmark-baseline-${{ github.ref_name }}-${{ github.sha }}
+
+      - name: Post benchmark summary
+        if: always()
+        run: |
+          MD=$(ls -t temp/benchmark-results/*ci-smoke.md 2>/dev/null | head -1)
+          if [ -f "$MD" ]; then
+            cat "$MD" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload benchmark artifacts
         if: always()

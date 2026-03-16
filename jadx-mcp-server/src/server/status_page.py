@@ -18,6 +18,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .busy_tracker import InstanceBusyTracker
 from .health_monitor import HealthMonitor
+from .http_auth_middleware import STATUS_AUTH_COOKIE, authenticate_http_request
 from .instance_registry import InstanceRegistry
 from .user_auth import AuthenticatedUser, UserAuthManager
 
@@ -38,37 +39,7 @@ STATUS_CLASS = {
     "error": "err",
 }
 
-STATUS_AUTH_COOKIE = "jadx_status_token"
 STATUS_REFRESH_INTERVAL_MS = 5000
-
-
-def _extract_bearer_token(request: Request) -> str:
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
-    return ""
-
-
-def _extract_cookie_token(request: Request) -> str:
-    return request.cookies.get(STATUS_AUTH_COOKIE, "")
-
-
-def _authenticate_request(request: Request, require_auth: bool) -> tuple[AuthenticatedUser | None, str]:
-    token = _extract_bearer_token(request)
-    auth_source = "bearer"
-    if not token:
-        token = _extract_cookie_token(request)
-        auth_source = "cookie" if token else "anonymous"
-
-    user = UserAuthManager.authenticate(token)
-
-    if user is None and require_auth and not UserAuthManager.allows_anonymous():
-        return None, auth_source
-
-    if user is None:
-        return AuthenticatedUser(name="anonymous", token="", is_admin=False), "anonymous"
-
-    return user, auth_source
 
 
 def _format_source(source: str) -> str:
@@ -746,7 +717,7 @@ async def status_json_response(
     server_port: int,
     require_auth: bool,
 ):
-    viewer, auth_source = _authenticate_request(request, require_auth)
+    viewer, auth_source = authenticate_http_request(request, require_auth)
     if viewer is None:
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
@@ -767,7 +738,7 @@ async def status_html_response(
     server_port: int,
     require_auth: bool,
 ):
-    viewer, auth_source = _authenticate_request(request, require_auth)
+    viewer, auth_source = authenticate_http_request(request, require_auth)
     if viewer is None:
         response = HTMLResponse(
             render_login_html(
@@ -776,7 +747,7 @@ async def status_html_response(
             ),
             status_code=401,
         )
-        if _extract_cookie_token(request):
+        if request.cookies.get(STATUS_AUTH_COOKIE):
             response.delete_cookie(STATUS_AUTH_COOKIE, path="/")
         return response
 

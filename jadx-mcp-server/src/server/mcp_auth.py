@@ -6,7 +6,7 @@ Builds the official FastMCP auth provider from the project's existing user confi
 
 from __future__ import annotations
 
-from fastmcp.server.auth import StaticTokenVerifier
+from fastmcp.server.auth import AccessToken, StaticTokenVerifier
 
 from .config_loader import UserConfig
 
@@ -41,6 +41,38 @@ class ReloadableStaticTokenVerifier(StaticTokenVerifier):
 
     def reload_users(self, users: list[UserConfig]) -> None:
         self.tokens = _build_token_table(users)
+
+
+class SwitchableTokenVerifier(StaticTokenVerifier):
+    """
+    Token verifier assigned once to ``mcp.auth`` at startup.
+
+    The inner verifier can be swapped at runtime via ``set_inner()`` to
+    support hot-reload between auth-enabled and auth-disabled modes
+    without recreating the FastMCP app.
+
+    When ``_inner`` is ``None`` (auth disabled), every token is accepted
+    as an anonymous access token.
+    """
+
+    def __init__(self, inner: ReloadableStaticTokenVerifier | None = None) -> None:
+        # Parent expects a tokens dict; give it an empty one since we delegate.
+        super().__init__(tokens={})
+        self._inner: ReloadableStaticTokenVerifier | None = inner
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if self._inner is None:
+            # Auth disabled — grant anonymous access
+            return AccessToken(
+                token=token,
+                client_id="anonymous",
+                scopes=[],
+            )
+        return await self._inner.verify_token(token)
+
+    def set_inner(self, inner: ReloadableStaticTokenVerifier | None) -> None:
+        """Swap the underlying verifier (called on hot-reload)."""
+        self._inner = inner
 
 
 def build_auth_provider(users: list[UserConfig]) -> ReloadableStaticTokenVerifier | None:

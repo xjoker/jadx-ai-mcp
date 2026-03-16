@@ -1,6 +1,6 @@
 [project]
 name = "jadx-mcp-server"
-version = "6.1.3-dev"
+version = "6.1.5-dev"
 description = "MCP Server for JADX AI - Connect LLMs with JADX decompiler"
 readme = "README_SERVER.md"
 requires-python = ">=3.10"

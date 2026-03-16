@@ -8,6 +8,7 @@ from server.config_loader import UserConfig
 from server.mcp_auth import (
     LEGACY_MCP_CLIENT_NAME,
     ReloadableStaticTokenVerifier,
+    SwitchableTokenVerifier,
     build_auth_provider,
     build_legacy_cli_user,
 )
@@ -63,3 +64,68 @@ class TestMcpAuthProvider:
         assert user.token == "cli-token"
         assert user.is_admin is False
         assert user.has_add_instances_permission is False
+
+
+class TestSwitchableTokenVerifier:
+    """Tests for SwitchableTokenVerifier hot-reload support."""
+
+    @pytest.mark.asyncio
+    async def test_grants_anonymous_when_inner_is_none(self):
+        """With no inner verifier, any token should produce anonymous access."""
+        verifier = SwitchableTokenVerifier(inner=None)
+        access = await verifier.verify_token("anything")
+
+        assert access is not None
+        assert access.client_id == "anonymous"
+
+    @pytest.mark.asyncio
+    async def test_delegates_to_inner_when_set(self):
+        """With an inner verifier, token lookup should behave normally."""
+        inner = build_auth_provider([
+            UserConfig(name="alice", token="token-alice", is_admin=False)
+        ])
+        verifier = SwitchableTokenVerifier(inner=inner)
+
+        access = await verifier.verify_token("token-alice")
+        assert access is not None
+        assert access.client_id == "alice"
+
+        assert await verifier.verify_token("bad-token") is None
+
+    @pytest.mark.asyncio
+    async def test_set_inner_enables_auth(self):
+        """Switching from None to a real verifier should enable auth."""
+        verifier = SwitchableTokenVerifier(inner=None)
+
+        # Initially anonymous
+        access = await verifier.verify_token("any")
+        assert access is not None
+        assert access.client_id == "anonymous"
+
+        # Enable auth
+        inner = build_auth_provider([
+            UserConfig(name="bob", token="token-bob", is_admin=True)
+        ])
+        verifier.set_inner(inner)
+
+        assert await verifier.verify_token("any") is None
+        access = await verifier.verify_token("token-bob")
+        assert access is not None
+        assert access.client_id == "bob"
+
+    @pytest.mark.asyncio
+    async def test_set_inner_none_disables_auth(self):
+        """Switching from a real verifier to None should disable auth."""
+        inner = build_auth_provider([
+            UserConfig(name="alice", token="token-alice", is_admin=False)
+        ])
+        verifier = SwitchableTokenVerifier(inner=inner)
+
+        # Auth is on
+        assert await verifier.verify_token("bad") is None
+
+        # Disable auth
+        verifier.set_inner(None)
+        access = await verifier.verify_token("anything")
+        assert access is not None
+        assert access.client_id == "anonymous"

@@ -1,0 +1,109 @@
+name: Java Tests
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - "pom.xml"
+      - "src/**"
+      - ".github/workflows/java-tests.yml"
+  pull_request:
+    paths:
+      - "pom.xml"
+      - "src/**"
+      - ".github/workflows/java-tests.yml"
+  workflow_dispatch:
+
+env:
+  JADX_VERSION: "1.5.5"
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Cache JADX dependency
+        id: cache-jadx
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/io/github/skylot
+          key: jadx-${{ env.JADX_VERSION }}
+
+      - name: Download and Install JADX Dependency
+        if: steps.cache-jadx.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip
+          unzip -q jadx-${JADX_VERSION}.zip -d jadx-temp
+          mvn install:install-file \
+            -Dfile=jadx-temp/lib/jadx-${JADX_VERSION}-all.jar \
+            -DgroupId=io.github.skylot \
+            -DartifactId=jadx-all \
+            -Dversion=${JADX_VERSION} \
+            -Dpackaging=jar
+          rm -rf jadx-temp jadx-${JADX_VERSION}.zip
+
+      - name: Run unit tests
+        run: mvn test
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Cache JADX dependency
+        id: cache-jadx
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/io/github/skylot
+          key: jadx-${{ env.JADX_VERSION }}
+
+      - name: Download and Install JADX Dependency
+        if: steps.cache-jadx.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip
+          unzip -q jadx-${JADX_VERSION}.zip -d jadx-temp
+          mvn install:install-file \
+            -Dfile=jadx-temp/lib/jadx-${JADX_VERSION}-all.jar \
+            -DgroupId=io.github.skylot \
+            -DartifactId=jadx-all \
+            -Dversion=${JADX_VERSION} \
+            -Dpackaging=jar
+          rm -rf jadx-temp jadx-${JADX_VERSION}.zip
+
+      - name: Cache Nexus3 test JAR
+        id: cache-nexus
+        uses: actions/cache@v4
+        with:
+          path: temp/nexus-main.jar
+          key: nexus-jar-3.68.0
+
+      - name: Fetch Nexus3 test JAR
+        if: steps.cache-nexus.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-nexus-jar.sh
+
+      - name: Run integration tests
+        run: mvn verify -P integration-test -Dmaven.test.failure.ignore=false
