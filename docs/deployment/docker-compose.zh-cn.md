@@ -53,11 +53,6 @@ docker compose up -d
 ```bash
 # 时区（默认 UTC）
 TZ=Asia/Shanghai
-
-# 各实例 APK 目录（默认 ../temp）
-JADX1_APK_DIR=./apks/app1
-JADX2_APK_DIR=./apks/app2
-JADX3_APK_DIR=./apks/app3
 ```
 
 如果你希望每个实例使用不同的 APK 目录，可以用环境变量覆盖：

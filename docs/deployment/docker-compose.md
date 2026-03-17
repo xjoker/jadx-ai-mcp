@@ -53,11 +53,6 @@ A `.env.example` file is included. Copy it to `.env` and customize:
 ```bash
 # Timezone (default: UTC)
 TZ=Asia/Shanghai
-
-# Per-instance APK directories (default: ../temp)
-JADX1_APK_DIR=./apks/app1
-JADX2_APK_DIR=./apks/app2
-JADX3_APK_DIR=./apks/app3
 ```
 
 If you want separate APK directories per instance, override the bind mounts with environment variables:
