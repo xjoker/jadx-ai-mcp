@@ -7,6 +7,10 @@
 #     1. 直接编辑下方 [[users]] 段的 token 值
 #     2. 或挂载外部配置文件覆盖此文件
 
+[defaults]
+# JADX 插件认证 Token（与 JADX GUI 插件端保持一致）
+jadx_token = "jadx-plugin-secret-token"
+
 [security]
 # 允许动态添加 JADX 实例
 allow_dynamic_instances = true

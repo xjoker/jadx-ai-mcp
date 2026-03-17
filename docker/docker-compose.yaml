@@ -61,12 +61,14 @@ services:
       - "8650:8650" # Plugin API
     volumes:
       - ${JADX1_APK_DIR:-../temp}:/apks:ro
-      - jadx-1-cache:/root/.cache
-      - jadx-1-gui:/root/.jadx-gui
+      - jadx-1-cache:/home/jadx/.cache
+      - jadx-1-gui:/home/jadx/.jadx-gui
     environment:
       - TZ=Asia/Shanghai
       - JADX_PLUGIN_PORT=8650
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
+      - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
+      - JADX_MCP_AUTH_ENABLED=true
     restart: unless-stopped
     networks:
       - jadx-network
@@ -82,12 +84,14 @@ services:
       - "8660:8650" # Plugin API (mapped to 8660 on host)
     volumes:
       - ${JADX2_APK_DIR:-../temp}:/apks:ro
-      - jadx-2-cache:/root/.cache
-      - jadx-2-gui:/root/.jadx-gui
+      - jadx-2-cache:/home/jadx/.cache
+      - jadx-2-gui:/home/jadx/.jadx-gui
     environment:
       - TZ=Asia/Shanghai
       - JADX_PLUGIN_PORT=8650
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
+      - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
+      - JADX_MCP_AUTH_ENABLED=true
     restart: unless-stopped
     networks:
       - jadx-network
@@ -103,12 +107,14 @@ services:
       - "8670:8650" # Plugin API (mapped to 8670 on host)
     volumes:
       - ${JADX3_APK_DIR:-../temp}:/apks:ro
-      - jadx-3-cache:/root/.cache
-      - jadx-3-gui:/root/.jadx-gui
+      - jadx-3-cache:/home/jadx/.cache
+      - jadx-3-gui:/home/jadx/.jadx-gui
     environment:
       - TZ=Asia/Shanghai
       - JADX_PLUGIN_PORT=8650
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
+      - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
+      - JADX_MCP_AUTH_ENABLED=true
     restart: unless-stopped
     networks:
       - jadx-network

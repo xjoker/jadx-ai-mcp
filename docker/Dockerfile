@@ -17,6 +17,8 @@ LABEL description="JADX-AI-MCP with noVNC for headless server deployment"
 
 # Additional environment variables
 ENV JADX_API_PORT=8650
+ENV JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
+ENV JADX_MCP_AUTH_ENABLED=true
 
 # ============================================================================
 # Layer 1: Download JADX (changes only when JADX_VERSION changes)

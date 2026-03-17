@@ -9,6 +9,8 @@
 | 客户端 | 连接方式 | 状态 |
 |:-------|:---------|:----:|
 | **Claude Desktop** | HTTP/MCP | ✅ 推荐 |
+| **Claude Code** | HTTP/MCP | ✅ 推荐 |
+| **OpenAI Codex CLI** | HTTP/MCP | ✅ 支持 |
 | **Cursor** | HTTP/MCP | ✅ 支持 |
 | **Continue** | HTTP/MCP | ✅ 支持 |
 | **ChatGPT** (Custom GPT) | HTTP | ⚠️ 有限 |
@@ -82,6 +84,45 @@
 > "能列出可用的 JADX 工具吗？"
 
 如果连接成功，Claude 会显示 45 个 MCP 工具。
+
+---
+
+### Claude Code 配置
+
+```bash
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization:Bearer your-secret-token"
+```
+
+**远程服务器：**
+```bash
+claude mcp add --transport http jadx http://your-server.com:8651/mcp \
+  --header "Authorization:Bearer your-secret-token"
+```
+
+---
+
+### OpenAI Codex CLI 配置
+
+在 `~/.codex/config.toml`（全局）或 `.codex/config.toml`（项目级）中添加：
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+http_headers = { Authorization = "Bearer your-secret-token" }
+```
+
+**远程服务器：**
+```toml
+[mcp_servers.jadx]
+url = "http://your-server.com:8651/mcp"
+http_headers = { Authorization = "Bearer your-secret-token" }
+```
+
+验证配置：
+```bash
+codex mcp list
+```
 
 ---
 

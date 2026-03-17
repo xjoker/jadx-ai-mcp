@@ -9,6 +9,8 @@
 | Client | Connection Type | Status |
 |:-------|:----------------|:------:|
 | **Claude Desktop** | HTTP/MCP | ✅ Recommended |
+| **Claude Code** | HTTP/MCP | ✅ Recommended |
+| **OpenAI Codex CLI** | HTTP/MCP | ✅ Supported |
 | **Cursor** | HTTP/MCP | ✅ Supported |
 | **Continue** | HTTP/MCP | ✅ Supported |
 | **ChatGPT** (Custom GPT) | HTTP | ⚠️ Limited |
@@ -82,6 +84,45 @@ Ask Claude:
 > "Can you list the available JADX tools?"
 
 If connected, Claude will show 51 MCP tools.
+
+---
+
+### Claude Code Setup
+
+```bash
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization:Bearer your-secret-token"
+```
+
+**Remote Server:**
+```bash
+claude mcp add --transport http jadx http://your-server.com:8651/mcp \
+  --header "Authorization:Bearer your-secret-token"
+```
+
+---
+
+### OpenAI Codex CLI Setup
+
+Add to `~/.codex/config.toml` (global) or `.codex/config.toml` (project):
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+http_headers = { Authorization = "Bearer your-secret-token" }
+```
+
+**Remote Server:**
+```toml
+[mcp_servers.jadx]
+url = "http://your-server.com:8651/mcp"
+http_headers = { Authorization = "Bearer your-secret-token" }
+```
+
+Verify with:
+```bash
+codex mcp list
+```
 
 ---
 

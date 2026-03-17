@@ -1,5 +1,9 @@
 # JADX MCP Server 配置文件
-# 此文件预配置连接 3 个 JADX 实例
+# Docker Compose 多实例部署配置 - 连接 3 个独立 JADX 容器
+#
+# 认证说明:
+#   容器自带默认 admin 用户，token 为 "admin-secret-token"。
+#   请在生产环境中修改为强随机 token。
 
 [server]
 host = "0.0.0.0"
@@ -9,11 +13,12 @@ port = 8651
 request_timeout = 120
 busy_timeout = 300
 health_check_interval = 30
+# JADX 插件认证 Token（与各 JADX 实例的 JADX_MCP_AUTH_TOKEN 环境变量一致）
+jadx_token = "jadx-plugin-secret-token"
 
 # ============================================
 # JADX 实例配置
-# 纯 pull 模式下必须显式配置实例，否则 MCP Server 不会自动发现容器
-# 这里使用 Docker Compose 内部网络名称预注册 3 个实例
+# Docker Compose 内部网络名称预注册 3 个实例
 # ============================================
 
 [[jadx_instances]]
@@ -35,14 +40,9 @@ port = 8650
 enabled = true
 
 # ============================================
-# 用户认证 (可选)
-# 取消注释并修改 token 以启用认证
+# 用户认证配置
+# 默认 admin 用户，生产环境请务必修改 token
 # ============================================
-
-# [[users]]
-# name = "alice"
-# token = "your-secret-token-here"
-
 [[users]]
 name = "admin"
 token = "admin-secret-token"
