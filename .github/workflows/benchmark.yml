@@ -59,6 +59,8 @@ jobs:
             --config benchmarks/smoke_matrix.json \
             --plugin-port 8850 \
             --mcp-port 8851 \
+            --plugin-auth-token jadx-plugin-secret-token \
+            --mcp-auth-token admin-secret-token \
             $COMPARE_FLAG
 
       - name: Validate smoke benchmark report
