@@ -545,7 +545,7 @@ wheels = [
 
 [[package]]
 name = "jadx-mcp-server"
-version = "1.6.5.dev0"
+version = "6.1.5.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
