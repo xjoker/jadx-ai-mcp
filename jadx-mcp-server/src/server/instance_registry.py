@@ -468,6 +468,14 @@ class InstanceRegistry:
         return None
     
     @classmethod
+    def get_first_connected(cls) -> Optional[JadxInstance]:
+        """Return the first instance with status 'connected', or None."""
+        for inst in cls._instances.values():
+            if inst.status == "connected":
+                return inst
+        return None
+
+    @classmethod
     def get_instance(cls, name: str) -> Optional[JadxInstance]:
         """Get instance by name (thread-safe)"""
         with cls._thread_lock:

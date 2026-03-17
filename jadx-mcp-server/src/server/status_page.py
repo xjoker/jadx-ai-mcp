@@ -8,6 +8,7 @@ from FastMCP custom routes without a frontend build step.
 from __future__ import annotations
 
 import json
+import secrets
 from collections import Counter
 from datetime import datetime, timezone
 from html import escape
@@ -79,6 +80,7 @@ def _cookie_settings() -> dict[str, Any]:
         "httponly": True,
         "samesite": "lax",
         "path": "/",
+        "max_age": 86400,
     }
 
 
@@ -202,14 +204,14 @@ def _render_instances_table(instances: list[dict[str, Any]]) -> str:
             f"<td>{escape(inst.get('version_name', '-'))}</td>"
             f"<td>{escape(str(inst.get('class_count', '-')))}</td>"
             f"<td>{loaded}</td>"
-            f"<td>{escape(inst.get('scheduler_label', '-'))}<div class=\"muted\">busy: {escape(busy_hint)}</div></td>"
+            f"<td title=\"m=metadata c=code_read x=exclusive q=queue\">{escape(inst.get('scheduler_label', '-'))}<div class=\"muted\">busy: {escape(busy_hint)}</div></td>"
             f"<td>{escape(last_check)}</td>"
             "</tr>"
         )
     return "".join(rows)
 
 
-def _render_session_panel(snapshot: dict[str, Any]) -> str:
+def _render_session_panel(snapshot: dict[str, Any], csrf_token: str = "") -> str:
     viewer = snapshot["viewer"]
     auth = snapshot["auth"]
 
@@ -227,6 +229,7 @@ def _render_session_panel(snapshot: dict[str, Any]) -> str:
             '<section class="card session-card">'
             "<h2>Status Login</h2>"
             '<form method="post" action="/status/login" class="token-form">'
+            f'<input type="hidden" name="csrf_token" value="{escape(csrf_token)}">'
             '<input type="password" name="token" placeholder="Enter user token" autocomplete="off" required>'
             '<button type="submit">Log In</button>'
             "</form>"
@@ -253,10 +256,14 @@ def _snapshot_payload(snapshot: dict[str, Any]) -> str:
     return json.dumps(snapshot, ensure_ascii=True).replace("</", "<\\/")
 
 
+CSRF_COOKIE_NAME = "csrf_token"
+
+
 def render_login_html(
     *,
     error_message: str = "",
     configured_users: int,
+    csrf_token: str = "",
 ) -> str:
     error_block = (
         f'<p class="login-error">{escape(error_message)}</p>'
@@ -329,6 +336,7 @@ def render_login_html(
     <p class="muted">Configured users: {configured_users}</p>
     {error_block}
     <form method="post" action="/status/login">
+      <input type="hidden" name="csrf_token" value="{escape(csrf_token)}">
       <input type="password" name="token" placeholder="Enter user token" autocomplete="off" required>
       <button type="submit">Log In</button>
     </form>
@@ -337,7 +345,7 @@ def render_login_html(
 </html>"""
 
 
-def render_status_html(snapshot: dict[str, Any]) -> str:
+def render_status_html(snapshot: dict[str, Any], csrf_token: str = "") -> str:
     summary = snapshot["summary"]
     server = snapshot["server"]
     auth = snapshot["auth"]
@@ -475,6 +483,10 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
       text-align: center;
       color: var(--muted);
     }}
+    .refresh-error {{
+      color: var(--err);
+      font-weight: bold;
+    }}
   </style>
 </head>
 <body>
@@ -491,7 +503,7 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
     </div>
 
     <div class="session-wrap">
-      {_render_session_panel(snapshot)}
+      {_render_session_panel(snapshot, csrf_token=csrf_token)}
     </div>
 
     <div class="grid">
@@ -523,13 +535,14 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
       </section>
     </div>
 
-    <section class="warnbox">
+    <section class="warnbox" id="warnbox"{' style="display:none"' if not snapshot['warnings'] else ''}>
       <h2>Warnings</h2>
       <ul id="warnings-list">{_render_warning_list(snapshot['warnings'])}</ul>
     </section>
 
     <section>
       <h2>Instances</h2>
+      <div style="overflow-x:auto">
       <table>
         <thead>
           <tr>
@@ -542,12 +555,13 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
             <th>Version</th>
             <th>Classes</th>
             <th>Loaded</th>
-            <th>Scheduler</th>
+            <th title="m=metadata c=code_read x=exclusive q=queue">Scheduler</th>
             <th>Last Check</th>
           </tr>
         </thead>
         <tbody id="instances-body">{_render_instances_table(snapshot['instances'])}</tbody>
       </table>
+      </div>
     </section>
   </div>
 
@@ -610,7 +624,7 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
           `<td>${{escapeHtml(inst.version_name || "-")}}</td>` +
           `<td>${{escapeHtml(String(inst.class_count ?? "-"))}}</td>` +
           `<td>${{loaded}}</td>` +
-          `<td>${{escapeHtml(schedulerLabel)}}<div class="muted">busy: ${{escapeHtml(busyHint)}}</div></td>` +
+          `<td title="m=metadata c=code_read x=exclusive q=queue">${{escapeHtml(schedulerLabel)}}<div class="muted">busy: ${{escapeHtml(busyHint)}}</div></td>` +
           `<td>${{escapeHtml(lastCheck)}}</td>` +
           "</tr>"
         );
@@ -647,6 +661,8 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
       document.getElementById("registry-scheduler").textContent =
         `Scheduler: m:${{schedulerCounts.metadata_inflight || 0}} c:${{schedulerCounts.code_read_inflight || 0}}/${{schedulerCounts.active_limit || 0}} x:${{schedulerCounts.exclusive_inflight || 0}} q:${{schedulerCounts.queue_depth || 0}}/${{schedulerCounts.queue_limit || 0}}`;
       document.getElementById("warnings-list").innerHTML = renderWarnings(snapshot.warnings);
+      const warnbox = document.getElementById("warnbox");
+      warnbox.style.display = (snapshot.warnings && snapshot.warnings.length > 0) ? "" : "none";
       document.getElementById("instances-body").innerHTML = renderInstances(snapshot.instances);
     }}
 
@@ -667,11 +683,13 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
 
         const snapshot = await response.json();
         renderSnapshot(snapshot);
-        document.getElementById("refresh-state").textContent =
-          `Live refresh every ${{STATUS_REFRESH_MS / 1000}}s`;
+        const refreshEl = document.getElementById("refresh-state");
+        refreshEl.textContent = `Live refresh every ${{STATUS_REFRESH_MS / 1000}}s`;
+        refreshEl.classList.remove("refresh-error");
       }} catch (error) {{
-        document.getElementById("refresh-state").textContent =
-          `Refresh failed: ${{error.message}}`;
+        const refreshEl = document.getElementById("refresh-state");
+        refreshEl.textContent = `Refresh failed: ${{error.message}}`;
+        refreshEl.classList.add("refresh-error");
       }}
     }}
 
@@ -686,21 +704,42 @@ def render_status_html(snapshot: dict[str, Any]) -> str:
 async def status_login_response(request: Request):
     form = await request.form()
     token = str(form.get("token", "")).strip()
+
+    # CSRF validation (double-submit cookie pattern)
+    csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
+    csrf_form = str(form.get("csrf_token", "")).strip()
+    if not csrf_cookie or not csrf_form or csrf_cookie != csrf_form:
+        csrf_token = secrets.token_urlsafe(32)
+        response = HTMLResponse(
+            render_login_html(
+                error_message="Invalid request. Please try again.",
+                configured_users=UserAuthManager.get_user_count(),
+                csrf_token=csrf_token,
+            ),
+            status_code=403,
+        )
+        response.set_cookie(CSRF_COOKIE_NAME, csrf_token, httponly=False, samesite="lax", path="/", max_age=600)
+        return response
+
     user = UserAuthManager.authenticate(token)
 
     if not token or user is None or user.name == "anonymous":
+        csrf_token = secrets.token_urlsafe(32)
         response = HTMLResponse(
             render_login_html(
                 error_message="Invalid token. Use a configured user token.",
                 configured_users=UserAuthManager.get_user_count(),
+                csrf_token=csrf_token,
             ),
             status_code=401,
         )
         response.delete_cookie(STATUS_AUTH_COOKIE, path="/")
+        response.set_cookie(CSRF_COOKIE_NAME, csrf_token, httponly=False, samesite="lax", path="/", max_age=600)
         return response
 
     response = RedirectResponse(url="/status", status_code=303)
     response.set_cookie(STATUS_AUTH_COOKIE, token, **_cookie_settings())
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
     return response
 
 
@@ -739,14 +778,18 @@ async def status_html_response(
     require_auth: bool,
 ):
     viewer, auth_source = authenticate_http_request(request, require_auth)
+    csrf_token = secrets.token_urlsafe(32)
+
     if viewer is None:
         response = HTMLResponse(
             render_login_html(
                 error_message="Status page requires a valid user token.",
                 configured_users=UserAuthManager.get_user_count(),
+                csrf_token=csrf_token,
             ),
             status_code=401,
         )
+        response.set_cookie(CSRF_COOKIE_NAME, csrf_token, httponly=False, samesite="lax", path="/", max_age=600)
         if request.cookies.get(STATUS_AUTH_COOKIE):
             response.delete_cookie(STATUS_AUTH_COOKIE, path="/")
         return response
@@ -758,4 +801,6 @@ async def status_html_response(
         viewer=viewer,
         auth_source=auth_source,
     )
-    return HTMLResponse(render_status_html(snapshot))
+    response = HTMLResponse(render_status_html(snapshot, csrf_token=csrf_token))
+    response.set_cookie(CSRF_COOKIE_NAME, csrf_token, httponly=False, samesite="lax", path="/", max_age=600)
+    return response

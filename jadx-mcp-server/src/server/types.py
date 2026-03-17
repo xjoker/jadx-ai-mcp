@@ -145,3 +145,24 @@ class ErrorCode:
     CONNECTION_FAILED = "CONNECTION_FAILED"
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED"
     INVALID_INPUT = "INVALID_INPUT"
+    RATE_LIMITED = "RATE_LIMITED"
+    TIMEOUT = "TIMEOUT"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+def make_error(code: str, message: str, **extra: Any) -> Dict[str, Any]:
+    """Build a standardised error response dict.
+
+    Args:
+        code: An ``ErrorCode`` constant (e.g. ``ErrorCode.TIMEOUT``).
+        message: Human-readable description of the error.
+        **extra: Additional key-value pairs merged into the result
+                 (e.g. ``suggestion``, ``retry_after``).
+
+    Returns:
+        ``{"error": code, "message": message, ...extra}``
+    """
+    result: Dict[str, Any] = {"error": code, "message": message}
+    if extra:
+        result.update(extra)
+    return result

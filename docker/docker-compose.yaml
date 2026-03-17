@@ -36,14 +36,14 @@ services:
     volumes:
       - ./config:/app/data/config:ro
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-UTC}
     depends_on:
       - jadx-1
       - jadx-2
       - jadx-3
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8651/transfer/health" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8651/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -64,7 +64,7 @@ services:
       - jadx-1-cache:/home/jadx/.cache
       - jadx-1-gui:/home/jadx/.jadx-gui
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-UTC}
       - JADX_PLUGIN_PORT=8650
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
       - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
@@ -87,7 +87,7 @@ services:
       - jadx-2-cache:/home/jadx/.cache
       - jadx-2-gui:/home/jadx/.jadx-gui
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-UTC}
       - JADX_PLUGIN_PORT=8650
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
       - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
@@ -110,7 +110,7 @@ services:
       - jadx-3-cache:/home/jadx/.cache
       - jadx-3-gui:/home/jadx/.jadx-gui
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-UTC}
       - JADX_PLUGIN_PORT=8650
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
       - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token

@@ -37,11 +37,28 @@ cd jadx-ai-mcp/docker
 mkdir -p ../temp
 mkdir -p config
 
+# (Optional) Copy and customize environment variables
+cp .env.example .env
+
 # Start all services
 docker compose up -d
 ```
 
 By default, the bundled `docker/docker-compose.yaml` mounts the repository `temp/` directory into `/apks` for all three JADX instances. Put `target.apk` in `../temp/` if you want every instance to auto-load the same test APK.
+
+### Environment Variables
+
+A `.env.example` file is included. Copy it to `.env` and customize:
+
+```bash
+# Timezone (default: UTC)
+TZ=Asia/Shanghai
+
+# Per-instance APK directories (default: ../temp)
+JADX1_APK_DIR=./apks/app1
+JADX2_APK_DIR=./apks/app2
+JADX3_APK_DIR=./apks/app3
+```
 
 If you want separate APK directories per instance, override the bind mounts with environment variables:
 
@@ -63,6 +80,8 @@ docker compose up -d
 | **JADX #2** | http://localhost:6081 |
 | **JADX #3** | http://localhost:6082 |
 | **MCP Server** | http://localhost:8651/mcp |
+| **Health Check** | http://localhost:8651/health |
+| **Status Page** | http://localhost:8651/status |
 
 ---
 

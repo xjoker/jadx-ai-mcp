@@ -48,13 +48,20 @@ def make_request(
     return Request(scope, receive)
 
 
-def make_form_request(path: str, form_data: dict[str, str]) -> Request:
-    """Build a form POST request."""
+def make_form_request(
+    path: str,
+    form_data: dict[str, str],
+    cookies: dict[str, str] | None = None,
+) -> Request:
+    """Build a form POST request with optional cookies."""
     body = urlencode(form_data).encode("utf-8")
+    headers: dict[str, str] = {"Content-Type": "application/x-www-form-urlencoded"}
+    if cookies:
+        headers["cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
     return make_request(
         path=path,
         method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers=headers,
         body=body,
     )
 
@@ -155,8 +162,13 @@ class TestStatusPage:
             allow_anonymous=False,
         )
 
+        csrf_token = "test-csrf-token"
         response = await status_login_response(
-            make_form_request("/status/login", {"token": "token-alice"})
+            make_form_request(
+                "/status/login",
+                {"token": "token-alice", "csrf_token": csrf_token},
+                cookies={"csrf_token": csrf_token},
+            )
         )
 
         assert response.status_code == 303
@@ -164,6 +176,20 @@ class TestStatusPage:
         set_cookie = response.headers["set-cookie"]
         assert f"{STATUS_AUTH_COOKIE}=token-alice" in set_cookie
         assert "HttpOnly" in set_cookie
+
+    @pytest.mark.asyncio
+    async def test_status_login_response_rejects_missing_csrf(self):
+        """Login without CSRF token should return 403."""
+        UserAuthManager.configure(
+            [UserConfig(name="alice", token="token-alice")],
+            allow_anonymous=False,
+        )
+
+        response = await status_login_response(
+            make_form_request("/status/login", {"token": "token-alice"})
+        )
+
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_status_json_response_requires_auth_when_configured(self):

@@ -12,6 +12,59 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.1.5-dev] - 2026-03-17
+
+### 🚀 改进
+
+**部署与配置**
+- Docker Compose 时区现可通过 `TZ` 环境变量配置（默认 `UTC`，原硬编码 `Asia/Shanghai`）
+- 新增 `docker/.env.example`，包含所有可配置环境变量说明
+- 新增 `/health` 轻量级健康检查端点（无需认证）；Docker healthcheck 已切换使用
+- 启动时检测默认 token（`admin-secret-token`、`jadx-plugin-secret-token`）并打印警告
+
+**统一错误响应格式**
+- 新增 `make_error(code, message, **extra)` 辅助函数，统一错误响应结构
+- 新增错误码：`RATE_LIMITED`、`TIMEOUT`、`INTERNAL_ERROR`
+- `config.py`、`transfer_tools.py`、`instance_tools.py` 所有错误返回改用统一的 `{error, message}` 格式
+
+**状态页增强**
+- Warning 区域无警告时自动隐藏（SSR + JS 联动）
+- 实例表格移动端可横向滚动（`overflow-x:auto`）
+- Scheduler 列表头/单元格添加 tooltip 说明 `m=metadata c=code_read x=exclusive q=queue`
+- 刷新失败时显示醒目红色提示（`.refresh-error` CSS 类）
+- Session cookie 增加 24 小时过期时间（`max_age=86400`）
+
+**登录 CSRF 防护**
+- `/status/login` POST 端点实现 double-submit cookie 模式
+- 每次页面渲染生成 CSRF token，表单提交时校验
+
+**代码架构**
+- 将 `jadx_mcp_server.py` 中 30+ 个内联工具注册提取到 6 个工具模块的 `register_*_tools()` 函数
+- 主服务器文件从 1366 行精简到 595 行（减少 56%）
+- 每个工具模块通过 `register_class_tools(mcp, with_busy_check)` 模式自注册
+
+**实例 Fallback**
+- 默认实例断开连接时，自动回退到第一个已连接实例
+- 新增 `InstanceRegistry.get_first_connected()` 方法
+
+**重命名预检**
+- `rename` 工具新增 `dry_run=True` 参数
+- 返回目标存在性检查和类信息预览，不执行实际重命名
+
+### 📦 变更文件
+- `docker/docker-compose.yaml` — TZ 可配置，healthcheck 使用 `/health`
+- `docker/.env.example` — 新文件
+- `docker/scripts/start.sh` — 默认 token 警告
+- `jadx-mcp-server/jadx_mcp_server.py` — 工具注册提取，token 警告
+- `jadx-mcp-server/src/server/types.py` — `make_error()`，新错误码
+- `jadx-mcp-server/src/server/config.py` — 统一错误格式，实例 fallback
+- `jadx-mcp-server/src/server/status_page.py` — Warnbox 隐藏、滚动、tooltip、CSRF、刷新错误
+- `jadx-mcp-server/src/server/instance_registry.py` — `get_first_connected()`
+- `jadx-mcp-server/src/server/tools/*.py` — 添加 `register_*_tools()` 函数
+- `jadx-mcp-server/tests/test_status_page.py` — CSRF 测试用例
+
+---
+
 ## [6.1.2] - 2026-02-06
 
 ### 🐛 Bug 修复

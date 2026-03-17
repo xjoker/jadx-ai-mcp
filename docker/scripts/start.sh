@@ -21,5 +21,14 @@ echo ""
 echo "================================================"
 echo ""
 
+# Warn if default tokens are in use
+if [ "${JADX_MCP_AUTH_TOKEN:-}" = "jadx-plugin-secret-token" ]; then
+  echo "================================================"
+  echo "  WARNING: Default JADX plugin token in use!"
+  echo "  Change JADX_MCP_AUTH_TOKEN for production."
+  echo "================================================"
+  echo ""
+fi
+
 # Start supervisor to manage all services
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

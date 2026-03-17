@@ -456,3 +456,250 @@ async def jar_get_bytecode(
     """
     return await get_from_jadx("jar-bytecode", {"class_name": class_name}, instance_id=instance_id)
 
+
+# Save references before they get shadowed by tool wrapper functions
+_get_android_manifest = get_android_manifest
+_get_strings = get_strings
+_get_all_resource_file_names = get_all_resource_file_names
+_get_resource_file = get_resource_file
+_get_file_info = get_file_info
+_get_config_strings = get_config_strings
+_get_package_classes = get_package_classes
+_jar_get_manifest = jar_get_manifest
+_jar_get_services = jar_get_services
+_jar_get_entry_points = jar_get_entry_points
+_jar_get_dependencies = jar_get_dependencies
+_jar_get_bytecode = jar_get_bytecode
+
+
+def register_resource_tools(mcp, with_busy_check):
+    """Register resource analysis tools to MCP Server"""
+    from typing import Optional
+
+    @mcp.tool()
+    @with_busy_check
+    async def get_android_manifest(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
+        """Retrieve and return the AndroidManifest.xml content.
+
+        CHUNKING: Large manifests (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
+
+        Args:
+            chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
+            instance_id: Target JADX instance name.
+        """
+        return await _get_android_manifest(chunk=chunk, instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def get_strings(
+        mode: str = "summary",
+        query: Optional[str] = None,
+        key: Optional[str] = None,
+        locale: str = "values",
+        offset: int = 0,
+        limit: int = 50,
+        instance_id: Optional[str] = None
+    ) -> dict:
+        """Get strings from APK with AI-friendly modes.
+
+        Modes:
+        - summary (default): Returns total count, sample keys, and usage hints
+        - list: Paginated list of all string keys
+        - search: Search strings by keyword (requires query parameter)
+        - get: Get specific string value (requires key parameter)
+
+        Examples:
+        - Summary: get_strings() -> {total_strings: 15673, sample_keys: [...]}
+        - Search: get_strings(mode="search", query="login") -> {matches: [{key, value}, ...]}
+        - Get: get_strings(mode="get", key="app_name") -> {value: "MyApp"}
+        - List: get_strings(mode="list", offset=0, limit=50) -> {keys: [...]}
+        - Change locale: get_strings(locale="values-en")
+
+        Args:
+            mode: Operation mode (summary|list|search|get). Default: summary
+            query: Search keyword (required for mode=search)
+            key: String key name (required for mode=get)
+            locale: Locale variant like "values", "values-en", "values-zh". Default: values
+            offset: Pagination offset for list mode. Default: 0
+            limit: Results per page (max: 200). Default: 50
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        """
+        return await _get_strings(
+            mode=mode, query=query, key=key, locale=locale,
+            offset=offset, limit=limit, instance_id=instance_id
+        )
+
+    @mcp.tool()
+    @with_busy_check
+    async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
+        """Retrieve all resource file names with pagination.
+
+        Args:
+            offset: Pagination offset. Default: 0
+            count: Max results (0=all). Default: 0
+            instance_id: Target JADX instance name.
+
+        Returns:
+            dict: {files: [str, ...], total: int, has_more: bool}
+        """
+        return await _get_all_resource_file_names(offset, count, instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def get_resource_file(resource_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
+        """Retrieve resource file content by name.
+
+        CHUNKING: Large files (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
+
+        Args:
+            resource_name: Resource file path (e.g., 'res/layout/activity_main.xml').
+            chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
+            instance_id: Target JADX instance name.
+        """
+        return await _get_resource_file(resource_name, chunk=chunk, instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def get_file_info(instance_id: Optional[str] = None) -> dict:
+        """Get unified file information for both APK and JAR files.
+
+        This is the recommended first tool to call when starting analysis.
+        Returns file type, class count, and recommends which tools to use.
+
+        Args:
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        """
+        return await _get_file_info(instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def get_config_strings(
+        mode: str = "summary",
+        query: Optional[str] = None,
+        key: Optional[str] = None,
+        file: Optional[str] = None,
+        instance_id: Optional[str] = None
+    ) -> dict:
+        """Get configuration strings from APK or JAR files.
+
+        - APK/AAR: Info about strings.xml availability
+        - JAR: Reads .properties files with search/get support
+
+        Args:
+            mode: "summary" | "search" | "get" | "all"
+            query: Search keyword (for mode=search)
+            key: Property key (for mode=get)
+            file: Filter by properties file name (JAR only)
+            instance_id: Optional. Target JADX instance name.
+        """
+        return await _get_config_strings(
+            mode=mode, query=query, key=key, file=file, instance_id=instance_id
+        )
+
+    @mcp.tool()
+    @with_busy_check
+    async def get_package_classes(
+        package: Optional[str] = None,
+        auto: bool = False,
+        include_inner: bool = True,
+        offset: int = 0,
+        count: int = 100,
+        instance_id: Optional[str] = None
+    ) -> dict:
+        """Get classes by package prefix for APK or JAR files.
+
+        Use ?auto=true to auto-detect main package from manifest.
+
+        Args:
+            package: Package prefix (e.g., "com.example.app")
+            auto: Auto-detect main package (default: False)
+            include_inner: Include inner classes (default: True)
+            offset: Pagination offset
+            count: Max results (default: 100, max: 500)
+            instance_id: Optional. Target JADX instance name.
+        """
+        return await _get_package_classes(
+            package=package, auto=auto, include_inner=include_inner,
+            offset=offset, count=count, instance_id=instance_id
+        )
+
+    @mcp.tool()
+    @with_busy_check
+    async def jar_get_manifest(instance_id: Optional[str] = None) -> dict:
+        """Read META-INF/MANIFEST.MF from JAR files.
+
+        This tool extracts structured information from JAR manifest including:
+        - Main-Class: Entry point for executable JARs
+        - Implementation-Title/Version: Library identification
+        - Spring Boot specific attributes
+        - All custom manifest attributes
+
+        NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+
+        Args:
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+        Returns:
+            dict: Structured manifest data with common and all attributes
+        """
+        return await _jar_get_manifest(instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def jar_get_services(instance_id: Optional[str] = None) -> dict:
+        """Read META-INF/services/* from JAR files to discover SPI service providers.
+
+        Java SPI is used by JDBC drivers, logging frameworks, plugin architectures.
+
+        NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+
+        Args:
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        """
+        return await _jar_get_services(instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def jar_get_entry_points(instance_id: Optional[str] = None) -> dict:
+        """Discover entry points for JAR files.
+
+        Finds Main-Class, Start-Class (Spring Boot), @SpringBootApplication classes,
+        and public static void main() methods.
+
+        NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+
+        Args:
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        """
+        return await _jar_get_entry_points(instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def jar_get_dependencies(instance_id: Optional[str] = None) -> dict:
+        """Analyze dependencies embedded in JAR files.
+
+        Discovers Maven coordinates, MANIFEST Class-Path, and Spring Boot BOOT-INF/lib/ dependencies.
+
+        NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
+
+        Args:
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        """
+        return await _jar_get_dependencies(instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def jar_get_bytecode(
+        class_name: str,
+        instance_id: Optional[str] = None
+    ) -> dict:
+        """Get bytecode/class structure for APK or JAR classes.
+
+        JAR equivalent of get_smali_of_class. Shows class structure similar to javap.
+
+        Args:
+            class_name: Fully qualified class name (e.g., 'com.example.Main')
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        """
+        return await _jar_get_bytecode(class_name, instance_id=instance_id)
+
