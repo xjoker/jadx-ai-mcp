@@ -130,12 +130,25 @@
 
 #### 重命名工具
 
+统一的 `rename` 工具（v6.1.5+）替代原有四个独立重命名工具：
+
 | 工具 | 参数 | 说明 |
 |:-----|:-----|:-----|
-| `rename_class(class_name, new_name)` | `class_name`, `new_name`, `instance_id?` | 重命名类 |
-| `rename_method(method_name, new_name)` | `method_name`, `new_name`, `instance_id?` | 重命名方法 |
-| `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | 重命名字段 |
-| `rename_package(old_name, new_name)` | `old_package_name`, `new_package_name`, `instance_id?` | 重命名包 |
+| `rename(target_type, old_name, new_name)` | `target_type`（`class`/`method`/`field`/`package`）, `old_name`, `new_name`, `class_name?`, `dry_run=False`, `instance_id?` | 统一重命名。设置 `dry_run=True` 预览而不执行 |
+
+**`dry_run=True`** 返回 `{dry_run: true, target_exists: bool, target_info: {...}}` — 验证目标是否存在并返回类信息预览，不触发 30 秒缓存冷却。
+
+**示例：**
+```python
+# 重命名前预览
+rename("class", "com.example.OldClass", "NewClass", dry_run=True)
+
+# 执行重命名
+rename("class", "com.example.OldClass", "NewClass")
+rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
+rename("field", "oldField", "newField", class_name="com.example.MyClass")
+rename("package", "com.example.old", "com.example.new")
+```
 
 #### 实例管理工具
 

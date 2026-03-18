@@ -130,12 +130,25 @@
 
 ### Rename Tools
 
+The unified `rename` tool (v6.1.5+) replaces the four individual rename tools:
+
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
-| `rename_class(class_name, new_name)` | `class_name`, `new_name`, `instance_id?` | Rename class |
-| `rename_method(method_name, new_name)` | `method_name`, `new_name`, `instance_id?` | Rename method |
-| `rename_field(class_name, field_name, new_name)` | `class_name`, `field_name`, `new_name`, `instance_id?` | Rename field |
-| `rename_package(old_name, new_name)` | `old_package_name`, `new_package_name`, `instance_id?` | Rename package |
+| `rename(target_type, old_name, new_name)` | `target_type` (`class`/`method`/`field`/`package`), `old_name`, `new_name`, `class_name?`, `dry_run=False`, `instance_id?` | Unified rename. Set `dry_run=True` to preview without executing |
+
+**`dry_run=True`** returns `{dry_run: true, target_exists: bool, target_info: {...}}` — verifies the target exists and returns class info preview without triggering the 30s cache cooldown.
+
+**Examples:**
+```python
+# Preview before renaming
+rename("class", "com.example.OldClass", "NewClass", dry_run=True)
+
+# Execute rename
+rename("class", "com.example.OldClass", "NewClass")
+rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
+rename("field", "oldField", "newField", class_name="com.example.MyClass")
+rename("package", "com.example.old", "com.example.new")
+```
 
 ### Instance Management Tools
 

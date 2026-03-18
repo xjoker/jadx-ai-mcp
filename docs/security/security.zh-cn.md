@@ -110,18 +110,44 @@ allow_dynamic_instances = false  # 默认：禁用
 
 ### 3. Token 可能暴露在日志中
 
-**风险等级：** 低
+**风险等级：** ~~低~~ **已修复** ✅
 
-**描述：** 调试日志可能包含认证 Token。
+**描述：** ~~调试日志可能包含认证 Token。~~
 
-**缓解措施：**
-- 生产环境使用 `INFO` 或更高日志级别
-- 避免向不可信方暴露日志
+**状态（v6.1.0+）：** Token 值不再被记录到日志。仅输出 "Authentication token configured" 或 "Authentication disabled" 消息。
+
+### 4. 默认 Token 启动警告（v6.1.5+）
+
+服务器在启动时检测到默认 Token（`admin-secret-token`、`jadx-plugin-secret-token`）会输出 `WARNING` 日志。Docker `start.sh` 脚本在 `JADX_MCP_AUTH_TOKEN` 为默认值时也会打印醒目的警告横幅。
+
+> **在将服务暴露到网络之前，务必修改默认 Token。**
+
+---
+
+## 🛡️ 状态页 CSRF 防护（v6.1.5+）
+
+`/status/login` 端点使用 **双提交 Cookie（double-submit cookie）** 模式防护跨站请求伪造：
+
+1. 每次页面渲染生成随机 CSRF token，同时存入 cookie（`csrf_token`）和表单隐藏字段。
+2. 表单 POST 时，服务器验证 cookie 值与表单值是否一致。
+3. 不一致返回 HTTP 403。
+
+| 属性 | 值 | 说明 |
+|:-----|:---|:-----|
+| CSRF cookie `httponly` | `false` | 双提交模式所需 |
+| CSRF cookie `samesite` | `lax` | 阻止跨站 POST |
+| CSRF cookie `max_age` | 600s | 10 分钟有效期 |
+| Session cookie `httponly` | `true` | JavaScript 不可读 |
+| Session cookie `samesite` | `lax` | 标准防护 |
+| Session cookie `max_age` | 86400s | 24 小时过期 |
+
+> **注意：** Cookie 默认不设置 `Secure` 标志，因为 Docker 部署通常在内部使用 HTTP。通过 HTTPS 反向代理部署时，建议添加 `Secure` 属性。
 
 ---
 
 ## 🚀 安全部署清单
 
+- [ ] 修改默认 Token（`admin-secret-token`、`jadx-plugin-secret-token`）
 - [ ] 使用 HTTPS（通过反向代理）对外暴露
 - [ ] 为每个用户设置强唯一 Token
 - [ ] 除非需要，保持 `allow_dynamic_instances = false`

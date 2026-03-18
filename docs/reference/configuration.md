@@ -74,6 +74,14 @@ port = 8650
 
 > 💡 Set `JADX_MCP_BIND_ADDRESS=0.0.0.0` to allow remote connections (Docker required).
 
+#### Docker Compose Environment Variables
+
+| Variable | Description | Default |
+|:---------|:------------|:--------|
+| `TZ` | Timezone for all containers | `UTC` |
+
+See `docker/.env.example` for a quick-start template.
+
 #### MCP Server / Transfer API Environment Variables
 
 | Variable | Description | Default |
@@ -81,6 +89,16 @@ port = 8650
 | `MCP_SERVER_URL` | Public MCP Server URL used when generating Transfer API download links | `http://localhost:8651` fallback |
 
 > The standalone MCP Server does not currently expose `JADX_HOST` / `JADX_PORT` environment variables. Configure bind address, default JADX endpoint, and multi-instance registration with CLI arguments or `jadx-config.toml`.
+
+### HTTP Endpoints
+
+| Endpoint | Auth | Description |
+|:---------|:-----|:------------|
+| `/mcp` | Bearer Token | MCP protocol (SSE transport) |
+| `/health` | None | Lightweight health check (used by Docker healthcheck) |
+| `/status` | Cookie | Human-readable status dashboard |
+| `/status.json` | Cookie | Machine-readable status snapshot |
+| `/transfer/download/batch-classes` | Transfer Token | Batch class download |
 
 ### Configuration Priority
 

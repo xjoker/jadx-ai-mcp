@@ -74,6 +74,14 @@ port = 8650
 
 > 💡 设置 `JADX_MCP_BIND_ADDRESS=0.0.0.0` 允许远程连接（Docker 部署必需）。
 
+#### Docker Compose 环境变量
+
+| 变量 | 说明 | 默认值 |
+|:-----|:-----|:-------|
+| `TZ` | 所有容器的时区 | `UTC` |
+
+参见 `docker/.env.example` 获取快速配置模板。
+
 #### MCP Server / Transfer API 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -81,6 +89,16 @@ port = 8650
 | `MCP_SERVER_URL` | 生成 Transfer API 下载链接时使用的 MCP Server 对外地址 | 回退到 `http://localhost:8651` |
 
 > 独立 MCP Server 当前没有公开 `JADX_HOST` / `JADX_PORT` 这类环境变量入口。绑定地址、默认 JADX 端点和多实例注册请使用命令行参数或 `jadx-config.toml`。
+
+### HTTP 端点
+
+| 端点 | 认证 | 说明 |
+|:-----|:-----|:-----|
+| `/mcp` | Bearer Token | MCP 协议（SSE 传输） |
+| `/health` | 无 | 轻量级健康检查（Docker healthcheck 使用） |
+| `/status` | Cookie | 可视化状态面板 |
+| `/status.json` | Cookie | 机器可读状态快照 |
+| `/transfer/download/batch-classes` | Transfer Token | 批量类下载 |
 
 ### 配置优先级
 
