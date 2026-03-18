@@ -27,6 +27,33 @@ JADX_HTTP_BASE = f"http://{JADX_HOST}:{JADX_PORT}"
 AUTH_TOKEN: Optional[str] = None
 REQUEST_TIMEOUT: int = 120  # Default timeout in seconds (configurable)
 
+# Tiered timeout constants (seconds)
+TIMEOUT_HEALTH: int = 10      # Health/ping endpoints
+TIMEOUT_METADATA: int = 30    # Lightweight metadata (class-info, methods-of-class, fields-of-class, etc.)
+TIMEOUT_CODE_READ: int = 120  # Heavy code retrieval (class-source, smali, batch-class-source, etc.)
+
+# Endpoints classified by timeout tier
+_METADATA_ENDPOINTS = frozenset({
+    "class-info", "methods-of-class", "fields-of-class", "all-classes",
+    "main-application-classes-names", "search-classes-by-keyword",
+    "search-native-methods", "file-info", "package-classes",
+    "decompile-status", "apk-info", "current-class", "selected-text",
+    "batch-xrefs", "jar-manifest", "jar-services", "jar-entry-points",
+    "jar-dependencies", "rename-class", "rename-method", "rename-field",
+    "rename-package", "get-method-signature",
+})
+_HEALTH_ENDPOINTS = frozenset({"health", "warmup"})
+
+
+def _infer_timeout(endpoint: str) -> int:
+    """Infer the appropriate timeout for a JADX endpoint."""
+    ep = endpoint.strip("/")
+    if ep in _HEALTH_ENDPOINTS:
+        return TIMEOUT_HEALTH
+    if ep in _METADATA_ENDPOINTS:
+        return TIMEOUT_METADATA
+    return TIMEOUT_CODE_READ
+
 
 # HTTP Connection Pool Manager
 class HttpClientManager:
@@ -130,9 +157,10 @@ def _get_auth_headers() -> Dict[str, str]:
 
 
 async def get_from_jadx(
-    endpoint: str, 
+    endpoint: str,
     params: Dict[str, Any] = {},
-    instance_id: Optional[str] = None
+    instance_id: Optional[str] = None,
+    timeout: Optional[int] = None
 ) -> Union[str, Dict[str, Any]]:
     """
     Generic async helper to request data from the JADX plugin.
@@ -141,6 +169,7 @@ async def get_from_jadx(
         endpoint: API endpoint path (e.g., "class-source", "manifest")
         params: Query parameters dictionary for the request
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        timeout: Optional per-request timeout in seconds. Overrides the client default.
 
     Returns:
         Union[str, Dict[str, Any]]: Parsed JSON response or error dictionary
@@ -227,7 +256,9 @@ async def get_from_jadx(
     
     try:
         client = await HttpClientManager.get_client()
-        resp = await client.get(url, params=params, headers=headers)
+        effective_timeout = timeout if timeout is not None else _infer_timeout(endpoint)
+        req_timeout = httpx.Timeout(effective_timeout)
+        resp = await client.get(url, params=params, headers=headers, timeout=req_timeout)
         resp.raise_for_status()
         
         logger.info(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")

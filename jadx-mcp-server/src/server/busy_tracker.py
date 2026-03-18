@@ -28,8 +28,8 @@ from .types import ErrorCode
 logger = get_logger("busy_tracker")
 
 DEFAULT_INSTANCE_TRACKING_KEY = "__default__"
-DEFAULT_CODE_READ_QUEUE_LIMIT = 4
-DEFAULT_CODE_READ_ACTIVE_LIMIT = 2
+DEFAULT_CODE_READ_QUEUE_LIMIT = 8
+DEFAULT_CODE_READ_ACTIVE_LIMIT = 4
 DEFAULT_EXCLUSIVE_WAIT_SECONDS = 2.0
 
 LANE_METADATA = "metadata"
@@ -472,6 +472,8 @@ class InstanceBusyTracker:
                     removed = True
 
             if removed:
+                # notify_all: condition is shared across lanes (metadata/code_read/exclusive),
+                # notify(1) could wake a wrong-lane waiter causing up to 1s delay
                 state.condition.notify_all()
 
     @classmethod

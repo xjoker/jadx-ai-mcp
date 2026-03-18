@@ -2,6 +2,7 @@ package com.zin.jadxaimcp.utils;
 
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
@@ -46,6 +47,9 @@ public final class JadxSearchLock {
     
     // Track when the lock was acquired (0 means not held)
     private static final AtomicLong lockAcquireTime = new AtomicLong(0);
+
+    // Track the thread currently holding the lock (null means not held)
+    private static final AtomicReference<Thread> holdingThread = new AtomicReference<>(null);
     
     // Recommended retry interval in seconds
     public static final int RETRY_AFTER_SECONDS = 10;
@@ -65,23 +69,47 @@ public final class JadxSearchLock {
      * @return true if lock acquired, false if busy
      */
     public static boolean tryAcquire() {
-        // Check for stale lock (held too long)
+        // Check for stale lock (held too long) and interrupt the holding thread
         long acquireTime = lockAcquireTime.get();
+        boolean interrupted = false;
         if (acquireTime > 0 && LOCK.isLocked()) {
             long heldSeconds = (System.currentTimeMillis() - acquireTime) / 1000;
             if (heldSeconds > LOCK_TIMEOUT_SECONDS) {
-                logger.warn("Search lock held for {}s (timeout: {}s), allowing new request", 
-                    heldSeconds, LOCK_TIMEOUT_SECONDS);
-                // Reset tracking - allow new request to proceed
-                // Note: We cannot forcibly release another thread's lock,
-                // but we can reset the timing to allow this request
+                Thread staleThread = holdingThread.get();
+                if (staleThread != null) {
+                    logger.warn("Search lock held for {}s (timeout: {}s), interrupting holding thread [{}]",
+                        heldSeconds, LOCK_TIMEOUT_SECONDS, staleThread.getName());
+                    staleThread.interrupt();
+                    interrupted = true;
+                } else {
+                    logger.warn("Search lock held for {}s (timeout: {}s), but holding thread unknown",
+                        heldSeconds, LOCK_TIMEOUT_SECONDS);
+                }
+                // Reset tracking so the lock can be re-acquired after release
                 lockAcquireTime.set(0);
+                holdingThread.set(null);
             }
         }
-        
+
+        // If we interrupted a stale thread, give it time to unwind and release the lock
+        if (interrupted) {
+            try {
+                boolean acquired = LOCK.tryLock(500, TimeUnit.MILLISECONDS);
+                if (acquired) {
+                    lockAcquireTime.set(System.currentTimeMillis());
+                    holdingThread.set(Thread.currentThread());
+                }
+                return acquired;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+
         boolean acquired = LOCK.tryLock();
         if (acquired) {
             lockAcquireTime.set(System.currentTimeMillis());
+            holdingThread.set(Thread.currentThread());
         }
         return acquired;
     }
@@ -97,6 +125,7 @@ public final class JadxSearchLock {
             boolean acquired = LOCK.tryLock(timeoutSeconds, TimeUnit.SECONDS);
             if (acquired) {
                 lockAcquireTime.set(System.currentTimeMillis());
+                holdingThread.set(Thread.currentThread());
             }
             return acquired;
         } catch (InterruptedException e) {
@@ -111,6 +140,7 @@ public final class JadxSearchLock {
      */
     public static void release() {
         if (LOCK.isHeldByCurrentThread()) {
+            holdingThread.set(null);
             lockAcquireTime.set(0);
             LOCK.unlock();
         }

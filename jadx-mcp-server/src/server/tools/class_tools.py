@@ -97,22 +97,12 @@ async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optiona
     return await get_from_jadx("class-source", params, instance_id=instance_id)
 
 
-async def _estimate_batch_size(class_names: list[str], instance_id: Optional[str]) -> int:
-    """基于class_info快速估算批量请求的响应大小"""
-    total_estimate = 0
-    for class_name in class_names:
-        try:
-            info = await get_class_info(class_name, instance_id)
-            if "error" not in info:
-                estimate = (
-                    info.get("methods_count", 0) * 200 +  # 每个方法约200字节
-                    info.get("fields_count", 0) * 50 +    # 每个字段约50字节
-                    500  # 类头部
-                )
-                total_estimate += estimate
-        except:
-            total_estimate += 5000  # 估算失败时假设中等大小
-    return total_estimate
+def _estimate_batch_size(class_names: list[str]) -> int:
+    """基于类数量的启发式估算批量请求的响应大小（无需网络请求）
+
+    使用固定启发值 5000 字节/类，避免为每个类发送 get_class_info 请求。
+    """
+    return len(class_names) * 5000
 
 
 async def _execute_batch_request(class_names: list[str], chunk: int, instance_id: Optional[str]) -> dict:
@@ -176,12 +166,8 @@ async def batch_get_class_source(
     if chunk > 0:
         return await _execute_batch_request(class_names, chunk, instance_id)
 
-    # 预估响应大小
-    try:
-        estimated_size = await _estimate_batch_size(class_names, instance_id)
-    except Exception as e:
-        logger.error(f"Size estimation failed: {e}, using conservative fallback")
-        estimated_size = len(class_names) * 5000  # Conservative estimate
+    # 预估响应大小（纯启发式，无网络请求）
+    estimated_size = _estimate_batch_size(class_names)
 
     # 策略1：超大请求（>50KB）
     if estimated_size > 50000 and not force:

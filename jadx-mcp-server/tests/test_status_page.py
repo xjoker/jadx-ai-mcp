@@ -120,8 +120,8 @@ class TestStatusPage:
             "code_read_inflight": 0,
             "exclusive_inflight": 0,
             "queue_depth": 0,
-            "queue_limit": 8,
-            "active_limit": 4,
+            "queue_limit": 16,
+            "active_limit": 8,
         }
 
         instance_map = {inst["name"]: inst for inst in snapshot["instances"]}
@@ -130,9 +130,9 @@ class TestStatusPage:
         assert instance_map["alice-ai"]["source_label"] == "AI Dynamic"
         assert instance_map["alice-ai"]["scope_label"] == "user:alice"
         assert instance_map["cfg-shared"]["scheduler"]["metadata_inflight"] == 0
-        assert instance_map["cfg-shared"]["scheduler"]["queue_limit"] == 4
-        assert instance_map["cfg-shared"]["scheduler"]["active_limit"] == 2
-        assert instance_map["cfg-shared"]["scheduler_label"] == "m:0 c:0/2 x:0 q:0/4"
+        assert instance_map["cfg-shared"]["scheduler"]["queue_limit"] == 8
+        assert instance_map["cfg-shared"]["scheduler"]["active_limit"] == 4
+        assert instance_map["cfg-shared"]["scheduler_label"] == "m:0 c:0/4 x:0 q:0/8"
 
     @pytest.mark.asyncio
     async def test_status_html_response_renders_login_form_when_auth_required(self):

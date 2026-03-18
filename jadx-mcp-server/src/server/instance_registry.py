@@ -72,7 +72,28 @@ class InstanceRegistry:
     _shared_auth_token: Optional[str] = None
     _async_lock = asyncio.Lock()  # For async operations
     _thread_lock = threading.RLock()  # For cross-thread safety
-    
+    _http_client: Optional[httpx.AsyncClient] = None  # Shared HTTP client for health checks
+    _http_client_lock: asyncio.Lock = asyncio.Lock()
+
+    @classmethod
+    async def _get_http_client(cls) -> httpx.AsyncClient:
+        """Get or create the shared async HTTP client for registry operations."""
+        async with cls._http_client_lock:
+            if cls._http_client is None or cls._http_client.is_closed:
+                cls._http_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(CONNECT_TIMEOUT),
+                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                )
+        return cls._http_client
+
+    @classmethod
+    async def close_http_client(cls) -> None:
+        """Close the shared HTTP client (call on shutdown)."""
+        if cls._http_client is not None and not cls._http_client.is_closed:
+            await cls._http_client.aclose()
+            cls._http_client = None
+            logger.debug("Registry HTTP client closed")
+
     @classmethod
     def set_auth_token(cls, token: str) -> None:
         """Set the shared authentication token for all instances"""
@@ -257,12 +278,12 @@ class InstanceRegistry:
 
         actual_timeout = timeout if timeout is not None else CONNECT_TIMEOUT
         logger.info(f"Connecting to JADX instance: {url}")
-        async with httpx.AsyncClient(timeout=actual_timeout) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            logger.info(f"Connected to JADX: {data.get('apk_package', 'unknown')} v{data.get('version_name', 'unknown')}")
-            return data
+        client = await cls._get_http_client()
+        response = await client.get(url, headers=headers, timeout=httpx.Timeout(actual_timeout))
+        response.raise_for_status()
+        data = response.json()
+        logger.info(f"Connected to JADX: {data.get('apk_package', 'unknown')} v{data.get('version_name', 'unknown')}")
+        return data
     
     @classmethod
     async def _check_health(cls, host: str, port: int) -> bool:
@@ -273,11 +294,11 @@ class InstanceRegistry:
             headers["Authorization"] = f"Bearer {cls._shared_auth_token}"
 
         try:
-            async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
-                response = await client.get(url, headers=headers)
-                is_healthy = response.status_code == 200
-                logger.debug(f"Health check {host}:{port}: {'OK' if is_healthy else 'FAILED'}")
-                return is_healthy
+            client = await cls._get_http_client()
+            response = await client.get(url, headers=headers, timeout=httpx.Timeout(HEALTH_TIMEOUT))
+            is_healthy = response.status_code == 200
+            logger.debug(f"Health check {host}:{port}: {'OK' if is_healthy else 'FAILED'}")
+            return is_healthy
         except Exception as e:
             logger.debug(f"Health check {host}:{port} failed: {e}")
             return False
@@ -296,10 +317,10 @@ class InstanceRegistry:
         if actual_token:
             headers["Authorization"] = f"Bearer {actual_token}"
 
-        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            return response.json()
+        client = await cls._get_http_client()
+        response = await client.get(url, headers=headers, timeout=httpx.Timeout(HEALTH_TIMEOUT))
+        response.raise_for_status()
+        return response.json()
     
     @classmethod
     def remove_instance(cls, name: str, username: str = None, is_admin: bool = False) -> dict:

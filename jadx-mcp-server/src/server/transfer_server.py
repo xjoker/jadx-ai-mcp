@@ -91,45 +91,50 @@ def compress_data(data: bytes, encoding: str) -> tuple[bytes, str]:
 
 async def _fetch_batch_classes(class_names: list, instance_id: Optional[str]) -> list:
     """
-    从 JADX 批量获取类源码
-    
+    从 JADX 批量获取类源码（使用 batch-class-source 端点单次请求）
+
     Args:
         class_names: 类名列表
         instance_id: JADX 实例 ID
-    
+
     Returns:
         结果列表
     """
-    results = []
-    logger.info(f"Fetching {len(class_names)} classes from JADX")
-    
-    for name in class_names:
-        try:
-            resp = await get_from_jadx("class-source", {"class_name": name}, instance_id=instance_id)
-            
-            if "error" in resp:
-                results.append({
-                    "name": name,
-                    "found": False,
-                    "error": resp["error"]
-                })
-            else:
-                results.append({
-                    "name": name,
-                    "found": True,
-                    "content": resp.get("response", "")
-                })
-        except Exception as e:
-            logger.error(f"Failed to fetch class {name}: {e}")
-            results.append({
-                "name": name,
-                "found": False,
-                "error": str(e)
-            })
-    
+    logger.info(f"Fetching {len(class_names)} classes from JADX via batch endpoint")
+
+    try:
+        resp = await get_from_jadx(
+            "batch-class-source",
+            {"class_names": ",".join(class_names)},
+            instance_id=instance_id,
+        )
+
+        if isinstance(resp, dict) and "error" in resp:
+            logger.error(f"Batch endpoint returned error: {resp['error']}")
+            return [
+                {"name": name, "found": False, "error": resp["error"]}
+                for name in class_names
+            ]
+
+        # batch-class-source 返回 {"classes": [...], "total": N, "found": N}
+        if isinstance(resp, dict) and "classes" in resp:
+            results = resp["classes"]
+        else:
+            logger.warning("Unexpected batch response format, treating as error")
+            return [
+                {"name": name, "found": False, "error": "Unexpected batch response format"}
+                for name in class_names
+            ]
+    except Exception as e:
+        logger.error(f"Batch fetch failed: {e}")
+        return [
+            {"name": name, "found": False, "error": str(e)}
+            for name in class_names
+        ]
+
     found_count = sum(1 for r in results if r.get("found", False))
     logger.info(f"Fetched {found_count}/{len(class_names)} classes successfully")
-    
+
     return results
 
 
