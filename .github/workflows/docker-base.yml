@@ -11,6 +11,8 @@ on:
 env:
   IMAGE_NAME: xjoker/jadx-ai-mcp-base
   BASE_IMAGE_VERSION: ${{ github.event.inputs.base_version || '1.2' }}
+  # Test Node.js 24 compatibility ahead of June 2, 2026 deadline
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:

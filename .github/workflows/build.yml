@@ -9,6 +9,8 @@ on:
 env:
   BASE_IMAGE_VERSION: "1.2"
   JADX_VERSION: "1.5.5"
+  # Test Node.js 24 compatibility ahead of June 2, 2026 deadline
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:

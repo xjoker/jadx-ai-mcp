@@ -78,6 +78,8 @@ class InstanceRegistry:
     @classmethod
     async def _get_http_client(cls) -> httpx.AsyncClient:
         """Get or create the shared async HTTP client for registry operations."""
+        if cls._http_client is not None and not cls._http_client.is_closed:
+            return cls._http_client
         async with cls._http_client_lock:
             if cls._http_client is None or cls._http_client.is_closed:
                 cls._http_client = httpx.AsyncClient(

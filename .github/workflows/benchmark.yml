@@ -19,6 +19,10 @@ on:
       - "src/**"
   workflow_dispatch:
 
+env:
+  # Test Node.js 24 compatibility ahead of June 2, 2026 deadline
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   smoke:
     name: Docker Smoke Benchmark

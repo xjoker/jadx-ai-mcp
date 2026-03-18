@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -42,6 +43,10 @@ public class ResourceCacheManager {
     private static final AtomicBoolean isLoading = new AtomicBoolean(false);
     private static final AtomicReference<String> loadError = new AtomicReference<>(null);
     private static final Object cacheLock = new Object();
+
+    // Parsed strings.xml cache: keyed by locale path (e.g., "res/values/strings.xml")
+    // Populated on first parse per locale, cleared with clearCache()
+    private static final ConcurrentHashMap<String, Map<String, String>> parsedStringsCache = new ConcurrentHashMap<>();
     
     // Health monitoring
     private static final AtomicLong loadStartTime = new AtomicLong(0);
@@ -377,12 +382,36 @@ public class ResourceCacheManager {
     }
     
     /**
+     * Get cached parsed strings for a locale file path, or null if not yet cached.
+     *
+     * @param localeFilePath The file path key (e.g., "res/values/strings.xml")
+     * @return Cached parsed strings map, or null if not cached
+     */
+    public static Map<String, String> getParsedStrings(String localeFilePath) {
+        if (localeFilePath == null) return null;
+        return parsedStringsCache.get(localeFilePath);
+    }
+
+    /**
+     * Store parsed strings for a locale file path.
+     *
+     * @param localeFilePath The file path key (e.g., "res/values/strings.xml")
+     * @param strings The parsed key-value map to cache
+     */
+    public static void putParsedStrings(String localeFilePath, Map<String, String> strings) {
+        if (localeFilePath != null && strings != null) {
+            parsedStringsCache.put(localeFilePath, Collections.unmodifiableMap(new HashMap<>(strings)));
+        }
+    }
+
+    /**
      * Clear the cache (call when APK changes).
      */
     public static void clearCache() {
         synchronized (cacheLock) {
             cachedSubFiles.set(null);
             cachedStringsFiles.set(null);
+            parsedStringsCache.clear();
             isLoading.set(false);
             loadError.set(null);
         }

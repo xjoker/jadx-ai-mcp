@@ -74,6 +74,8 @@ class HttpClientManager:
     @classmethod
     async def get_client(cls) -> httpx.AsyncClient:
         """Get or create the shared async HTTP client (thread-safe)."""
+        if cls._client is not None and not cls._client.is_closed:
+            return cls._client
         async with cls._get_lock():
             if cls._client is None or cls._client.is_closed:
                 cls._client = httpx.AsyncClient(
@@ -252,7 +254,7 @@ async def get_from_jadx(
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
 
-    logger.info(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
+    logger.debug(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
     
     try:
         client = await HttpClientManager.get_client()
@@ -261,7 +263,7 @@ async def get_from_jadx(
         resp = await client.get(url, params=params, headers=headers, timeout=req_timeout)
         resp.raise_for_status()
         
-        logger.info(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")
+        logger.debug(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")
 
         # Try to parse JSON, fallback to text if not valid JSON
         try:

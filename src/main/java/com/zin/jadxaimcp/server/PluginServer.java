@@ -6,6 +6,7 @@ import io.javalin.Javalin;
 import jadx.gui.ui.MainWindow;
 import jadx.api.plugins.events.types.NodeRenamedByUser;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,11 +101,18 @@ public class PluginServer {
             // Register global OOM detection handler
             installOomHandler();
 
+            // Configure Jetty thread pool with reasonable defaults
+            int maxThreads = Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
+            QueuedThreadPool threadPool = new QueuedThreadPool(maxThreads, 2, 60000);
+            threadPool.setName("JAI-Jetty");
+
             // Configure and start Javalin
             app = Javalin.create(config -> {
                 config.showJavalinBanner = false;
                 config.jetty.defaultHost = bindAddress;
+                config.jetty.threadPool = threadPool;
             }).start(port);
+            logger.info("[JAI] Jetty thread pool configured: maxThreads={}, minThreads=2, idleTimeout=60s", maxThreads);
 
             // Add authentication middleware (runs before all routes)
             app.before(ctx -> {

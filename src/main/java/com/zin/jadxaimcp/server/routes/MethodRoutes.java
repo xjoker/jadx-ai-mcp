@@ -262,7 +262,10 @@ public class MethodRoutes {
             response.put("total", methodPairs.length);
             response.put("found", foundCount);
 
-            // Serialize and apply SmartChunker to prevent large response truncation
+            // Note: Double JSON serialization (gson.toJson -> ctx.json) is intentional here.
+            // SmartChunker performs size-based string splitting to prevent MCP client truncation
+            // (8KB threshold). It requires the full serialized JSON string to calculate chunk
+            // boundaries. Refactoring to accept Map directly would lose this size-based chunking.
             com.google.gson.Gson gson = new com.google.gson.Gson();
             String responseJson = gson.toJson(response);
 
