@@ -33,11 +33,35 @@ flowchart TB
 git clone https://github.com/xjoker/jadx-ai-mcp.git
 cd jadx-ai-mcp/docker
 
-# 创建 APK 目录
-mkdir -p apks/jadx-1 apks/jadx-2 apks/jadx-3
+# 创建 compose 默认使用的 APK 挂载目录
+mkdir -p ../temp
 mkdir -p config
 
+# （可选）复制并自定义环境变量
+cp .env.example .env
+
 # 启动所有服务
+docker compose up -d
+```
+
+仓库内自带的 `docker/docker-compose.yaml` 默认会把项目根目录的 `temp/` 挂载到 3 个 JADX 实例的 `/apks`。如果你希望 3 个实例都自动加载同一个测试 APK，只需要把 `target.apk` 放到 `../temp/`。
+
+### 环境变量
+
+项目包含 `.env.example` 文件，复制到 `.env` 后自定义：
+
+```bash
+# 时区（默认 UTC）
+TZ=Asia/Shanghai
+```
+
+如果你希望每个实例使用不同的 APK 目录，可以用环境变量覆盖：
+
+```bash
+mkdir -p apks/jadx-1 apks/jadx-2 apks/jadx-3
+JADX1_APK_DIR=./apks/jadx-1 \
+JADX2_APK_DIR=./apks/jadx-2 \
+JADX3_APK_DIR=./apks/jadx-3 \
 docker compose up -d
 ```
 
@@ -51,6 +75,8 @@ docker compose up -d
 | **JADX #2** | http://localhost:6081 |
 | **JADX #3** | http://localhost:6082 |
 | **MCP Server** | http://localhost:8651/mcp |
+| **健康检查** | http://localhost:8651/health |
+| **状态页** | http://localhost:8651/status |
 
 ---
 
@@ -63,7 +89,7 @@ docker compose up -d
 name = "jadx-1"
 host = "jadx-1"  # Docker 容器名
 port = 8650
-default = true
+enabled = true
 
 [[jadx_instances]]
 name = "jadx-2"
@@ -75,6 +101,8 @@ name = "jadx-3"
 host = "jadx-3"
 port = 8650
 ```
+
+仓库自带的 `docker/config/jadx-config.toml` 现在已经预注册了这 3 个实例。由于 MCP Server 采用纯 pull 模式，不会自动发现 Docker 网络中的容器，所以这一步是必须的。
 
 ---
 

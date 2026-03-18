@@ -150,13 +150,13 @@ docker run -d --name jadx ^
 
 > **重要**：多容器部署时需设置 `JADX_MCP_BIND_ADDRESS=0.0.0.0`。
 
-### MCP Server (Python)
+### MCP Server / Transfer API
 
 | 变量 | 说明 | 默认值 |
 |:-----|:-----|:-------|
-| `JADX_MCP_HOST` | MCP Server 绑定地址 | `0.0.0.0` |
-| `JADX_HOST` | 默认 JADX 插件主机 | `127.0.0.1` |
-| `JADX_PORT` | 默认 JADX 插件端口 | `8650` |
+| `MCP_SERVER_URL` | 生成 Transfer API 下载链接时使用的 MCP Server 对外地址 | 回退到 `http://localhost:8651` |
+
+> 独立 MCP Server 的实例连接请通过 `jadx-config.toml` 或命令行参数配置。当前没有公开 `JADX_HOST` / `JADX_PORT` 这类运行时环境变量入口。
 
 完整的环境变量列表请参阅 [配置参考](../reference/configuration.zh-cn.md)。
 
@@ -212,18 +212,18 @@ docker run -d --name jadx-mcp-server \
 
 > **Docker 网络说明**：当 MCP Server 容器需要连接宿主机上的 JADX 时，使用 `host.docker.internal` 作为主机地址。Linux 上需在 `docker run` 命令中添加 `--add-host=host.docker.internal:host-gateway`。
 
-### 方式 2：使用环境变量
+### 方式 2：使用命令行参数连接单实例
 
 ```bash
 docker run -d --name jadx-mcp-server \
   -p 8651:8651 \
-  -e JADX_HOST=192.168.1.10 \
-  -e JADX_PORT=8650 \
-  -e JADX_MCP_AUTH_TOKEN=your-token \
-  xjoker/jadx-mcp-server
+  xjoker/jadx-mcp-server \
+  jadx_mcp_server --http --host 0.0.0.0 --port 8651 \
+    --jadx-host 192.168.1.10 --jadx-port 8650 \
+    --mcp-auth-token your-token
 ```
 
-### 方式 3：命令行参数
+### 方式 3：使用命令行参数连接多实例
 
 ```bash
 docker run -d --name jadx-mcp-server \
@@ -232,6 +232,8 @@ docker run -d --name jadx-mcp-server \
   jadx_mcp_server --http --host 0.0.0.0 \
     --jadx-instances "192.168.1.10:8650:app-v1,192.168.1.11:8650:app-v2"
 ```
+
+> 纯 pull 模式下，独立 MCP Server 不会自动发现 Docker 网络中的容器。每个 JADX 实例都需要通过配置文件或命令行显式注册。
 
 ---
 

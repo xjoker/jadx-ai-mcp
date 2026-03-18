@@ -1,11 +1,21 @@
 # JADX MCP Server 配置文件
 # All-in-One 容器默认配置 - 连接容器内部 JADX 实例
+#
+# 认证说明:
+#   容器自带默认 admin 用户，token 为 "admin-secret-token"。
+#   请在生产环境中修改为强随机 token:
+#     1. 直接编辑下方 [[users]] 段的 token 值
+#     2. 或挂载外部配置文件覆盖此文件
+
+[defaults]
+# JADX 插件认证 Token（与 JADX GUI 插件端保持一致）
+jadx_token = "jadx-plugin-secret-token"
 
 [security]
 # 允许动态添加 JADX 实例
 allow_dynamic_instances = true
 
-# 默认 JADX 实例配置（All-in-One 容器）
+# 默认 JADX 实例配置（All-in-One 容器内部）
 [[jadx_instances]]
 name = "local"
 host = "127.0.0.1"
@@ -13,17 +23,19 @@ port = 8650
 default = true
 enabled = true
 
-# 多实例配置示例（注释掉）
-# 如需连接多个 JADX 实例，请取消注释并修改配置
+# ============================================
+# 用户认证配置
+# 默认 admin 用户，生产环境请务必修改 token
+# ============================================
+[[users]]
+name = "admin"
+token = "admin-secret-token"
+is_admin = true
+
+# 多实例配置示例（取消注释并修改）
 #
 # [[jadx_instances]]
 # name = "remote-instance"
 # host = "192.168.1.100"
 # port = 8650
 # enabled = true
-#
-# [[jadx_instances]]
-# name = "another-apk"
-# host = "host.docker.internal"
-# port = 8652
-# default = false

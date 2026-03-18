@@ -35,6 +35,7 @@ class JadxInstance:
     token: str = ""           # Instance-specific JADX plugin token
     owner: Optional[str] = None  # Owner username (None = shared/static)
     is_dynamic: bool = False  # True if added via AI conversation
+    registration_source: str = "runtime"  # config | cli | default | ai_dynamic | runtime
     
     @property
     def url(self) -> str:
@@ -52,18 +53,20 @@ class JadxInstance:
             "error_message": self.error_message,
             "owner": self.owner,
             "is_dynamic": self.is_dynamic,
+            "registration_source": self.registration_source,
         }
 
 
 class InstanceRegistry:
     """
     JADX Instance Registry (Singleton)
-    
+
     Thread-safe implementation supporting concurrent access from:
     - Main async event loop (MCP tool calls)
     - Background health monitor thread
     """
-    
+
+    HEALTH_TIMEOUT = HEALTH_TIMEOUT  # Expose for external callers (e.g., HealthMonitor)
     _instances: Dict[str, JadxInstance] = {}
     _default_instance: Optional[str] = None
     _shared_auth_token: Optional[str] = None
@@ -89,7 +92,8 @@ class InstanceRegistry:
         name: str = None,
         token: str = None,
         owner: str = None,
-        is_dynamic: bool = False
+        is_dynamic: bool = False,
+        registration_source: str = "runtime"
     ) -> dict:
         """
         Add a new JADX instance
@@ -101,6 +105,7 @@ class InstanceRegistry:
             token: Instance-specific JADX plugin token (uses default if not provided)
             owner: Owner username (None = shared/static instance)
             is_dynamic: True if added via AI conversation
+            registration_source: How the instance was added (config/cli/default/ai_dynamic/runtime)
             
         Returns:
             {"success": bool, "instance": dict, "message": str}
@@ -135,6 +140,7 @@ class InstanceRegistry:
                     token=actual_token or "",
                     owner=owner,
                     is_dynamic=is_dynamic,
+                    registration_source=registration_source,
                 )
                 cls._instances[name] = instance
                 
@@ -182,7 +188,8 @@ class InstanceRegistry:
         port: int, 
         token: str = None,
         owner: str = None,
-        is_dynamic: bool = False
+        is_dynamic: bool = False,
+        registration_source: str = "config"
     ) -> dict:
         """
         Register a JADX instance from config file without requiring immediate connection.
@@ -199,6 +206,7 @@ class InstanceRegistry:
             token: Instance-specific JADX plugin token
             owner: Owner username (None = shared/static instance)
             is_dynamic: True if added via AI conversation
+            registration_source: How the instance was registered (typically config)
             
         Returns:
             {"success": bool, "message": str}
@@ -222,6 +230,7 @@ class InstanceRegistry:
                 token=actual_token or "",
                 owner=owner,
                 is_dynamic=is_dynamic,
+                registration_source=registration_source,
             )
             cls._instances[name] = instance
             
@@ -238,16 +247,17 @@ class InstanceRegistry:
             }
     
     @classmethod
-    async def _fetch_apk_info(cls, host: str, port: int, token: str = None) -> dict:
+    async def _fetch_apk_info(cls, host: str, port: int, token: str = None, timeout: float = None) -> dict:
         """Fetch APK info from JADX instance"""
         url = f"http://{host}:{port}/apk-info"
         headers = {}
         actual_token = token or cls._shared_auth_token
         if actual_token:
             headers["Authorization"] = f"Bearer {actual_token}"
-        
+
+        actual_timeout = timeout if timeout is not None else CONNECT_TIMEOUT
         logger.info(f"Connecting to JADX instance: {url}")
-        async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=actual_timeout) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             data = response.json()
@@ -261,7 +271,7 @@ class InstanceRegistry:
         headers = {}
         if cls._shared_auth_token:
             headers["Authorization"] = f"Bearer {cls._shared_auth_token}"
-        
+
         try:
             async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
                 response = await client.get(url, headers=headers)
@@ -271,6 +281,25 @@ class InstanceRegistry:
         except Exception as e:
             logger.debug(f"Health check {host}:{port} failed: {e}")
             return False
+
+    @classmethod
+    async def _fetch_health_info(cls, host: str, port: int, token: str = None) -> dict:
+        """
+        Fetch full health info from JADX /health endpoint.
+
+        Returns dict with memory stats, OOM flag, etc.
+        Raises on connection failure.
+        """
+        url = f"http://{host}:{port}/health"
+        headers = {}
+        actual_token = token or cls._shared_auth_token
+        if actual_token:
+            headers["Authorization"] = f"Bearer {actual_token}"
+
+        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
     
     @classmethod
     def remove_instance(cls, name: str, username: str = None, is_admin: bool = False) -> dict:
@@ -439,6 +468,14 @@ class InstanceRegistry:
         return None
     
     @classmethod
+    def get_first_connected(cls) -> Optional[JadxInstance]:
+        """Return the first instance with status 'connected', or None."""
+        for inst in cls._instances.values():
+            if inst.status == "connected":
+                return inst
+        return None
+
+    @classmethod
     def get_instance(cls, name: str) -> Optional[JadxInstance]:
         """Get instance by name (thread-safe)"""
         with cls._thread_lock:
@@ -512,27 +549,63 @@ class InstanceRegistry:
         for name, instance in instances_snapshot:
             new_status = "unknown"
             error_msg = ""
+            old_status = instance.status
             try:
-                is_healthy = await cls._check_health(instance.host, instance.port)
-                if is_healthy:
-                    new_status = "connected"
+                # Fetch apk_info to also refresh metadata (detect file changes)
+                apk_info = await cls._fetch_apk_info(
+                    instance.host, instance.port, instance.token,
+                    timeout=HEALTH_TIMEOUT
+                )
+                new_status = "connected"
+                error_msg = ""
+
+                # Check OOM/memory via /health (preserve degraded if OOM persists)
+                try:
+                    health_info = await cls._fetch_health_info(
+                        instance.host, instance.port, instance.token
+                    )
+                    memory = health_info.get("memory", {})
+                    if memory.get("oom_detected", False) or memory.get("percent", 0) >= 95:
+                        new_status = "degraded"
+                        error_msg = "Out of memory"
+                except Exception:
+                    # /health failed; if previously degraded, keep degraded
+                    if old_status == "degraded":
+                        new_status = "degraded"
+
+                if new_status != "degraded":
                     healthy_count += 1
-                    error_msg = ""
-                else:
-                    new_status = "disconnected"
-                    error_msg = "Health check failed"
+
+                with cls._thread_lock:
+                    if name in cls._instances:
+                        inst = cls._instances[name]
+                        inst.status = new_status
+                        inst.apk_info = apk_info
+                        inst.last_health_check = datetime.now()
+                        inst.error_message = error_msg
             except Exception as e:
-                new_status = "error"
-                error_msg = f"{type(e).__name__}: {str(e) or '(no details)'}"
-            
-            # Thread-safe update via lock
-            with cls._thread_lock:
-                if name in cls._instances:
-                    inst = cls._instances[name]
-                    inst.status = new_status
-                    inst.last_health_check = datetime.now()
-                    inst.error_message = error_msg
-            
+                # apk-info failed, fall back to lightweight health check
+                try:
+                    is_healthy = await cls._check_health(instance.host, instance.port)
+                    if is_healthy:
+                        # Preserve degraded if previously degraded
+                        new_status = "degraded" if old_status == "degraded" else "connected"
+                        healthy_count += 1
+                        error_msg = ""
+                    else:
+                        new_status = "disconnected"
+                        error_msg = "Health check failed"
+                except Exception as he:
+                    new_status = "error"
+                    error_msg = f"{type(he).__name__}: {str(he) or '(no details)'}"
+
+                with cls._thread_lock:
+                    if name in cls._instances:
+                        inst = cls._instances[name]
+                        inst.status = new_status
+                        inst.last_health_check = datetime.now()
+                        inst.error_message = error_msg
+
             results.append({
                 "name": name,
                 "status": new_status,

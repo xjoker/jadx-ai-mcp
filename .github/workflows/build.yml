@@ -17,12 +17,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '11'
           distribution: 'temurin'
@@ -30,7 +30,7 @@ jobs:
 
       - name: Cache JADX dependency
         id: cache-jadx
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2/repository/io/github/skylot
           key: jadx-${{ env.JADX_VERSION }}
@@ -65,8 +65,8 @@ jobs:
           # Get short commit SHA (7 chars)
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           
-          # Update pom.xml - match any version in the first occurrence
-          sed -i "0,/<version>[0-9.]*<\/version>/s/<version>[0-9.]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
+          # Update pom.xml - match any version (including -dev suffix) in the first occurrence
+          sed -i "0,/<version>[0-9.]*[-a-zA-Z0-9]*<\/version>/s/<version>[0-9.]*[-a-zA-Z0-9]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
           # Update Java banner - version
           sed -i "s|VERSION = \".*\"|VERSION = \"${VERSION}\"|" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
           # Update Java banner - build commit
@@ -78,7 +78,7 @@ jobs:
         run: mvn clean package -DskipTests
 
       - name: Upload JAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: jadx-ai-mcp-${{ steps.get_version.outputs.version }}
           path: target/jadx-ai-mcp-${{ steps.get_version.outputs.version }}.jar
@@ -91,7 +91,7 @@ jobs:
             jadx_mcp_server.py src/ requirements.txt pyproject.toml README_SERVER.md AUTHENTICATION.md LICENSE
 
       - name: Upload MCP Server artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: jadx-mcp-server-${{ steps.get_version.outputs.version }}
           path: jadx-mcp-server-${{ steps.get_version.outputs.version }}.zip
@@ -108,7 +108,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get version from tag
         id: tag_version
@@ -123,13 +123,13 @@ jobs:
           fi
 
       - name: Download JAR artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: jadx-ai-mcp-${{ steps.tag_version.outputs.version }}
           path: ./artifacts
 
       - name: Download MCP Server artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: jadx-mcp-server-${{ steps.tag_version.outputs.version }}
           path: ./artifacts
@@ -165,7 +165,7 @@ jobs:
           EOF
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: v${{ steps.tag_version.outputs.version }}
           body_path: release_notes.md
@@ -185,7 +185,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get version from tag
         id: version
@@ -202,13 +202,13 @@ jobs:
           fi
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -216,7 +216,7 @@ jobs:
       # All-in-One image (JADX GUI + VNC + MCP Server)
       # Uses pre-built base image for faster builds (~2min instead of ~5min)
       - name: Build and push All-in-One image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./docker/Dockerfile
@@ -235,7 +235,7 @@ jobs:
 
       # Standalone MCP Server image (lightweight)
       - name: Build and push MCP Server image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./docker/Dockerfile.mcp

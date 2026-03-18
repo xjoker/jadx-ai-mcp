@@ -15,6 +15,7 @@ from ..instance_registry import InstanceRegistry
 from ..user_auth import UserAuthManager
 from ..config_loader import get_config_loader
 from ..logging_config import get_logger
+from ..types import ErrorCode, make_error
 
 logger = get_logger("instance_tools")
 
@@ -106,28 +107,34 @@ def register_instance_tools(mcp):
         username = user.name if user else "anonymous"
         
         # === PERMISSION CHECK ===
-        # 1. Check global security setting
         config_loader = get_config_loader()
         if config_loader and config_loader.config:
             config = config_loader.config
             allow_global = config.security.allow_dynamic_instances
-            
-            # 2. Check user permission
+
             user_config = config.get_user_by_token(user.token) if user and user.token else None
             has_permission = False
-            
+
             if user_config:
                 has_permission = user_config.has_add_instances_permission
             elif user and user.is_admin:
                 has_permission = True
-            
+
             if not allow_global and not has_permission:
                 logger.warning(f"User '{username}' denied add_jadx_instance: permission denied")
-                return {
-                    "error": "PERMISSION_DENIED",
-                    "message": "Dynamic instance creation is disabled. Contact admin to enable 'security.allow_dynamic_instances' or grant 'can_add_instances' permission.",
-                    "required_permission": "can_add_instances",
-                }
+                return make_error(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Dynamic instance creation is disabled. Contact admin to enable 'security.allow_dynamic_instances' or grant 'can_add_instances' permission.",
+                    required_permission="can_add_instances",
+                )
+        else:
+            # No config file — only admin users may add instances
+            if not (user and user.is_admin):
+                logger.warning(f"User '{username}' denied add_jadx_instance: no config, non-admin")
+                return make_error(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Dynamic instance creation requires admin privileges when no config file is loaded.",
+                )
         
         # Handle localhost
         if host.lower() == "localhost":
@@ -144,7 +151,8 @@ def register_instance_tools(mcp):
             name=name if name else None,
             token=actual_token,
             owner=username,  # Owned by current user
-            is_dynamic=True  # Dynamic instance (not from config file)
+            is_dynamic=True,  # Dynamic instance (not from config file)
+            registration_source="ai_dynamic"
         )
         return result
     
@@ -173,17 +181,17 @@ def register_instance_tools(mcp):
         # Check if user has access to this instance
         instance = InstanceRegistry.get_instance_for_user(name, username, is_admin)
         if not instance:
-            return {
-                "success": False,
-                "message": f"Instance '{name}' not found or you don't have access to it",
-            }
-        
+            return make_error(
+                ErrorCode.INSTANCE_NOT_FOUND,
+                f"Instance '{name}' not found or you don't have access to it",
+            )
+
         # Non-admin users can only remove their own dynamic instances
         if not is_admin and instance.owner != username:
-            return {
-                "success": False,
-                "message": f"You can only remove your own dynamic instances",
-            }
+            return make_error(
+                ErrorCode.PERMISSION_DENIED,
+                "You can only remove your own dynamic instances",
+            )
         
         return InstanceRegistry.remove_instance(name, username=username, is_admin=is_admin)
     
@@ -244,10 +252,10 @@ def register_instance_tools(mcp):
         # Check user access
         instance = InstanceRegistry.get_instance_for_user(name, username, is_admin)
         if not instance:
-            return {
-                "success": False,
-                "message": f"Instance '{name}' not found or you don't have access to it",
-            }
+            return make_error(
+                ErrorCode.INSTANCE_NOT_FOUND,
+                f"Instance '{name}' not found or you don't have access to it",
+            )
         return {
             "success": True,
             **instance.to_dict(),
@@ -305,10 +313,10 @@ def register_instance_tools(mcp):
             instance = InstanceRegistry.get_default()
             
         if not instance:
-            return {"error": f"Instance '{instance_id or 'default'}' not found or not connected"}
-        
+            return make_error(ErrorCode.INSTANCE_NOT_FOUND, f"Instance '{instance_id or 'default'}' not found or not connected")
+
         if instance.status != "connected":
-            return {"error": f"Instance '{instance.name}' is not connected (status: {instance.status})"}
+            return make_error(ErrorCode.CONNECTION_FAILED, f"Instance '{instance.name}' is not connected (status: {instance.status})")
         
         try:
             import httpx
@@ -329,4 +337,3 @@ def register_instance_tools(mcp):
             # Security: log keeps full details, external returns generic message
             logger.error(f"Failed to clear cache: {type(e).__name__}: {e}")
             return {"error": f"Failed to clear cache: {type(e).__name__}"}
-

@@ -116,14 +116,38 @@ allow_dynamic_instances = false  # Default: DISABLED
 
 **Status (v6.1.0+):** Token values are no longer logged. Only "Authentication token configured" or "Authentication disabled" messages appear in logs.
 
-**Previous Mitigation (obsolete):**
-- ~~Use `INFO` or higher log level in production~~
-- ~~Avoid exposing logs to untrusted parties~~
+### 4. Default Token Warning (v6.1.5+)
+
+The server detects well-known default tokens (`admin-secret-token`, `jadx-plugin-secret-token`) at startup and logs a `WARNING` message. The Docker `start.sh` script also prints a visible warning banner when `JADX_MCP_AUTH_TOKEN` equals the default value.
+
+> **Always change default tokens before exposing the server to a network.**
+
+---
+
+## 🛡️ Status Page CSRF Protection (v6.1.5+)
+
+The `/status/login` endpoint is protected against Cross-Site Request Forgery using the **double-submit cookie** pattern:
+
+1. Every page render generates a random CSRF token stored in both a cookie (`csrf_token`) and a hidden form field.
+2. On form POST, the server validates that the cookie value matches the form value.
+3. Mismatches return HTTP 403.
+
+| Attribute | Value | Notes |
+|:----------|:------|:------|
+| CSRF cookie `httponly` | `false` | Required for double-submit pattern |
+| CSRF cookie `samesite` | `lax` | Blocks cross-site POST |
+| CSRF cookie `max_age` | 600s | 10-minute window |
+| Session cookie `httponly` | `true` | Not readable by JavaScript |
+| Session cookie `samesite` | `lax` | Standard protection |
+| Session cookie `max_age` | 86400s | 24-hour expiry |
+
+> **Note:** Cookies do not set the `Secure` flag by default since Docker deployments typically use HTTP internally. When deploying behind an HTTPS reverse proxy, consider adding the `Secure` attribute.
 
 ---
 
 ## 🚀 Secure Deployment Checklist
 
+- [ ] Change default tokens (`admin-secret-token`, `jadx-plugin-secret-token`)
 - [ ] Use HTTPS (via reverse proxy) for external access
 - [ ] Set strong, unique tokens for each user
 - [ ] Keep `allow_dynamic_instances = false` unless required

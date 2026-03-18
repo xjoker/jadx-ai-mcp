@@ -75,11 +75,12 @@ class HealthMonitor:
         from .instance_registry import InstanceRegistry
         
         # Wait a bit before first check to let server fully start
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
         
         while cls._running:
+            cycle = {"retry_needed": False}
             try:
-                await cls._run_health_check()
+                cycle = await cls._run_health_check()
                 
                 # Execute callbacks
                 for callback in cls._callbacks:
@@ -97,7 +98,9 @@ class HealthMonitor:
                 logger.error(f"Health monitor error: {e}")
             
             # Wait for next check
-            await asyncio.sleep(cls._interval)
+            retry_needed = bool(cycle.get("retry_needed")) if isinstance(cycle, dict) else False
+            sleep_seconds = min(5, cls._interval) if retry_needed else cls._interval
+            await asyncio.sleep(sleep_seconds)
     
     @classmethod
     async def _run_health_check(cls):
@@ -113,7 +116,7 @@ class HealthMonitor:
         instances = InstanceRegistry.get_all_instances()
         if not instances:
             logger.debug("No JADX instances registered, skipping health check")
-            return
+            return {"retry_needed": False}
         
         healthy_count = 0
         unhealthy_count = 0
@@ -128,7 +131,8 @@ class HealthMonitor:
                 pending_count += 1
                 try:
                     apk_info = await InstanceRegistry._fetch_apk_info(
-                        instance.host, instance.port, instance.token
+                        instance.host, instance.port, instance.token,
+                        timeout=InstanceRegistry.HEALTH_TIMEOUT
                     )
                     # Success! Update instance using thread-safe method
                     InstanceRegistry.update_instance_status(
@@ -153,27 +157,87 @@ class HealthMonitor:
                     logger.debug(f"[HEALTH] Instance '{name}' still unavailable: {e}")
                     unhealthy_count += 1
             else:
-                # For connected instances, just check health
-                is_healthy = await InstanceRegistry._check_health(instance.host, instance.port)
-                new_status = "connected" if is_healthy else "disconnected"
-                
-                if is_healthy:
+                # For connected/degraded instances, fetch apk_info and health info
+                try:
+                    apk_info = await InstanceRegistry._fetch_apk_info(
+                        instance.host, instance.port, instance.token,
+                        timeout=InstanceRegistry.HEALTH_TIMEOUT
+                    )
+
+                    # Detect if loaded file changed
+                    old_pkg = instance.apk_info.get("apk_package")
+                    new_pkg = apk_info.get("apk_package")
+                    if old_pkg != new_pkg:
+                        logger.info(f"[HEALTH] Instance '{name}' loaded file changed: {old_pkg} -> {new_pkg}")
+
+                    # Check for OOM and high memory via /health endpoint
+                    new_status = "connected"
+                    try:
+                        health_info = await InstanceRegistry._fetch_health_info(
+                            instance.host, instance.port, instance.token
+                        )
+                        memory = health_info.get("memory", {})
+                        oom_detected = memory.get("oom_detected", False)
+                        mem_percent = memory.get("percent", 0)
+
+                        if oom_detected:
+                            new_status = "degraded"
+                            logger.error(
+                                f"[HEALTH] Instance '{name}' OOM detected! "
+                                f"Memory: {memory.get('used_mb', '?')}MB/{memory.get('max_mb', '?')}MB ({mem_percent}%). "
+                                f"Restart JADX to recover."
+                            )
+                        elif mem_percent >= 95:
+                            new_status = "degraded"
+                            logger.warning(
+                                f"[HEALTH] Instance '{name}' critically low memory: "
+                                f"{memory.get('used_mb', '?')}MB/{memory.get('max_mb', '?')}MB ({mem_percent}%)"
+                            )
+                        elif mem_percent >= 85:
+                            logger.warning(
+                                f"[HEALTH] Instance '{name}' high memory usage: "
+                                f"{memory.get('used_mb', '?')}MB/{memory.get('max_mb', '?')}MB ({mem_percent}%)"
+                            )
+                    except Exception as e:
+                        # /health failed but /apk-info succeeded
+                        # If previously degraded, keep degraded (can't verify OOM cleared)
+                        if old_status == "degraded":
+                            new_status = "degraded"
+                        logger.warning(f"[HEALTH] Instance '{name}' /health endpoint failed: {type(e).__name__}. Keeping status '{new_status}'.")
+
+                    if old_status == "degraded" and new_status == "connected":
+                        logger.info(f"[HEALTH] Instance '{name}' recovered from degraded state")
+
                     healthy_count += 1
-                else:
-                    unhealthy_count += 1
-                
-                # Update status using thread-safe method
-                if old_status != new_status:
                     InstanceRegistry.update_instance_status(
                         name=name,
                         status=new_status,
+                        apk_info=apk_info,
                         last_check=now_iso
                     )
-                    
+                except Exception:
+                    # apk-info failed, fall back to lightweight health check
+                    is_healthy = await InstanceRegistry._check_health(instance.host, instance.port)
+
                     if is_healthy:
-                        logger.info(f"[HEALTH] Instance '{name}' recovered: {old_status} -> connected")
+                        # If previously degraded and apk-info still fails, keep degraded
+                        new_status = "degraded" if old_status == "degraded" else "connected"
+                        healthy_count += 1
                     else:
-                        logger.warning(f"[HEALTH] Instance '{name}' became unavailable: {old_status} -> disconnected")
+                        new_status = "disconnected"
+                        unhealthy_count += 1
+
+                    if old_status != new_status:
+                        InstanceRegistry.update_instance_status(
+                            name=name,
+                            status=new_status,
+                            last_check=now_iso
+                        )
+
+                        if new_status == "connected":
+                            logger.info(f"[HEALTH] Instance '{name}' recovered: {old_status} -> connected")
+                        elif new_status == "disconnected":
+                            logger.warning(f"[HEALTH] Instance '{name}' became unavailable: {old_status} -> disconnected")
         
         # Summary log
         total = healthy_count + unhealthy_count
@@ -181,6 +245,12 @@ class HealthMonitor:
             logger.info(f"[HEALTH] Check complete: {healthy_count}/{total} healthy, {unhealthy_count} unhealthy")
         else:
             logger.debug(f"[HEALTH] Check complete: {healthy_count}/{total} healthy")
+        return {
+            "retry_needed": pending_count > 0 or unhealthy_count > 0,
+            "healthy_count": healthy_count,
+            "unhealthy_count": unhealthy_count,
+            "pending_count": pending_count,
+        }
     
     @classmethod
     def is_running(cls) -> bool:

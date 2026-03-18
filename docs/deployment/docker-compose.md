@@ -33,11 +33,35 @@ flowchart TB
 git clone https://github.com/xjoker/jadx-ai-mcp.git
 cd jadx-ai-mcp/docker
 
-# Create APK directories
-mkdir -p apks/jadx-1 apks/jadx-2 apks/jadx-3
+# Create the default APK mount directory used by the bundled compose file
+mkdir -p ../temp
 mkdir -p config
 
+# (Optional) Copy and customize environment variables
+cp .env.example .env
+
 # Start all services
+docker compose up -d
+```
+
+By default, the bundled `docker/docker-compose.yaml` mounts the repository `temp/` directory into `/apks` for all three JADX instances. Put `target.apk` in `../temp/` if you want every instance to auto-load the same test APK.
+
+### Environment Variables
+
+A `.env.example` file is included. Copy it to `.env` and customize:
+
+```bash
+# Timezone (default: UTC)
+TZ=Asia/Shanghai
+```
+
+If you want separate APK directories per instance, override the bind mounts with environment variables:
+
+```bash
+mkdir -p apks/jadx-1 apks/jadx-2 apks/jadx-3
+JADX1_APK_DIR=./apks/jadx-1 \
+JADX2_APK_DIR=./apks/jadx-2 \
+JADX3_APK_DIR=./apks/jadx-3 \
 docker compose up -d
 ```
 
@@ -51,6 +75,8 @@ docker compose up -d
 | **JADX #2** | http://localhost:6081 |
 | **JADX #3** | http://localhost:6082 |
 | **MCP Server** | http://localhost:8651/mcp |
+| **Health Check** | http://localhost:8651/health |
+| **Status Page** | http://localhost:8651/status |
 
 ---
 
@@ -63,7 +89,7 @@ Create `config/jadx-config.toml`:
 name = "jadx-1"
 host = "jadx-1"  # Docker container name
 port = 8650
-default = true
+enabled = true
 
 [[jadx_instances]]
 name = "jadx-2"
@@ -75,6 +101,8 @@ name = "jadx-3"
 host = "jadx-3"
 port = 8650
 ```
+
+The sample config included in `docker/config/jadx-config.toml` now pre-registers these three instances. This is required because the MCP server uses pure pull mode and does not auto-discover containers on the Docker network.
 
 ---
 

@@ -1,0 +1,40 @@
+{
+  "sample_discovery": {
+    "candidate_limit": 60,
+    "class_page_limit": 200,
+    "request_timeout_seconds": 120
+  },
+  "targets": [
+    {
+      "name": "plugin",
+      "enabled": true
+    },
+    {
+      "name": "mcp",
+      "enabled": true
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "cold_start",
+      "warmup": false,
+      "iterations_per_worker": 1,
+      "concurrency_levels": [1],
+      "workloads": ["metadata", "decompile", "code_search_only", "xref_only", "search_xref", "mixed"]
+    },
+    {
+      "name": "warm_cache",
+      "warmup": true,
+      "iterations_per_worker": 3,
+      "concurrency_levels": [1, 8, 24],
+      "workloads": ["metadata", "decompile", "code_search_only", "xref_only", "search_xref", "mixed"]
+    },
+    {
+      "name": "degraded_pressure",
+      "warmup": true,
+      "iterations_per_worker": 4,
+      "concurrency_levels": [24, 48],
+      "workloads": ["code_search_only", "xref_only", "search_xref", "mixed"]
+    }
+  ]
+}

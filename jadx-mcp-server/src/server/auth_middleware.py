@@ -1,22 +1,20 @@
 """
 JADX MCP Server - Authentication Middleware
 
-FastMCP middleware that extracts Bearer tokens from HTTP Authorization headers
-and authenticates users via UserAuthManager.
+FastMCP middleware that fills the project's existing user context from the
+official FastMCP access token.
 
 This middleware sets the current user context for all MCP tool calls, enabling
 user-specific instance filtering and access control.
 """
 
-from typing import Optional
-
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.dependencies import get_access_token, get_http_request
 from mcp import McpError
 from mcp.types import ErrorData
 
 from .user_auth import UserAuthManager, AuthenticatedUser
-from .logging_config import get_logger, set_log_context
+from .logging_config import get_logger
 
 # Get module logger
 logger = get_logger("auth")
@@ -24,10 +22,11 @@ logger = get_logger("auth")
 
 class BearerAuthMiddleware(Middleware):
     """
-    Middleware for Bearer token authentication in FastMCP.
-    
-    Extracts the Authorization header, validates the token against
-    configured users, and sets the current user context.
+    Middleware for request-scoped user context in FastMCP.
+
+    Authentication itself is handled by FastMCP's official `auth=` provider.
+    This middleware only translates the verified access token into the
+    project's existing AuthenticatedUser model.
     """
     
     def __init__(self, require_auth: bool = False):
@@ -40,20 +39,14 @@ class BearerAuthMiddleware(Middleware):
         """
         self.require_auth = require_auth
     
-    def _extract_token(self, headers: dict) -> Optional[str]:
-        """
-        Extract Bearer token from Authorization header.
-        
-        Args:
-            headers: HTTP headers dictionary
-            
-        Returns:
-            Token string if found and valid format, None otherwise
-        """
-        auth_header = headers.get("authorization", "")
-        if auth_header.startswith("Bearer "):
-            return auth_header[7:]  # Remove "Bearer " prefix
-        return None
+    @staticmethod
+    def _has_http_request() -> bool:
+        """Whether the current MCP request originated from HTTP transport."""
+        try:
+            get_http_request()
+            return True
+        except RuntimeError:
+            return False
     
     async def on_request(self, context: MiddlewareContext, call_next):
         """
@@ -62,32 +55,30 @@ class BearerAuthMiddleware(Middleware):
         This hook runs for all MCP requests that expect responses,
         including tool calls, resource reads, and prompt executions.
         """
-        # Get HTTP headers (safely returns empty dict if no HTTP context)
-        headers = get_http_headers()
-        
-        # Extract token from Authorization header
-        token = self._extract_token(headers)
-        
-        # Authenticate user
-        user = UserAuthManager.authenticate(token or "")
-        
-        if user is None and self.require_auth:
-            # Authentication required but failed - raise McpError
-            logger.warning(f"Authentication failed: invalid or missing token")
-            raise McpError(ErrorData(
-                code=-32001,  # Custom error code for authentication
-                message="Unauthorized: Invalid or missing authentication token"
-            ))
-        
-        # Set authenticated user in context (or anonymous if allowed)
+        access_token = get_access_token()
+        user = UserAuthManager.authenticate_access_token(access_token)
+        has_http_request = self._has_http_request()
+
         if user is None:
-            # Create anonymous user if auth not required
-            user = AuthenticatedUser(name="anonymous", token="", is_admin=False)
+            if not has_http_request:
+                # FastMCP's auth model only applies to HTTP transports. Keep stdio usable
+                # by treating it as a trusted local admin session.
+                user = AuthenticatedUser(name="stdio-local", token="", is_admin=True)
+            elif self.require_auth:
+                logger.warning("Authentication failed: invalid or missing token")
+                raise McpError(ErrorData(
+                    code=-32001,
+                    message="Unauthorized: Invalid or missing authentication token"
+                ))
+            else:
+                user = AuthenticatedUser(name="anonymous", token="", is_admin=False)
         
         UserAuthManager.set_current_user(user)
         
-        if token and user.name != "anonymous":
+        if access_token is not None and user.name != "anonymous":
             logger.info(f"Authenticated user: {user.name} (admin={user.is_admin})")
+        elif user.name == "stdio-local":
+            logger.info("Trusted stdio request (local admin context)")
         else:
             logger.info(f"Anonymous request (require_auth={self.require_auth})")
         

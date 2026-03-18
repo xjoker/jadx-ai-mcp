@@ -11,6 +11,7 @@ from ..logging_config import get_logger
 from ..rate_limiter import get_token_limiter
 from ..param_validator import ValidationError
 from ..mcp_server_config import get_mcp_server_url
+from ..types import ErrorCode, make_error
 
 logger = get_logger("transfer_tools")
 
@@ -75,22 +76,18 @@ async def create_transfer_token(
     if not rate_limiter.check(client_id):
         remaining_time = rate_limiter.get_reset_time(client_id)
         logger.warning(f"Token creation rate limit exceeded for {client_id}")
-        return {
-            "success": False,
-            "error": "Rate limit exceeded",
-            "retry_after": remaining_time,
-            "message": f"Maximum token creation requests exceeded. Please try again in {remaining_time} seconds."
-        }
+        return make_error(
+            ErrorCode.RATE_LIMITED,
+            f"Maximum token creation requests exceeded. Please try again in {remaining_time} seconds.",
+            retry_after=remaining_time,
+        )
     
     try:
         op = Operation(operation)
         rt = ResourceType(resource_type)
     except ValueError as e:
         logger.error(f"Invalid operation or resource_type: {e}")
-        return {
-            "success": False,
-            "error": f"Invalid parameter: {str(e)}"
-        }
+        return make_error(ErrorCode.INVALID_INPUT, f"Invalid parameter: {str(e)}")
     
     store = get_token_store()
     token = store.create(op, rt, timeout_seconds, params)
@@ -186,3 +183,86 @@ async def revoke_transfer_token(token: str) -> dict:
             "success": False,
             "message": "Token not found"
         }
+
+
+def register_transfer_tools(mcp):
+    """Register transfer API tools to MCP Server"""
+
+    @mcp.tool(name="create_transfer_token")
+    async def create_transfer_token_tool(
+        operation: str = "download",
+        resource_type: str = "batch_classes",
+        timeout_seconds: int = 120,
+        params: Optional[dict] = None,
+        instance_id: Optional[str] = None
+    ) -> dict:
+        """Create a transfer token for large file download bypassing MCP size limits.
+
+        Use this when batch operations might exceed MCP message size limits (~16KB).
+        Supports JSON and ZIP formats, with Brotli/GZIP compression.
+
+        Args:
+            operation: "download" (currently only download supported)
+            resource_type: "batch_classes" | "batch_methods" | "project_export"
+            timeout_seconds: Token validity period in seconds (default: 120)
+            params: Optional request parameters
+            instance_id: JADX instance ID
+
+        Returns:
+            dict with token, mcp_server_url, transfer_url, expires_in, etc.
+
+        Python Usage Example:
+            ```python
+            import httpx
+
+            # Step 1: Create token
+            result = await create_transfer_token(
+                resource_type="batch_classes",
+                timeout_seconds=300
+            )
+            token = result["token"]
+            mcp_url = result["mcp_server_url"]  # Use this, not transfer_url
+
+            # Step 2: Download data via HTTP
+            async with httpx.AsyncClient() as client:
+                # JSON format (default)
+                response = await client.get(
+                    f"{mcp_url}/transfer/download/batch-classes",
+                    params={
+                        "classes": "com.example.ClassA,com.example.ClassB",
+                        "token": token,
+                        "format": "json"
+                    }
+                )
+                data = response.json()
+                print(f"Downloaded {data['found']} classes")
+
+                # ZIP format
+                response = await client.get(
+                    f"{mcp_url}/transfer/download/batch-classes",
+                    params={
+                        "classes": "com.example.ClassA",
+                        "token": token,
+                        "format": "zip"
+                    }
+                )
+                with open("classes.zip", "wb") as f:
+                    f.write(response.content)
+
+            # Step 3: Clean up (optional, token auto-expires)
+            await revoke_transfer_token(token)
+            ```
+
+        Supported Formats (query param 'format'):
+            - json: Returns JSON data (default)
+            - zip: Returns ZIP archive with .java files
+
+        Supported Compressions (query param 'compression'):
+            - auto: Automatic based on Accept-Encoding (default)
+            - br: Brotli compression (best ratio)
+            - gzip: GZIP compression
+            - none: No compression
+        """
+        return await create_transfer_token(
+            operation, resource_type, timeout_seconds, params, instance_id
+        )

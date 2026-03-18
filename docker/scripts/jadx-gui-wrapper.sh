@@ -4,6 +4,10 @@
 # Supports: JAR, APK, AAR, DEX (priority: JAR > APK > AAR > DEX)
 # NOTE: --rename-flags none disables auto-renaming for accurate Hook development
 
+# In Docker: OOM should kill JVM cleanly so supervisord can restart fresh
+# Native users get the degraded-state detection via the plugin's OOM handler instead
+export JAVA_OPTS="${JAVA_OPTS} -XX:+ExitOnOutOfMemoryError"
+
 TARGET_JAR="/apks/target.jar"
 TARGET_APK="/apks/target.apk"
 TARGET_AAR="/apks/target.aar"

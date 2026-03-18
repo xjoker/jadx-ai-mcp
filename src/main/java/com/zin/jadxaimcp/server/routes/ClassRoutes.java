@@ -43,6 +43,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.regex.Pattern;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -58,6 +59,7 @@ import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.CodeSearchCoordinator;
 import com.zin.jadxaimcp.utils.SmartChunker;
 
 public class ClassRoutes {
@@ -1059,6 +1061,7 @@ public class ClassRoutes {
 
         // Parse optional package filter parameter
         String packageFilter = ctx.queryParam("package");
+        String searchInParam = ctx.queryParam("search_in");
         
         // Parse optional exclude parameter
         String excludeParam = ctx.queryParam("exclude");
@@ -1073,7 +1076,7 @@ public class ClassRoutes {
         }
 
         // Parse search locations, default to CODE if not specified
-        Set<SearchLocation> searchLocations = parseSearchLocations(ctx.queryParam("search_in"));
+        Set<SearchLocation> searchLocations = parseSearchLocations(searchInParam);
         
         // Check if code/comment search (requires getCode() - expensive)
         boolean isCodeSearch = searchLocations.contains(SearchLocation.CODE) 
@@ -1087,182 +1090,363 @@ public class ClassRoutes {
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
             List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
-            final String term = searchTerm.toLowerCase();
+            List<JavaClass> filteredClasses = filterSearchClasses(allClasses, packageFilter, excludePrefixes);
 
-            // Apply package filter and exclusions first
-            boolean applyPackageFilter = isValidPackageFilter(packageFilter);
-            final String pkgFilter = packageFilter;
-            final List<String> excludes = excludePrefixes;
-            
-            List<JavaClass> filteredClasses = allClasses;
-            if (applyPackageFilter || !excludes.isEmpty()) {
-                filteredClasses = new ArrayList<>();
-                for (JavaClass cls : allClasses) {
-                    if (applyPackageFilter && !matchesPackageFilter(cls, pkgFilter)) continue;
-                    if (!excludes.isEmpty()) {
-                        boolean excluded = false;
-                        for (String prefix : excludes) {
-                            if (cls.getFullName().startsWith(prefix)) {
-                                excluded = true;
-                                break;
-                            }
-                        }
-                        if (excluded) continue;
-                    }
-                    filteredClasses.add(cls);
-                }
-            }
-
-            // Try to acquire global lock
-            if (!JadxSearchLock.tryAcquire()) {
-                Map<String, Object> busyResponse = new HashMap<>();
-                busyResponse.put("error", "Search operation in progress");
-                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
-                busyResponse.put("busy", true);
-                busyResponse.put("lock_held_seconds", JadxSearchLock.getLockHeldSeconds());
-                ctx.status(503).json(busyResponse);
+            if (isCodeSearch) {
+                handleCoordinatedCodeSearch(
+                    ctx,
+                    wrapper,
+                    allClasses,
+                    filteredClasses,
+                    searchTerm,
+                    packageFilter,
+                    excludeParam,
+                    searchInParam,
+                    searchLocations,
+                    offset,
+                    count
+                );
                 return;
             }
-            
-            try {
-                final int resultsNeeded = offset + count + 1; // +1 to check if has_more
-                final ConcurrentLinkedQueue<String> results = new ConcurrentLinkedQueue<>();
-                final AtomicInteger totalMatches = new AtomicInteger(0);
-                final AtomicBoolean cancelled = new AtomicBoolean(false);
-                
-                long startTime = System.currentTimeMillis();
-                int batchCount = 0;
-                
-                if (isCodeSearch && filteredClasses.size() > 100) {
-                    // Use JADX's smart batching for code search
-                    List<JavaClass> topClasses = new ArrayList<>();
-                    for (JavaClass cls : filteredClasses) {
-                        if (!cls.isInner()) {
-                            topClasses.add(cls);
-                        }
-                    }
-                    
-                    List<List<JavaClass>> batches = wrapper.buildDecompileBatches(topClasses);
-                    batchCount = batches.size();
-                    
-                    logger.info("JADX AI MCP: Code search '{}' using {} parallel batches", searchTerm, batchCount);
-                    
-                    // Create search tasks for each batch
-                    Set<JavaClass> includedSet = new HashSet<>(filteredClasses);
-                    List<Future<?>> futures = new ArrayList<>();
-                    
-                    for (List<JavaClass> batch : batches) {
-                        Future<?> future = SEARCH_EXECUTOR.submit(() -> {
-                            for (JavaClass cls : batch) {
-                                if (cancelled.get()) return;
-                                if (!includedSet.contains(cls) && !cls.isInner()) continue;
-                                
-                                try {
-                                    boolean matches = false;
-                                    for (SearchLocation location : searchLocations) {
-                                        if (classMatchesInLocation(cls, term, location)) {
-                                            matches = true;
-                                            break;
-                                        }
-                                    }
-                                    if (matches) {
-                                        int total = totalMatches.incrementAndGet();
-                                        results.add(cls.getFullName());
-                                        // Early exit when we have enough
-                                        if (total >= resultsNeeded) {
-                                            cancelled.set(true);
-                                        }
-                                    }
-                                } catch (Exception e) {
-                                    // Skip failed classes
-                                }
-                            }
-                        });
-                        futures.add(future);
-                    }
-                    
-                    // Wait for all batches with timeout
-                    for (Future<?> future : futures) {
-                        try {
-                            long elapsed = System.currentTimeMillis() - startTime;
-                            long remaining = SEARCH_TIMEOUT_SECONDS * 1000 - elapsed;
-                            if (remaining > 0) {
-                                future.get(remaining, TimeUnit.MILLISECONDS);
-                            } else {
-                                future.cancel(true);
-                            }
-                        } catch (TimeoutException e) {
-                            future.cancel(true);
-                        } catch (Exception e) {
-                            // Continue with other batches
-                        }
-                    }
-                } else {
-                    // Simple sequential search for metadata search or small class sets
-                    for (JavaClass cls : filteredClasses) {
-                        if (cancelled.get()) break;
-                        
-                        boolean matches = false;
-                        for (SearchLocation location : searchLocations) {
-                            if (classMatchesInLocation(cls, term, location)) {
-                                matches = true;
-                                break;
-                            }
-                        }
-                        if (matches) {
-                            int total = totalMatches.incrementAndGet();
-                            results.add(cls.getFullName());
-                            if (total >= resultsNeeded) {
-                                cancelled.set(true);
-                            }
-                        }
-                    }
-                }
-                
-                // Convert to list and apply pagination
-                List<String> allResults = new ArrayList<>(results);
-                int totalFound = totalMatches.get();
-                
-                // Apply offset/count pagination
-                List<String> paginatedResults = new ArrayList<>();
-                for (int i = offset; i < Math.min(offset + count, allResults.size()); i++) {
-                    paginatedResults.add(allResults.get(i));
-                }
-                
-                long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-                boolean timedOut = elapsed >= SEARCH_TIMEOUT_SECONDS;
-                
-                // Build response
-                Map<String, Object> response = new HashMap<>();
-                response.put("type", "class-list");
-                response.put("classes", paginatedResults);
-                response.put("offset", offset);
-                response.put("count", paginatedResults.size());
-                response.put("has_more", totalFound > offset + paginatedResults.size());
-                response.put("next_offset", offset + paginatedResults.size());
-                
-                // Search info
-                Map<String, Object> searchInfo = new HashMap<>();
-                searchInfo.put("total_found", totalFound);
-                searchInfo.put("total_classes", allClasses.size());
-                searchInfo.put("filtered_classes", filteredClasses.size());
-                searchInfo.put("elapsed_seconds", elapsed);
-                searchInfo.put("timed_out", timedOut);
-                searchInfo.put("parallel_batches", batchCount);
-                searchInfo.put("search_locations", searchLocations.toString());
-                
-                response.put("search_info", searchInfo);
-                
-                logger.info("JADX AI MCP: Search '{}' completed in {}s - found {} matches, returned {} (batches: {})", 
-                    searchTerm, elapsed, totalFound, paginatedResults.size(), batchCount);
-                
-                ctx.json(response);
-            } finally {
-                JadxSearchLock.release();
-            }
+
+            SearchExecution searchExecution = executeSearch(
+                wrapper,
+                allClasses,
+                filteredClasses,
+                searchTerm,
+                searchLocations,
+                false,
+                offset + count + 1
+            );
+            ctx.json(buildSearchResponse(searchExecution.getResult(), offset, count));
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx,
                     "Internal error in search: " + e.getMessage(), e, logger);
+        }
+    }
+
+    private void handleCoordinatedCodeSearch(
+        Context ctx,
+        JadxWrapper wrapper,
+        List<JavaClass> allClasses,
+        List<JavaClass> filteredClasses,
+        String searchTerm,
+        String packageFilter,
+        String excludeParam,
+        String searchInParam,
+        Set<SearchLocation> searchLocations,
+        int offset,
+        int count
+    ) throws Exception {
+        CodeSearchCoordinator.SearchReservation reservation = CodeSearchCoordinator.reserve(
+            wrapper,
+            searchTerm,
+            packageFilter,
+            excludeParam,
+            searchInParam
+        );
+
+        if (reservation.hasCachedResult()) {
+            ctx.json(buildSearchResponse(reservation.getCachedResult(), offset, count));
+            return;
+        }
+
+        if (reservation.isFollower()) {
+            try {
+                CodeSearchCoordinator.SearchResult result = reservation.getFuture()
+                    .get(SEARCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                ctx.json(buildSearchResponse(result, offset, count));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                sendCodeSearchBusyResponse(ctx, "Search request interrupted while waiting for in-flight result", 0.0);
+            } catch (ExecutionException | TimeoutException e) {
+                sendCodeSearchBusyResponse(ctx, "Search operation in progress", SEARCH_TIMEOUT_SECONDS);
+            }
+            return;
+        }
+
+        CompletableFuture<CodeSearchCoordinator.SearchResult> future = reservation.getFuture();
+        CodeSearchCoordinator.SearchKey key = reservation.getKey();
+        if (future == null || key == null) {
+            sendCodeSearchBusyResponse(ctx, "Search coordinator state is unavailable", 0.0);
+            return;
+        }
+
+        if (!JadxSearchLock.tryAcquire()) {
+            CodeSearchCoordinator.completeFailure(
+                key,
+                future,
+                new IllegalStateException("Search operation in progress")
+            );
+            sendCodeSearchBusyResponse(ctx, "Search operation in progress", 0.0);
+            return;
+        }
+
+        try {
+            SearchExecution execution = executeSearch(
+                wrapper,
+                allClasses,
+                filteredClasses,
+                searchTerm,
+                searchLocations,
+                true,
+                Integer.MAX_VALUE
+            );
+            if (execution.isTimedOut()) {
+                CodeSearchCoordinator.completeFailure(
+                    key,
+                    future,
+                    new TimeoutException("Code search exceeded timeout window")
+                );
+            } else {
+                CodeSearchCoordinator.completeSuccess(
+                    key,
+                    future,
+                    execution.getResult(),
+                    execution.getElapsedMs()
+                );
+            }
+            ctx.json(buildSearchResponse(execution.getResult(), offset, count));
+        } catch (Exception e) {
+            CodeSearchCoordinator.completeFailure(key, future, e);
+            throw e;
+        } finally {
+            JadxSearchLock.release();
+        }
+    }
+
+    private List<JavaClass> filterSearchClasses(
+        List<JavaClass> allClasses,
+        String packageFilter,
+        List<String> excludePrefixes
+    ) {
+        boolean applyPackageFilter = isValidPackageFilter(packageFilter);
+        if (!applyPackageFilter && excludePrefixes.isEmpty()) {
+            return allClasses;
+        }
+
+        List<JavaClass> filteredClasses = new ArrayList<>();
+        for (JavaClass cls : allClasses) {
+            if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
+                continue;
+            }
+            if (!excludePrefixes.isEmpty()) {
+                boolean excluded = false;
+                for (String prefix : excludePrefixes) {
+                    if (cls.getFullName().startsWith(prefix)) {
+                        excluded = true;
+                        break;
+                    }
+                }
+                if (excluded) {
+                    continue;
+                }
+            }
+            filteredClasses.add(cls);
+        }
+        return filteredClasses;
+    }
+
+    private SearchExecution executeSearch(
+        JadxWrapper wrapper,
+        List<JavaClass> allClasses,
+        List<JavaClass> filteredClasses,
+        String searchTerm,
+        Set<SearchLocation> searchLocations,
+        boolean collectAllResults,
+        int resultsNeeded
+    ) {
+        final String term = searchTerm.toLowerCase();
+        final ConcurrentLinkedQueue<String> results = new ConcurrentLinkedQueue<>();
+        final AtomicInteger totalMatches = new AtomicInteger(0);
+        final AtomicBoolean cancelled = new AtomicBoolean(false);
+
+        long startTimeMs = System.currentTimeMillis();
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(SEARCH_TIMEOUT_SECONDS);
+        boolean timedOut = false;
+        int batchCount = 0;
+
+        if (collectAllResults && filteredClasses.size() > 100) {
+            List<JavaClass> topClasses = new ArrayList<>();
+            for (JavaClass cls : filteredClasses) {
+                if (!cls.isInner()) {
+                    topClasses.add(cls);
+                }
+            }
+
+            List<List<JavaClass>> batches = wrapper.buildDecompileBatches(topClasses);
+            batchCount = batches.size();
+            logger.info("JADX AI MCP: Code search '{}' using {} parallel batches", searchTerm, batchCount);
+
+            Set<JavaClass> includedSet = new HashSet<>(filteredClasses);
+            List<Future<?>> futures = new ArrayList<>();
+
+            for (List<JavaClass> batch : batches) {
+                Future<?> future = SEARCH_EXECUTOR.submit(() -> {
+                    for (JavaClass cls : batch) {
+                        if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+                            return;
+                        }
+                        if (System.nanoTime() >= deadlineNanos) {
+                            cancelled.set(true);
+                            return;
+                        }
+                        if (!includedSet.contains(cls) && !cls.isInner()) {
+                            continue;
+                        }
+
+                        try {
+                            if (classMatchesAnyLocation(cls, term, searchLocations)) {
+                                int total = totalMatches.incrementAndGet();
+                                results.add(cls.getFullName());
+                                if (!collectAllResults && total >= resultsNeeded) {
+                                    cancelled.set(true);
+                                    return;
+                                }
+                            }
+                        } catch (Exception ignored) {
+                            // Skip failed classes and continue scanning remaining classes.
+                        }
+                    }
+                });
+                futures.add(future);
+            }
+
+            for (Future<?> future : futures) {
+                try {
+                    long remainingNanos = deadlineNanos - System.nanoTime();
+                    if (remainingNanos <= 0) {
+                        timedOut = true;
+                        future.cancel(true);
+                        continue;
+                    }
+                    future.get(remainingNanos, TimeUnit.NANOSECONDS);
+                } catch (TimeoutException e) {
+                    timedOut = true;
+                    cancelled.set(true);
+                    future.cancel(true);
+                } catch (Exception ignored) {
+                    // Ignore individual batch failures and keep any partial matches found.
+                }
+            }
+        } else {
+            for (JavaClass cls : filteredClasses) {
+                if (cancelled.get()) {
+                    break;
+                }
+                if (System.nanoTime() >= deadlineNanos) {
+                    timedOut = true;
+                    break;
+                }
+                if (classMatchesAnyLocation(cls, term, searchLocations)) {
+                    int total = totalMatches.incrementAndGet();
+                    results.add(cls.getFullName());
+                    if (!collectAllResults && total >= resultsNeeded) {
+                        cancelled.set(true);
+                    }
+                }
+            }
+        }
+
+        long elapsedMs = Math.max(0L, System.currentTimeMillis() - startTimeMs);
+        Map<String, Object> searchInfo = new HashMap<>();
+        searchInfo.put("total_found", totalMatches.get());
+        searchInfo.put("total_classes", allClasses.size());
+        searchInfo.put("filtered_classes", filteredClasses.size());
+        searchInfo.put("elapsed_seconds", TimeUnit.MILLISECONDS.toSeconds(elapsedMs));
+        searchInfo.put("timed_out", timedOut);
+        searchInfo.put("parallel_batches", batchCount);
+        searchInfo.put("search_locations", searchLocations.toString());
+
+        CodeSearchCoordinator.SearchResult result = new CodeSearchCoordinator.SearchResult(
+            new ArrayList<>(results),
+            searchInfo
+        );
+
+        logger.info(
+            "JADX AI MCP: Search '{}' completed in {}s - found {} matches (batches: {}, timed_out: {})",
+            searchTerm,
+            TimeUnit.MILLISECONDS.toSeconds(elapsedMs),
+            totalMatches.get(),
+            batchCount,
+            timedOut
+        );
+
+        return new SearchExecution(result, elapsedMs, timedOut);
+    }
+
+    private boolean classMatchesAnyLocation(
+        JavaClass cls,
+        String term,
+        Set<SearchLocation> searchLocations
+    ) {
+        for (SearchLocation location : searchLocations) {
+            if (classMatchesInLocation(cls, term, location)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Map<String, Object> buildSearchResponse(
+        CodeSearchCoordinator.SearchResult result,
+        int offset,
+        int count
+    ) {
+        List<String> matches = result.getMatches();
+        List<String> paginatedResults = new ArrayList<>();
+        for (int i = offset; i < Math.min(offset + count, matches.size()); i++) {
+            paginatedResults.add(matches.get(i));
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("type", "class-list");
+        response.put("classes", paginatedResults);
+        response.put("offset", offset);
+        response.put("count", paginatedResults.size());
+        response.put("has_more", matches.size() > offset + paginatedResults.size());
+        response.put("next_offset", offset + paginatedResults.size());
+        response.put("search_info", result.getSearchInfo());
+        return response;
+    }
+
+    private void sendCodeSearchBusyResponse(Context ctx, String message, double waitedSeconds) {
+        Map<String, Object> busyResponse = new HashMap<>();
+        busyResponse.put("error", message);
+        busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+        busyResponse.put("busy", true);
+        busyResponse.put("lock_held_seconds", JadxSearchLock.getLockHeldSeconds());
+        if (waitedSeconds > 0.0) {
+            busyResponse.put("waited_seconds", waitedSeconds);
+        }
+        ctx.status(503).json(busyResponse);
+    }
+
+    private static final class SearchExecution {
+        private final CodeSearchCoordinator.SearchResult result;
+        private final long elapsedMs;
+        private final boolean timedOut;
+
+        private SearchExecution(
+            CodeSearchCoordinator.SearchResult result,
+            long elapsedMs,
+            boolean timedOut
+        ) {
+            this.result = result;
+            this.elapsedMs = elapsedMs;
+            this.timedOut = timedOut;
+        }
+
+        public CodeSearchCoordinator.SearchResult getResult() {
+            return result;
+        }
+
+        public long getElapsedMs() {
+            return elapsedMs;
+        }
+
+        public boolean isTimedOut() {
+            return timedOut;
         }
     }
     

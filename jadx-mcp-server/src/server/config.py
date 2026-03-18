@@ -15,6 +15,7 @@ import json
 from typing import Union, Dict, Any, Optional
 
 from .logging_config import get_logger
+from .types import ErrorCode, make_error
 
 # Get module logger
 logger = get_logger("config")
@@ -165,11 +166,17 @@ async def get_from_jadx(
         if instance_id:
             instance_obj = InstanceRegistry.get_instance(instance_id)
             if not instance_obj:
-                return {"error": f"Instance '{instance_id}' not found"}
+                return make_error(ErrorCode.INSTANCE_NOT_FOUND, f"Instance '{instance_id}' not found")
             base_url = instance_obj.url
         else:
-            # Use default instance if available
+            # Use default instance if available, with fallback
             instance_obj = InstanceRegistry.get_default()
+            if instance_obj and instance_obj.status == "disconnected":
+                # Default is disconnected — try the first connected instance
+                fallback = InstanceRegistry.get_first_connected()
+                if fallback:
+                    logger.info(f"Default instance '{instance_obj.name}' disconnected, falling back to '{fallback.name}'")
+                    instance_obj = fallback
             if instance_obj:
                 base_url = instance_obj.url
 
@@ -185,14 +192,31 @@ async def get_from_jadx(
     # Pre-check: skip HTTP request if instance is known to be unavailable
     if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status in ("disconnected", "pending"):
         instance_name = getattr(instance_obj, 'name', instance_id or 'default')
-        return {
-            "error": f"JADX instance '{instance_name}' is {instance_obj.status}",
-            "status": instance_obj.status,
-            "detail": f"The JADX instance is currently {instance_obj.status} and cannot process requests. "
-                       "This may happen after a 'Reset Code Cache' operation or if JADX was closed.",
-            "suggestion": "Use 'list_instances' tool to check instance status. "
-                          "If the instance was restarted, wait a few seconds and try again.",
-        }
+        return make_error(
+            ErrorCode.CONNECTION_FAILED,
+            f"JADX instance '{instance_name}' is {instance_obj.status}",
+            status=instance_obj.status,
+            detail=f"The JADX instance is currently {instance_obj.status} and cannot process requests. "
+                   "This may happen after a 'Reset Code Cache' operation or if JADX was closed.",
+            suggestion="Use 'list_instances' tool to check instance status. "
+                       "If the instance was restarted, wait a few seconds and try again.",
+        )
+
+    # Pre-check: warn AI client if instance is in degraded state (OOM or critical memory)
+    if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status == "degraded":
+        instance_name = getattr(instance_obj, 'name', instance_id or 'default')
+        return make_error(
+            ErrorCode.INTERNAL_ERROR,
+            f"JADX instance '{instance_name}' is degraded (out of memory)",
+            status="degraded",
+            detail="The JADX instance has encountered an OutOfMemoryError or is critically low on memory. "
+                   "Requests may fail or return incomplete results. "
+                   "The JVM is still running but cannot reliably process decompilation.",
+            suggestion="1. Restart JADX to recover from OOM state. "
+                       "2. If using Docker, increase memory limit (e.g., --memory=4g). "
+                       "3. For native JADX, increase JVM heap: edit jadx-gui script, add -Xmx4g. "
+                       "4. Try analyzing a smaller file or fewer classes at once.",
+        )
     
     url = f"{base_url}/{endpoint.lstrip('/')}"
     headers = {}
@@ -220,20 +244,21 @@ async def get_from_jadx(
         if status_code == 401:
             error_msg = "Authentication failed. Please check your auth token configuration."
             logger.error(error_msg)
-            return {"error": error_msg}
+            return make_error(ErrorCode.AUTHENTICATION_FAILED, error_msg)
 
         elif status_code == 500:
             error_detail = e.response.text[:200] if e.response.text else "(no details)"
             error_msg = f"JADX internal error (HTTP 500): {error_detail}"
             logger.error(f"JADX 500 error: {error_detail}")
-            return {
-                "error": error_msg,
-                "status": "error",
-                "detail": "The JADX instance encountered an internal error. "
-                          "This may be a temporary issue after a 'Reset Code Cache' operation.",
-                "suggestion": "Wait a few seconds and retry. If the problem persists, "
-                              "check the JADX GUI for error dialogs.",
-            }
+            return make_error(
+                ErrorCode.INTERNAL_ERROR,
+                error_msg,
+                status="error",
+                detail="The JADX instance encountered an internal error. "
+                       "This may be a temporary issue after a 'Reset Code Cache' operation.",
+                suggestion="Wait a few seconds and retry. If the problem persists, "
+                           "check the JADX GUI for error dialogs.",
+            )
 
         elif status_code == 503:
             # Parse 503 response for structured retry information
@@ -243,64 +268,69 @@ async def get_from_jadx(
                 suggestion = error_data.get("suggestion", "Service temporarily unavailable. Please retry in a few seconds.")
 
                 logger.warning(f"Service unavailable (503): {suggestion} (retry_after={retry_after}s)")
-                return {
-                    "error": "JADX service unavailable (HTTP 503)",
-                    "status": "initializing",
-                    "retry_after": retry_after,
-                    "detail": "The JADX instance is still initializing or temporarily unavailable.",
-                    "suggestion": suggestion,
-                }
+                return make_error(
+                    ErrorCode.CONNECTION_FAILED,
+                    "JADX service unavailable (HTTP 503)",
+                    status="initializing",
+                    retry_after=retry_after,
+                    detail="The JADX instance is still initializing or temporarily unavailable.",
+                    suggestion=suggestion,
+                )
             except (json.JSONDecodeError, AttributeError):
                 logger.warning("JADX returned 503 Service Unavailable")
-                return {
-                    "error": "JADX service unavailable (HTTP 503)",
-                    "status": "initializing",
-                    "detail": "The JADX instance is still initializing or temporarily unavailable.",
-                    "suggestion": "Wait a few seconds and retry. Use 'list_instances' to check status.",
-                }
+                return make_error(
+                    ErrorCode.CONNECTION_FAILED,
+                    "JADX service unavailable (HTTP 503)",
+                    status="initializing",
+                    detail="The JADX instance is still initializing or temporarily unavailable.",
+                    suggestion="Wait a few seconds and retry. Use 'list_instances' to check status.",
+                )
 
         else:
             error_msg = f"HTTP error {status_code}: {e.response.text}"
         logger.error(error_msg)
-        return {"error": error_msg}
+        return make_error(ErrorCode.INTERNAL_ERROR, error_msg)
 
     except httpx.ConnectError as e:
         logger.error(f"JADX connection refused: {e}")
-        return {
-            "error": "Connection refused: JADX instance is not reachable",
-            "status": "disconnected",
-            "detail": "Could not connect to the JADX plugin HTTP server. "
-                      "The JADX application may not be running or the plugin may not be started.",
-            "suggestion": "1. Verify JADX is running with the AI MCP plugin enabled. "
-                          "2. Check the port configuration matches. "
-                          "3. Use 'list_instances' to verify instance settings.",
-        }
+        return make_error(
+            ErrorCode.CONNECTION_FAILED,
+            "Connection refused: JADX instance is not reachable",
+            status="disconnected",
+            detail="Could not connect to the JADX plugin HTTP server. "
+                   "The JADX application may not be running or the plugin may not be started.",
+            suggestion="1. Verify JADX is running with the AI MCP plugin enabled. "
+                       "2. Check the port configuration matches. "
+                       "3. Use 'list_instances' to verify instance settings.",
+        )
 
     except httpx.ConnectTimeout as e:
         logger.error(f"JADX connection timeout: {e}")
-        return {
-            "error": "Connection timeout: JADX instance did not respond",
-            "status": "timeout",
-            "detail": "The connection to the JADX plugin timed out. "
-                      "The instance may be overloaded or the network may be unreachable.",
-            "suggestion": "Wait a moment and retry. If the problem persists, "
-                          "check network connectivity and JADX instance health.",
-        }
+        return make_error(
+            ErrorCode.TIMEOUT,
+            "Connection timeout: JADX instance did not respond",
+            status="timeout",
+            detail="The connection to the JADX plugin timed out. "
+                   "The instance may be overloaded or the network may be unreachable.",
+            suggestion="Wait a moment and retry. If the problem persists, "
+                       "check network connectivity and JADX instance health.",
+        )
 
     except httpx.ReadTimeout as e:
         logger.error(f"JADX read timeout: {e}")
-        return {
-            "error": "Response timeout: JADX took too long to respond",
-            "status": "timeout",
-            "detail": "The JADX instance accepted the connection but did not respond in time. "
-                      "This may happen with large classes or complex decompilation operations.",
-            "suggestion": "Try narrowing your request scope (e.g., specific class instead of batch). "
-                          "You can also increase the timeout in server configuration.",
-        }
+        return make_error(
+            ErrorCode.TIMEOUT,
+            "Response timeout: JADX took too long to respond",
+            status="timeout",
+            detail="The JADX instance accepted the connection but did not respond in time. "
+                   "This may happen with large classes or complex decompilation operations.",
+            suggestion="Try narrowing your request scope (e.g., specific class instead of batch). "
+                       "You can also increase the timeout in server configuration.",
+        )
 
     except Exception as e:
         # Security: log keeps full details, external returns only exception type
         error_detail = str(e) if str(e) else "(no message)"
         logger.error(f"JADX request failed: {type(e).__name__}: {error_detail}")
-        return {"error": f"Request failed: {type(e).__name__}"}
+        return make_error(ErrorCode.INTERNAL_ERROR, f"Request failed: {type(e).__name__}")
 

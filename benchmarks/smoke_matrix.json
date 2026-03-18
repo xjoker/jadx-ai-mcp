@@ -1,0 +1,26 @@
+{
+  "sample_discovery": {
+    "candidate_limit": 30,
+    "class_page_limit": 100,
+    "request_timeout_seconds": 120
+  },
+  "targets": [
+    {
+      "name": "plugin",
+      "enabled": true
+    },
+    {
+      "name": "mcp",
+      "enabled": true
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "warm_cache",
+      "warmup": true,
+      "iterations_per_worker": 1,
+      "concurrency_levels": [1],
+      "workloads": ["metadata", "code_search_only", "xref_only", "mixed"]
+    }
+  ]
+}

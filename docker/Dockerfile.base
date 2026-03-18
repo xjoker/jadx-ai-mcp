@@ -55,18 +55,11 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 
 # Upgrade vulnerable Python packages installed by apt (Pillow CVE-2023-50447)
 RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --upgrade \
-    "pillow>=10.2.0"
+    "pillow==10.2.0"
 
-# Install uv package manager for running MCP Server (with retry for network reliability)
-# IMPORTANT: Copy actual binary files (not symlinks) to /usr/local/bin
-# This ensures non-root users (jadx) can execute uv at runtime
-RUN for i in 1 2 3 4 5; do \
-        curl -LsSf https://astral.sh/uv/install.sh | sh && break || sleep 5; \
-    done \
-    && cp -L /root/.local/bin/uv /usr/local/bin/uv \
-    && cp -L /root/.local/bin/uvx /usr/local/bin/uvx \
-    && chmod +x /usr/local/bin/uv /usr/local/bin/uvx \
-    && rm -rf /root/.local/bin /root/.cache \
+# Install pinned uv for running MCP Server
+RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --upgrade \
+    "uv==0.10.9" \
     && uv --version
 
 # Create directories

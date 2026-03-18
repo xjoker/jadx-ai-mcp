@@ -10,12 +10,25 @@ echo "    6080  - noVNC Web Desktop (VNC viewer)"
 echo "    8650  - JADX Plugin API"
 echo "    8651  - MCP Server (connect AI clients here)"
 echo ""
+echo "  Default admin token: admin-secret-token"
+echo "  (Change it in jadx-config.toml for production use)"
+echo ""
 echo "  Quick Connect:"
 echo "    Browser:  http://localhost:6080"
-echo "    Claude:   claude mcp add --transport http jadx http://<host>:8651/mcp/v1"
+echo "    Claude:   claude mcp add --transport http jadx http://<host>:8651/mcp \\"
+echo "      --header \"Authorization:Bearer admin-secret-token\""
 echo ""
 echo "================================================"
 echo ""
+
+# Warn if default tokens are in use
+if [ "${JADX_MCP_AUTH_TOKEN:-}" = "jadx-plugin-secret-token" ]; then
+  echo "================================================"
+  echo "  WARNING: Default JADX plugin token in use!"
+  echo "  Change JADX_MCP_AUTH_TOKEN for production."
+  echo "================================================"
+  echo ""
+fi
 
 # Start supervisor to manage all services
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

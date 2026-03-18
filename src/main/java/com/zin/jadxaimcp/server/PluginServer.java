@@ -13,11 +13,13 @@ import com.zin.jadxaimcp.JadxAIMCP;
 import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.CodeSearchCoordinator;
 import com.zin.jadxaimcp.server.routes.*; // MCP tool call's request handlers
 
 public class PluginServer {
     private static final Logger logger = LoggerFactory.getLogger(PluginServer.class);
     private static final String JVM_SERVER_KEY = "jadx-ai-mcp-server-channel";
+    private static final String JVM_OOM_KEY = "jadx-ai-mcp-oom-detected";
     private final MainWindow mainWindow;
     private final int port;
     private final String bindAddress;
@@ -94,6 +96,9 @@ public class PluginServer {
         try {
             // Close orphaned server socket from previous classloader (e.g., after "Reset Code Cache")
             closePreviousServerSocket();
+
+            // Register global OOM detection handler
+            installOomHandler();
 
             // Configure and start Javalin
             app = Javalin.create(config -> {
@@ -498,6 +503,7 @@ public class PluginServer {
                 
                 // === Search Lock Status (from JadxSearchLock) ===
                 response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
+                response.put("search_coordinator", CodeSearchCoordinator.getStatus());
                 
                 ctx.json(response);
             } catch (Exception e) {
@@ -511,9 +517,10 @@ public class PluginServer {
         // --- Cache Management ---
         app.post("/cache/clear", ctx -> {
             try {
+                CodeSearchCoordinator.clearCache();
                 boolean cleared = ClassCacheManager.clearCache();
                 if (cleared) {
-                    logger.info("[JAI] Class cache cleared manually via API");
+                    logger.info("[JAI] Class cache and code search cache cleared manually via API");
                     ctx.json(java.util.Map.of(
                         "success", true,
                         "message", "Class cache cleared successfully",
@@ -546,8 +553,71 @@ public class PluginServer {
         mainWindow.events().addListener(jadx.api.plugins.events.JadxEvents.NODE_RENAMED_BY_USER, event -> {
             logger.info("[JAI] Rename detected, clearing class cache");
             ClassCacheManager.clearCache();
+            CodeSearchCoordinator.clearCache();
         });
         logger.info("[JAI] Cache invalidation listener registered");
+    }
+
+    /**
+     * Installs a global UncaughtExceptionHandler that detects OutOfMemoryError.
+     * Sets a JVM-global sticky flag so the /health endpoint can report it,
+     * even across classloader reloads.
+     */
+    private void installOomHandler() {
+        Thread.UncaughtExceptionHandler existing = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            if (isOomRelated(throwable)) {
+                // Write flag first — this must succeed even if heap is exhausted
+                System.getProperties().put(JVM_OOM_KEY, System.currentTimeMillis());
+                // Best-effort logging; may fail if heap is fully exhausted
+                try {
+                    logger.error("[JAI] OutOfMemoryError detected on thread '{}'. "
+                            + "Instance marked as degraded. Restart JADX to recover.", thread.getName());
+                } catch (OutOfMemoryError ignored) {
+                    // Flag already set above, logging is non-critical
+                }
+            }
+            // Delegate to previous handler if any
+            if (existing != null) {
+                existing.uncaughtException(thread, throwable);
+            }
+        });
+        logger.debug("[JAI] Global OOM detection handler installed");
+    }
+
+    /**
+     * Checks if a throwable or any of its causes is an OutOfMemoryError.
+     * Uses a depth limit to guard against circular cause chains.
+     */
+    private static boolean isOomRelated(Throwable t) {
+        int depth = 0;
+        while (t != null && depth < 50) {
+            if (t instanceof OutOfMemoryError) {
+                return true;
+            }
+            t = t.getCause();
+            depth++;
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if an OutOfMemoryError has been detected since last JVM start.
+     * Uses JVM-global storage so it survives classloader reloads.
+     */
+    public static boolean isOomDetected() {
+        return System.getProperties().containsKey(JVM_OOM_KEY);
+    }
+
+    /**
+     * Returns the timestamp (epoch millis) when OOM was detected, or 0 if none.
+     */
+    public static long getOomTimestamp() {
+        Object val = System.getProperties().get(JVM_OOM_KEY);
+        if (val instanceof Long) {
+            return (Long) val;
+        }
+        return 0;
     }
 
 }

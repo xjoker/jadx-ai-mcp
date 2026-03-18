@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = [ "fastmcp", "httpx" ]
+# dependencies = [
+#   "fastmcp==3.1.0",
+#   "httpx==0.28.1",
+#   "tomli==2.4.0; python_version < '3.11'",
+#   "brotli==1.1.0",
+# ]
 # ///
 
 """
@@ -13,7 +18,13 @@ import argparse
 import sys
 from fastmcp import FastMCP
 from src.banner import jadx_mcp_server_banner
-from src.server import config, tools
+from src.server import config
+from src.server.mcp_auth import (
+    ReloadableStaticTokenVerifier,
+    SwitchableTokenVerifier,
+    build_auth_provider,
+    build_legacy_cli_user,
+)
 
 # Initialize MCP Server with stateless HTTP mode (no session required)
 # Instructions are shown to AI when connecting to help with proper tool usage
@@ -57,20 +68,29 @@ mcp = FastMCP(
     instructions=MCP_INSTRUCTIONS
 )
 
-# Note: Tool functions are defined below with @mcp.tool() decorator
-# They delegate to src.server.tools modules for implementation
+# Tool registration uses register_*_tools() pattern from each module
 from src.server.prompts import register_prompts
 from src.server.resources import register_resources
-from src.server.tools.instance_tools import register_instance_tools
+from src.server.tools import (
+    register_class_tools,
+    register_search_tools,
+    register_resource_tools,
+    register_xrefs_tools,
+    register_refactor_tools,
+    register_instance_tools,
+    register_transfer_tools,
+)
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
 from src.server.auth_middleware import BearerAuthMiddleware
 from src.server.health_monitor import HealthMonitor
 from src.server.logging_config import configure_logging, get_logger
-from src.server import tools
-
-# Transfer API imports
-from src.server.tools import transfer_tools
+from src.server.status_page import (
+    status_html_response,
+    status_json_response,
+    status_login_response,
+    status_logout_response,
+)
 from src.server import transfer_server
 from src.server.mcp_server_config import set_mcp_server_url_from_config
 
@@ -88,797 +108,13 @@ async def transfer_health(request):
 
 logger = get_logger("main")
 
-
-# CORRECT REGISTRATION PATTERN for FastMCP
-# All tools support optional instance_id for multi-instance targeting
-from typing import Optional
-
-
-
-@mcp.tool()
-@with_busy_check
-async def get_method_by_name(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
-    """Fetch the source code of a method from a specific class.
-
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-        method_name: Method name to search for.
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.search_tools.get_method_by_name(class_name, method_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Returns a list of all classes in the project with pagination support.
-    
-    Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.class_tools.get_all_classes(offset, count, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch the Java source of a specific class.
-    
-    CHUNKING: Large classes (>8KB) are automatically chunked. If response contains
-    `_chunking.has_more=true`, call again with chunk=N to get remaining content.
-
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.class_tools.get_class_source(class_name, chunk=chunk, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def batch_get_class_source(
-    class_names: list[str],
-    chunk: int = 0,
-    force: bool = False,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Fetch multiple class sources in a single request with intelligent size management.
-
-    SMART BATCHING: Automatically estimates response size and provides optimization guidance.
-    - Small batches (<20KB): Execute directly
-    - Large batches (20-50KB): Execute with performance warning
-    - Very large batches (>50KB): Returns BATCH_TOO_LARGE error with class summaries
-
-    CHUNKING: Large responses (>8KB) are automatically chunked. If response contains
-    `_chunking.has_more=true`, call again with chunk=N to get remaining content.
-
-    TIERED STRATEGY:
-    1. Continuation requests (chunk>0): Execute immediately
-    2. Very large requests (>50KB estimated): Pre-flight check fails, returns optimization suggestions
-    3. Large requests (20-50KB): Execute with performance warning
-    4. Normal requests (<20KB): Execute directly
-
-    Args:
-        class_names: List of fully qualified class names (e.g., ['com.example.A', 'com.example.B']). Max 20.
-        chunk: Chunk number for continuation (0=first request, 1-N=subsequent chunks). Default: 0
-        force: Force execution even for very large requests (bypasses size check). Default: False
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
-    Returns:
-        Success: {classes: [{class_name, content, found}, ...], total, found_count}
-        BATCH_TOO_LARGE error: {error, estimated_size_kb, class_summaries, suggestions}
-    """
-    return await tools.class_tools.batch_get_class_source(
-        class_names, chunk=chunk, force=force, instance_id=instance_id
-    )
-
-
-@mcp.tool()
-@with_busy_check
-async def search_method_by_name(
-    method_name: str,
-    offset: int = 0,
-    count: int = 50,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Search for a method name across all classes in the APK.
-    
-    WARNING: This performs a global search and may timeout or crash on large/obfuscated APKs.
-    For safer search, consider using search_classes_by_keyword with search_in='method' instead.
-    Refer to the 'search-code' prompt for best practices.
-
-    Args:
-        method_name: Method name to search for (partial matching supported).
-        offset: Starting index for pagination. Default: 0
-        count: Number of results to return. Default: 50, max: 200
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.search_tools.search_method_by_name(method_name, offset, count, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def batch_get_method_by_name(
-    methods: list[str],
-    chunk: int = 0,
-    force: bool = False,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Fetch multiple method sources in a single request with intelligent size management.
-
-    SMART BATCHING: Automatically estimates response size and provides optimization guidance.
-    - Small batches (<20KB): Execute directly
-    - Large batches (20-50KB): Execute with performance warning
-    - Very large batches (>50KB): Returns BATCH_TOO_LARGE error with method summaries
-
-    CHUNKING: Large responses (>8KB) are automatically chunked. If response contains
-    `_chunking.has_more=true`, call again with chunk=N to get remaining content.
-
-    TIERED STRATEGY:
-    1. Continuation requests (chunk>0): Execute immediately
-    2. Very large requests (>50KB estimated): Pre-flight check fails, returns optimization suggestions
-    3. Large requests (20-50KB): Execute with performance warning
-    4. Normal requests (<20KB): Execute directly
-
-    Args:
-        methods: List of "class_name:method_name" pairs (e.g., ['com.example.A:methodA', 'com.example.B:methodB']). Max 20.
-        chunk: Chunk number for continuation (0=first request, 1-N=subsequent chunks). Default: 0
-        force: Force execution even for very large requests (bypasses size check). Default: False
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
-    Returns:
-        Success: {methods: [{class_name, method_name, code, found}, ...], total, found_count}
-        BATCH_TOO_LARGE error: {error, estimated_size_kb, method_summaries, suggestions}
-    """
-    return await tools.search_tools.batch_get_method_by_name(
-        methods, chunk=chunk, force=force, instance_id=instance_id
-    )
-
-
-@mcp.tool()
-@with_busy_check
-async def get_methods_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
-    """List all method names in a class with Frida-friendly metadata.
-    
-    Returns structured JSON with is_static, is_native, overload_count for each method.
-
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.class_tools.get_methods_of_class(class_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def search_classes_by_keyword(
-    search_term: str,
-    package: str = "",
-    exclude: str = "",
-    search_in: str = "code",
-    offset: int = 0,
-    count: int = 20,
-    instance_id: Optional[str] = None,
-) -> dict:
-    """Search for classes containing a keyword with flexible filtering.
-    
-    IMPORTANT: Call get_decompile_status() first! Use search_in='class/method/field' 
-    for fast searches (<100ms). Use 'code' only when cached_percentage > 20%.
-    
-    Args:
-        search_term: Keyword to search for.
-        package: Package filter (e.g., 'com.example'). Strongly recommended!
-        exclude: Comma-separated package prefixes to exclude.
-        search_in: Scope: class|method|field|code|comment. Default: code
-        offset: Pagination offset. Default: 0
-        count: Max results (max: 200). Default: 20
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {classes: [...], total: int, has_more: bool}
-    """
-    return await tools.search_tools.search_classes_by_keyword(
-        search_term, package, exclude, search_in, offset, count, instance_id=instance_id
-    )
-
-
-@mcp.tool()
-@with_busy_check
-async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
-    """List all field names in a class with Frida-compatible type information.
-    
-    Returns structured JSON with type_frida field for each field.
-
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.class_tools.get_fields_of_class(class_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_smali_of_class(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch the smali (Dalvik bytecode) representation of a class.
-    
-    CHUNKING: Large Smali output (>8KB) is automatically chunked. Classes with 40+ methods
-    often produce >40KB Smali. If response contains `_chunking.has_more=true`, call again
-    with chunk=N to get remaining content.
-
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-        chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.class_tools.get_smali_of_class(class_name, chunk=chunk, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_android_manifest(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Retrieve and return the AndroidManifest.xml content.
-    
-    CHUNKING: Large manifests (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
-    
-    Args:
-        chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
-        instance_id: Target JADX instance name.
-    """
-    return await tools.resource_tools.get_android_manifest(chunk=chunk, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_strings(
-    mode: str = "summary",
-    query: Optional[str] = None,
-    key: Optional[str] = None,
-    locale: str = "values",
-    offset: int = 0,
-    limit: int = 50,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Get strings from APK with AI-friendly modes.
-    
-    Modes:
-    - summary (default): Returns total count, sample keys, and usage hints
-    - list: Paginated list of all string keys
-    - search: Search strings by keyword (requires query parameter)
-    - get: Get specific string value (requires key parameter)
-    
-    Examples:
-    - Summary: get_strings() -> {total_strings: 15673, sample_keys: [...]}
-    - Search: get_strings(mode="search", query="login") -> {matches: [{key, value}, ...]}
-    - Get: get_strings(mode="get", key="app_name") -> {value: "MyApp"}
-    - List: get_strings(mode="list", offset=0, limit=50) -> {keys: [...]}
-    - Change locale: get_strings(locale="values-en")
-    
-    Args:
-        mode: Operation mode (summary|list|search|get). Default: summary
-        query: Search keyword (required for mode=search)
-        key: String key name (required for mode=get)
-        locale: Locale variant like "values", "values-en", "values-zh". Default: values
-        offset: Pagination offset for list mode. Default: 0
-        limit: Results per page (max: 200). Default: 50
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.resource_tools.get_strings(
-        mode=mode,
-        query=query,
-        key=key,
-        locale=locale,
-        offset=offset,
-        limit=limit,
-        instance_id=instance_id
-    )
-
-
-@mcp.tool()
-@with_busy_check
-async def get_all_resource_file_names(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Retrieve all resource file names with pagination.
-    
-    Args:
-        offset: Pagination offset. Default: 0
-        count: Max results (0=all). Default: 0
-        instance_id: Target JADX instance name.
-    
-    Returns:
-        dict: {files: [str, ...], total: int, has_more: bool}
-    """
-    return await tools.resource_tools.get_all_resource_file_names(offset, count, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_resource_file(resource_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Retrieve resource file content by name.
-    
-    CHUNKING: Large files (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
-    
-    Args:
-        resource_name: Resource file path (e.g., 'res/layout/activity_main.xml').
-        chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
-        instance_id: Target JADX instance name.
-    """
-    return await tools.resource_tools.get_resource_file(resource_name, chunk=chunk, instance_id=instance_id)
-
-
-# ============================================================================
-# Unified Interface Tools (APK + JAR)
-# ============================================================================
-
-@mcp.tool()
-@with_busy_check
-async def get_file_info(instance_id: Optional[str] = None) -> dict:
-    """Get unified file information for both APK and JAR files.
-    
-    This is the recommended first tool to call when starting analysis.
-    Returns file type, class count, and recommends which tools to use.
-    
-    Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.resource_tools.get_file_info(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_config_strings(
-    mode: str = "summary",
-    query: Optional[str] = None,
-    key: Optional[str] = None,
-    file: Optional[str] = None,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Get configuration strings from APK or JAR files.
-    
-    - APK/AAR: Info about strings.xml availability
-    - JAR: Reads .properties files with search/get support
-    
-    Args:
-        mode: "summary" | "search" | "get" | "all"
-        query: Search keyword (for mode=search)
-        key: Property key (for mode=get)
-        file: Filter by properties file name (JAR only)
-        instance_id: Optional. Target JADX instance name.
-    """
-    return await tools.resource_tools.get_config_strings(
-        mode=mode, query=query, key=key, file=file, instance_id=instance_id
-    )
-
-
-@mcp.tool()
-@with_busy_check
-async def get_package_classes(
-    package: Optional[str] = None,
-    auto: bool = False,
-    include_inner: bool = True,
-    offset: int = 0,
-    count: int = 100,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Get classes by package prefix for APK or JAR files.
-    
-    Use ?auto=true to auto-detect main package from manifest.
-    
-    Args:
-        package: Package prefix (e.g., "com.example.app")
-        auto: Auto-detect main package (default: False)
-        include_inner: Include inner classes (default: True)
-        offset: Pagination offset
-        count: Max results (default: 100, max: 500)
-        instance_id: Optional. Target JADX instance name.
-    """
-    return await tools.resource_tools.get_package_classes(
-        package=package, auto=auto, include_inner=include_inner,
-        offset=offset, count=count, instance_id=instance_id
-    )
-
-
-# ============================================================================
-# JAR-specific Tools
-# ============================================================================
-
-@mcp.tool()
-@with_busy_check
-async def jar_get_manifest(instance_id: Optional[str] = None) -> dict:
-    """Read META-INF/MANIFEST.MF from JAR files.
-    
-    This tool extracts structured information from JAR manifest including:
-    - Main-Class: Entry point for executable JARs
-    - Implementation-Title/Version: Library identification  
-    - Spring Boot specific attributes
-    - All custom manifest attributes
-    
-    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
-    
-    Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-        
-    Returns:
-        dict: Structured manifest data with common and all attributes
-    """
-    return await tools.resource_tools.jar_get_manifest(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def jar_get_services(instance_id: Optional[str] = None) -> dict:
-    """Read META-INF/services/* from JAR files to discover SPI service providers.
-    
-    Java SPI is used by JDBC drivers, logging frameworks, plugin architectures.
-    
-    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
-    
-    Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.resource_tools.jar_get_services(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def jar_get_entry_points(instance_id: Optional[str] = None) -> dict:
-    """Discover entry points for JAR files.
-    
-    Finds Main-Class, Start-Class (Spring Boot), @SpringBootApplication classes,
-    and public static void main() methods.
-    
-    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
-    
-    Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.resource_tools.jar_get_entry_points(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def jar_get_dependencies(instance_id: Optional[str] = None) -> dict:
-    """Analyze dependencies embedded in JAR files.
-    
-    Discovers Maven coordinates, MANIFEST Class-Path, and Spring Boot BOOT-INF/lib/ dependencies.
-    
-    NOTE: Only available for JAR files. Returns NOT_APPLICABLE for APK/AAR/DEX files.
-    
-    Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.resource_tools.jar_get_dependencies(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def jar_get_bytecode(
-    class_name: str,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Get bytecode/class structure for APK or JAR classes.
-    
-    JAR equivalent of get_smali_of_class. Shows class structure similar to javap.
-    
-    Args:
-        class_name: Fully qualified class name (e.g., 'com.example.Main')
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.resource_tools.jar_get_bytecode(class_name, instance_id=instance_id)
-
-
-
-@mcp.tool()
-@with_busy_check
-async def get_main_activity_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-    """Fetch the main activity class name from AndroidManifest.xml.
-
-    CHUNKING: Large activity classes (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
-
-    Args:
-        chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
-        instance_id: Target JADX instance name.
-    """
-    return await tools.class_tools.get_main_activity_class(chunk=chunk, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> dict:
-    """Get structured information about a class including inheritance, interfaces, and members.
-
-    Args:
-        class_name: Fully qualified class name (e.g., com.example.MainActivity)
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    
-    Returns:
-        dict with: class_name, package, super_class, interfaces, is_abstract, 
-                   method_count, field_count, method_names, field_names
-    """
-    return await tools.class_tools.get_class_info(class_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
-    """Get current JADX status with cache, memory, and thread metrics.
-    
-    **IMPORTANT: Call this BEFORE resource-intensive operations!**
-    
-    Use the returned metrics to make informed decisions:
-    - `cached_percentage` < 20%: Avoid search_in='code', use 'class'/'method' instead
-    - `memory.usage_percentage` > 85%: Reduce batch sizes, avoid smali
-    - `search_lock.locked` = true: Wait and retry, another search is running
-    
-    Expected response time: <100ms
-    
-    Args:
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    
-    Returns:
-        dict with:
-        - total_classes: Total classes in APK
-        - cached_classes: Classes with state PROCESS_COMPLETE
-        - cached_percentage: Percentage of cached classes (0-100)
-        - memory: {max_mb, total_mb, used_mb, free_mb, usage_percentage}
-        - threads: {active_count, peak_count, daemon_count}
-        - jadx_config: {threads_count, code_cache_mode}
-        - search_lock: {locked, held_seconds, timeout_seconds}
-    """
-    return await tools.class_tools.get_decompile_status(instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def rename(
-    target_type: str,
-    old_name: str,
-    new_name: str,
-    class_name: str = "",
-    instance_id: Optional[str] = None
-) -> dict:
-    """Unified rename tool for classes, methods, fields, and packages.
-    
-    Args:
-        target_type: Type of target to rename: "class" | "method" | "field" | "package"
-        old_name: Current name (fully qualified for class/package, simple name for method/field)
-        new_name: New name (simple name)
-        class_name: Required for method/field - the class containing the member
-        instance_id: Target JADX instance name
-    
-    Returns:
-        dict: {success: bool, message: str, renamed_count: int (for package only)}
-    
-    Examples:
-        # Rename class
-        rename("class", "com.example.OldClass", "NewClass")
-        
-        # Rename method
-        rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
-        
-        # Rename field
-        rename("field", "oldField", "newField", class_name="com.example.MyClass")
-        
-        # Rename package
-        rename("package", "com.example.old", "com.example.new")
-    
-    Note:
-        Triggers 30s class cache cooldown.
-    """
-    target_type = target_type.lower()
-    
-    if target_type == "class":
-        return await tools.refactor_tools.rename_class(old_name, new_name, instance_id=instance_id)
-    elif target_type == "method":
-        if not class_name:
-            return {"success": False, "error": "class_name required for method rename"}
-        return await tools.refactor_tools.rename_method(class_name, old_name, new_name, instance_id=instance_id)
-    elif target_type == "field":
-        if not class_name:
-            return {"success": False, "error": "class_name required for field rename"}
-        return await tools.refactor_tools.rename_field(class_name, old_name, new_name, instance_id=instance_id)
-    elif target_type == "package":
-        return await tools.refactor_tools.rename_package(old_name, new_name, instance_id=instance_id)
-    else:
-        return {"success": False, "error": f"Invalid target_type: {target_type}. Use: class, method, field, package"}
-
-
-@mcp.tool()
-@with_busy_check
-async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
-    """Get structured method signature with Frida-compatible type information.
-    
-    Returns frida_overload string for each method overload.
-    
-    Args:
-        class_name: Fully qualified class name (e.g., com.example.MainActivity)
-        method_name: Method name to get signature for
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.search_tools.get_method_signature(class_name, method_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def get_method_callees(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
-    """Get methods called by the specified method (callees analysis).
-    
-    Args:
-        class_name: Fully qualified class name (e.g., com.example.MainActivity)
-        method_name: Method name to analyze
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.search_tools.get_method_callees(class_name, method_name, instance_id=instance_id)
-
-
-@mcp.tool()
-@with_busy_check
-async def search_native_methods(
-    package: str = "",
-    offset: int = 0,
-    count: int = 50,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Search for all native methods across the APK (metadata-only, fast).
-    
-    Native methods are the bridge between Java and native code (JNI).
-    This operation does NOT trigger decompilation - it reads DEX metadata directly.
-    
-    Args:
-        package: Optional package filter (e.g., 'com.xingin')
-        offset: Pagination offset. Default: 0
-        count: Max results (max: 200). Default: 50
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.search_tools.search_native_methods(package, offset, count, instance_id=instance_id)
-
-
-
-@mcp.tool()
-@with_busy_check
-async def get_xrefs(
-    target_type: str,
-    class_name: str,
-    member_name: str = "",
-    offset: int = 0,
-    count: int = 20,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Unified cross-reference (xrefs) finder for classes, methods, and fields.
-    
-    Args:
-        target_type: Type of target to find xrefs for: "class" | "method" | "field"
-        class_name: Fully qualified class name (e.g., 'com.example.Helper')
-        member_name: Method or field name (required for method/field, ignored for class)
-        offset: Pagination offset. Default: 0
-        count: Max results. Default: 20
-        instance_id: Target JADX instance name
-    
-    Returns:
-        dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
-    
-    Examples:
-        # Find references to a class
-        get_xrefs("class", "com.example.Helper")
-        
-        # Find references to a method
-        get_xrefs("method", "com.example.MyClass", "myMethod")
-        
-        # Find references to a field
-        get_xrefs("field", "com.example.MyClass", "myField")
-    """
-    target_type = target_type.lower()
-    
-    if target_type == "class":
-        return await tools.xrefs_tools.get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
-    elif target_type == "method":
-        if not member_name:
-            return {"error": "member_name required for method xrefs"}
-        return await tools.xrefs_tools.get_xrefs_to_method(class_name, member_name, offset, count, instance_id=instance_id)
-    elif target_type == "field":
-        if not member_name:
-            return {"error": "member_name required for field xrefs"}
-        return await tools.xrefs_tools.get_xrefs_to_field(class_name, member_name, offset, count, instance_id=instance_id)
-    else:
-        return {"error": f"Invalid target_type: {target_type}. Use: class, method, field"}
-
-
-
-@mcp.tool()
-@with_busy_check
-async def batch_get_xrefs(targets: list[str], instance_id: Optional[str] = None) -> dict:
-    """Fetch cross-references for multiple targets in a single request.
-    
-    Args:
-        targets: List of "type:class[:member]" strings.
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-    """
-    return await tools.xrefs_tools.batch_get_xrefs(targets, instance_id=instance_id)
-
-
-
-
-# ==================== Transfer API Tools ====================
-
-@mcp.tool()
-async def create_transfer_token(
-    operation: str = "download",
-    resource_type: str = "batch_classes",
-    timeout_seconds: int = 120,
-    params: Optional[dict] = None,
-    instance_id: Optional[str] = None
-) -> dict:
-    """Create a transfer token for large file download bypassing MCP size limits.
-    
-    Use this when batch operations might exceed MCP message size limits (~16KB).
-    Supports JSON and ZIP formats, with Brotli/GZIP compression.
-    
-    Args:
-        operation: "download" (currently only download supported)
-        resource_type: "batch_classes" | "batch_methods" | "project_export"
-        timeout_seconds: Token validity period in seconds (default: 120)
-        params: Optional request parameters
-        instance_id: JADX instance ID
-    
-    Returns:
-        dict with token, mcp_server_url, transfer_url, expires_in, etc.
-    
-    Python Usage Example:
-        ```python
-        import httpx
-        
-        # Step 1: Create token
-        result = await create_transfer_token(
-            resource_type="batch_classes",
-            timeout_seconds=300
-        )
-        token = result["token"]
-        mcp_url = result["mcp_server_url"]  # Use this, not transfer_url
-        
-        # Step 2: Download data via HTTP
-        async with httpx.AsyncClient() as client:
-            # JSON format (default)
-            response = await client.get(
-                f"{mcp_url}/transfer/download/batch-classes",
-                params={
-                    "classes": "com.example.ClassA,com.example.ClassB",
-                    "token": token,
-                    "format": "json"
-                }
-            )
-            data = response.json()
-            print(f"Downloaded {data['found']} classes")
-            
-            # ZIP format
-            response = await client.get(
-                f"{mcp_url}/transfer/download/batch-classes",
-                params={
-                    "classes": "com.example.ClassA",
-                    "token": token,
-                    "format": "zip"
-                }
-            )
-            with open("classes.zip", "wb") as f:
-                f.write(response.content)
-        
-        # Step 3: Clean up (optional, token auto-expires)
-        await revoke_transfer_token(token)
-        ```
-    
-    Supported Formats (query param 'format'):
-        - json: Returns JSON data (default)
-        - zip: Returns ZIP archive with .java files
-    
-    Supported Compressions (query param 'compression'):
-        - auto: Automatic based on Accept-Encoding (default)
-        - br: Brotli compression (best ratio)
-        - gzip: GZIP compression
-        - none: No compression
-    """
-    return await transfer_tools.create_transfer_token(
-        operation, resource_type, timeout_seconds, params, instance_id
-    )
-
-
+# Register all MCP tools from their respective modules
+register_class_tools(mcp, with_busy_check)
+register_search_tools(mcp, with_busy_check)
+register_resource_tools(mcp, with_busy_check)
+register_xrefs_tools(mcp, with_busy_check)
+register_refactor_tools(mcp, with_busy_check)
+register_transfer_tools(mcp)
 
 
 def main():
@@ -1007,30 +243,39 @@ def main():
         config.set_auth_token(default_jadx_token)
         InstanceRegistry.set_auth_token(default_jadx_token)
         print(f"[OK] Default JADX plugin token configured")
+        # Warn about default tokens in production
+        _default_tokens = {"admin-secret-token", "jadx-plugin-secret-token"}
+        if default_jadx_token in _default_tokens:
+            logger.warning("Default JADX plugin token detected — change it for production use")
     else:
         print("[WARN] No default JADX plugin token (instances may need individual tokens)")
     
     # Configure multi-user authentication
+    auth_users = [user for user in (loaded_config.users if loaded_config and loaded_config.users else []) if user.token]
     allow_anonymous = True  # Allow anonymous if no users configured
-    if loaded_config and loaded_config.users:
+    if auth_users:
         UserAuthManager.configure(
-            users=loaded_config.users,
+            users=auth_users,
             default_jadx_token=default_jadx_token,
             allow_anonymous=False  # Require auth if users are configured
         )
-        print(f"[OK] Multi-user authentication enabled ({len(loaded_config.users)} users)")
-        for user in loaded_config.users:
+        print(f"[OK] Multi-user authentication enabled ({len(auth_users)} users)")
+        for user in auth_users:
             role = "admin" if user.is_admin else "user"
             print(f"  - {user.name} ({role})")
+            if user.token in _default_tokens:
+                logger.warning(f"User '{user.name}' uses a default token — change it for production use")
         allow_anonymous = False
     elif args.mcp_auth_token:
         # Single token mode (legacy)
+        auth_users = [build_legacy_cli_user(args.mcp_auth_token)]
         UserAuthManager.configure(
-            users=[],
+            users=auth_users,
             default_jadx_token=default_jadx_token,
-            allow_anonymous=True
+            allow_anonymous=False
         )
         print(f"[OK] Single-token authentication mode")
+        allow_anonymous = False
     else:
         # No authentication
         UserAuthManager.configure(
@@ -1038,8 +283,9 @@ def main():
             default_jadx_token=default_jadx_token,
             allow_anonymous=True
         )
-        print("[WARN] No MCP authentication configured")
-        print("  Add [[users]] to config or use --mcp-auth-token")
+        print("[WARN] No MCP authentication configured — /mcp endpoint is open")
+        print("  This is only safe for local development. For network deployments,")
+        print("  add [[users]] to config or use --mcp-auth-token to enable auth.")
 
     # Banner & Health Check
     try:
@@ -1071,6 +317,7 @@ def main():
                     host=inst_cfg.host, 
                     port=inst_cfg.port,
                     token=inst_cfg.token if inst_cfg.token else None,
+                    registration_source="config",
                 )
                 if result["success"]:
                     print(f"  [OK] Registered: {inst_cfg.name} ({inst_cfg.host}:{inst_cfg.port}) [pending]")
@@ -1088,7 +335,9 @@ def main():
                     try:
                         port = int(parts[1])
                         name = parts[2] if len(parts) > 2 else None
-                        result = await InstanceRegistry.add_instance(host, port, name)
+                        result = await InstanceRegistry.add_instance(
+                            host, port, name, registration_source="cli"
+                        )
                         if result["success"]:
                             print(f"  [OK] Added: {result['instance']['name']} ({host}:{port})")
                             instances_added += 1
@@ -1103,14 +352,38 @@ def main():
         if instances_added == 0 and not args.jadx_instances and not (loaded_config and loaded_config.jadx_instances):
             print(f"\nTesting default JADX connection at {args.jadx_host}:{args.jadx_port}...")
             try:
-                result = await InstanceRegistry.add_instance(args.jadx_host, args.jadx_port)
+                result = await InstanceRegistry.add_instance(
+                    args.jadx_host, args.jadx_port, registration_source="default"
+                )
                 if result["success"]:
                     print(f"[OK] Default JADX instance connected")
                     instances_added += 1
                 else:
                     print(f"[WARN] Could not connect to default JADX: {result['message']}")
+                    default_name = f"default-{args.jadx_host.replace('.', '-').replace(':', '-')}-{args.jadx_port}"
+                    pending = InstanceRegistry.register_pending_instance(
+                        name=default_name,
+                        host=args.jadx_host,
+                        port=args.jadx_port,
+                        registration_source="default",
+                    )
+                    if pending["success"]:
+                        print(f"[OK] Registered default JADX instance as pending: {default_name}")
+                        print("  Health monitor will keep retrying until the plugin becomes available.")
+                        instances_added += 1
             except Exception as e:
                 print(f"[WARN] Default connection failed: {e}")
+                default_name = f"default-{args.jadx_host.replace('.', '-').replace(':', '-')}-{args.jadx_port}"
+                pending = InstanceRegistry.register_pending_instance(
+                    name=default_name,
+                    host=args.jadx_host,
+                    port=args.jadx_port,
+                    registration_source="default",
+                )
+                if pending["success"]:
+                    print(f"[OK] Registered default JADX instance as pending: {default_name}")
+                    print("  Health monitor will keep retrying until the plugin becomes available.")
+                    instances_added += 1
         
         return instances_added
     
@@ -1123,6 +396,7 @@ def main():
     # ========== Config Hot-Reload Callback ==========
     async def on_config_change(new_config: AppConfig):
         """Handle configuration file changes"""
+        nonlocal auth_users, allow_anonymous, require_auth
         print(f"\n[Hot-Reload] Configuration changed, updating instances...")
         
         # Get current instance names
@@ -1140,34 +414,119 @@ def main():
         for inst_cfg in new_config.jadx_instances:
             if inst_cfg.enabled and inst_cfg.name not in current_names:
                 result = await InstanceRegistry.add_instance(
-                    inst_cfg.host, inst_cfg.port, inst_cfg.name
+                    inst_cfg.host, inst_cfg.port, inst_cfg.name, registration_source="config"
                 )
                 if result["success"]:
                     print(f"  [Hot-Reload] Added: {inst_cfg.name}")
                 else:
                     print(f"  [Hot-Reload] Failed to add {inst_cfg.name}: {result['message']}")
+
+        # Reload MCP auth/users via SwitchableTokenVerifier (no restart needed).
+        if args.mcp_auth_token:
+            print("  [Hot-Reload] MCP auth unchanged (CLI --mcp-auth-token takes precedence)")
+        else:
+            new_auth_users = [user for user in new_config.users if user.token]
+            auth_users = new_auth_users
+            allow_anonymous = not bool(new_auth_users)
+            require_auth = bool(new_auth_users)
+
+            UserAuthManager.configure(
+                users=auth_users,
+                default_jadx_token=default_jadx_token,
+                allow_anonymous=allow_anonymous,
+            )
+
+            if require_auth:
+                if mcp.auth is switchable_verifier:
+                    # Auth was already enabled at startup — reload users in place
+                    new_inner = build_auth_provider(auth_users)
+                    switchable_verifier.set_inner(new_inner)
+                    print(f"  [Hot-Reload] Reloaded MCP auth users: {len(auth_users)}")
+                else:
+                    # Auth was disabled at startup — can't add OAuth middleware dynamically
+                    print("  [Hot-Reload] Auth users added but OAuth middleware not active.")
+                    print("  [Hot-Reload] *** Restart required to enable MCP auth ***")
+            else:
+                if mcp.auth is switchable_verifier:
+                    # Auth was enabled at startup — can't remove OAuth middleware dynamically
+                    switchable_verifier.set_inner(None)
+                    print("  [Hot-Reload] Auth users removed. Existing OAuth sessions still work.")
+                    print("  [Hot-Reload] *** Restart required to fully disable MCP auth ***")
+                else:
+                    print("  [Hot-Reload] Auth remains disabled (no users configured)")
         
         print(f"  [Hot-Reload] Complete. Instances: {InstanceRegistry.get_instance_count()}")
 
     # ========== Run MCP Server ==========
-    # Register instance management tools
-    register_instance_tools(mcp)
-    
+    # Note: MCP tools are registered at module level via register_*_tools()
+
     # Register Prompts
     register_prompts(mcp)
-    
+
     # Register Resources (usage guide, decision matrix, benchmarks)
     register_resources(mcp)
     
-    # Register authentication middleware (HTTP mode only)
-    require_auth = bool(loaded_config and loaded_config.users) and not allow_anonymous
+    # Register official FastMCP auth provider for the MCP endpoint.
+    #
+    # IMPORTANT: Only set mcp.auth when users are actually configured.
+    # FastMCP's HTTP transport wraps /mcp with RequireAuthMiddleware when
+    # auth is set, which rejects ALL requests without a valid OAuth Bearer
+    # token — even if our verifier would accept anonymous access.
+    # Setting mcp.auth = None keeps /mcp open (no OAuth flow required).
+    require_auth = bool(auth_users) and not allow_anonymous
+    inner_verifier = build_auth_provider(auth_users)
+    switchable_verifier = SwitchableTokenVerifier(inner=inner_verifier)
+    if inner_verifier:
+        mcp.auth = switchable_verifier
+        print("[OK] FastMCP TokenVerifier enabled for /mcp")
+    else:
+        # No auth users — leave mcp.auth unset so /mcp is open
+        print("[WARN] MCP endpoint is OPEN — no authentication required")
+        print("  Only safe for local use. Configure [[users]] for network deployments.")
+
+    # Register user-context middleware for tool permission checks
     auth_middleware = BearerAuthMiddleware(require_auth=require_auth)
     mcp.add_middleware(auth_middleware)
     if require_auth:
-        print(f"[OK] Authentication middleware enabled (required)")
+        print(f"[OK] User context middleware enabled (required)")
     else:
-        print(f"[OK] Authentication middleware enabled (optional)")
-    
+        print(f"[OK] User context middleware enabled (optional)")
+
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health_endpoint(request):
+        """Lightweight health check endpoint (no auth required)."""
+        return await transfer_server.download_health(request)
+
+    @mcp.custom_route("/status", methods=["GET"])
+    async def status_page(request):
+        """Human-readable operational status page."""
+        return await status_html_response(
+            request,
+            server_host=args.host,
+            server_port=args.port,
+            require_auth=require_auth,
+        )
+
+    @mcp.custom_route("/status.json", methods=["GET"])
+    async def status_page_json(request):
+        """Machine-readable operational status page."""
+        return await status_json_response(
+            request,
+            server_host=args.host,
+            server_port=args.port,
+            require_auth=require_auth,
+        )
+
+    @mcp.custom_route("/status/login", methods=["POST"])
+    async def status_page_login(request):
+        """Browser login for the status page."""
+        return await status_login_response(request)
+
+    @mcp.custom_route("/status/logout", methods=["POST"])
+    async def status_page_logout(request):
+        """Browser logout for the status page."""
+        return await status_logout_response(request)
+
     if args.http:
         # 设置 MCP Server URL 供 Transfer API 使用（从配置文件读取）
         if loaded_config and loaded_config.server.mcp_url:
@@ -1175,13 +534,30 @@ def main():
             print(f"[OK] Transfer API URL: {loaded_config.server.mcp_url}")
         
         print(f"\nStarting MCP server in HTTP mode on {args.host}:{args.port}...")
-        if args.mcp_auth_token or (loaded_config and loaded_config.users):
+        if require_auth:
             print(f"  Clients must provide: Authorization: Bearer <token>")
+
+        import threading
         
         # Start config watcher in background (for HTTP mode only)
         if config_loader:
-            config_loader.add_change_callback(on_config_change)
-            # Note: Hot-reload watcher runs in the async event loop managed by FastMCP
+            def run_config_watcher():
+                """Run the config file watcher in a dedicated event loop."""
+                import asyncio
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    config_loader.add_change_callback(on_config_change)
+                    loop.run_until_complete(config_loader.start_watching())
+                    loop.run_forever()
+                except Exception as e:
+                    print(f"Config watcher error: {e}")
+                finally:
+                    loop.close()
+
+            config_thread = threading.Thread(target=run_config_watcher, daemon=True)
+            config_thread.start()
             print(f"  Config hot-reload: enabled")
         
         # Start background health monitor for JADX instances
@@ -1189,7 +565,6 @@ def main():
         HealthMonitor.configure(interval=health_interval)
         
         # Start health monitor in a background thread with its own event loop
-        import threading
         import signal
         
         def run_health_monitor():
@@ -1210,7 +585,7 @@ def main():
         
         print(f"  Health monitor: enabled (interval: {health_interval}s)")
         
-        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+        mcp.run(transport="http", host=args.host, port=args.port)
     else:
         print("\nStarting MCP server in stdio mode...")
         mcp.run()
@@ -1218,4 +593,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

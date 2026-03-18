@@ -12,6 +12,59 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.5] - 2026-03-18
+
+### 🚀 Improvements
+
+**Deployment & Configuration**
+- Docker Compose timezone is now configurable via `TZ` env var (default: `UTC`, was hardcoded `Asia/Shanghai`)
+- Added `docker/.env.example` with documented environment variables
+- Added `/health` endpoint (lightweight, no auth required); Docker healthcheck now uses it
+- Startup warning when default tokens (`admin-secret-token`, `jadx-plugin-secret-token`) are in use
+
+**Unified Error Response Format**
+- New `make_error(code, message, **extra)` helper for standardized error responses
+- Added error codes: `RATE_LIMITED`, `TIMEOUT`, `INTERNAL_ERROR`
+- All error returns in `config.py`, `transfer_tools.py`, `instance_tools.py` now use consistent `{error, message}` format
+
+**Status Page Enhancements**
+- Warning section hidden when no warnings (SSR + JS toggle)
+- Instance table horizontally scrollable on mobile (`overflow-x:auto`)
+- Scheduler column header/cells have tooltip explaining `m=metadata c=code_read x=exclusive q=queue`
+- Refresh failure shows red error indicator (`.refresh-error` CSS class)
+- Session cookie now expires after 24 hours (`max_age=86400`)
+
+**Login CSRF Protection**
+- Double-submit cookie pattern for `/status/login` POST endpoint
+- CSRF token generated on every page render, validated on form submit
+
+**Code Architecture**
+- Extracted 30+ inline tool registrations from `jadx_mcp_server.py` into `register_*_tools()` functions in 6 tool modules
+- Main server file reduced from 1366 to 595 lines (56% reduction)
+- Each tool module now self-registers via `register_class_tools(mcp, with_busy_check)` pattern
+
+**Instance Fallback**
+- When default instance is disconnected, automatically falls back to first connected instance
+- New `InstanceRegistry.get_first_connected()` method
+
+**Rename Dry-Run**
+- `rename` tool now accepts `dry_run=True` parameter
+- Returns target existence check and class info preview without executing the rename
+
+### 📦 Changed Files
+- `docker/docker-compose.yaml` — TZ configurable, healthcheck uses `/health`
+- `docker/.env.example` — New file
+- `docker/scripts/start.sh` — Default token warning
+- `jadx-mcp-server/jadx_mcp_server.py` — Tool registration extracted, token warnings
+- `jadx-mcp-server/src/server/types.py` — `make_error()`, new error codes
+- `jadx-mcp-server/src/server/config.py` — Unified error format, instance fallback
+- `jadx-mcp-server/src/server/status_page.py` — Warnbox hide, scroll, tooltip, CSRF, refresh error
+- `jadx-mcp-server/src/server/instance_registry.py` — `get_first_connected()`
+- `jadx-mcp-server/src/server/tools/*.py` — `register_*_tools()` functions added
+- `jadx-mcp-server/tests/test_status_page.py` — CSRF test cases
+
+---
+
 ## [6.1.4] - 2026-03-02
 
 ### 🐛 Bug Fixes

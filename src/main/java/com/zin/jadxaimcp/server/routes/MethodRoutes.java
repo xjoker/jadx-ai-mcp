@@ -317,68 +317,56 @@ public class MethodRoutes {
             boolean timedOut = false;
             long startTime = System.currentTimeMillis();
 
-            // Try to acquire global lock (fast-fail pattern)
-            if (!JadxSearchLock.tryAcquire()) {
-                Map<String, Object> busyResponse = new HashMap<>();
-                busyResponse.put("error", "Search operation in progress");
-                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
-                busyResponse.put("busy", true);
-                busyResponse.put("lock_held_seconds", JadxSearchLock.getLockHeldSeconds());
-                ctx.status(503).json(busyResponse);
-                return;
-            }
-            try {
-                List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
-                int resultsNeeded = offset + count + 1; // +1 to check has_more
-                
-                outerLoop:
-                for (JavaClass cls : allClasses) {
-                    // Timeout check every 100 classes
-                    if (classesProcessed % 100 == 0) {
-                        long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-                        if (elapsed > TIMEOUT_SECONDS) {
-                            timedOut = true;
-                            break;
-                        }
+            // Method-name search only reads ClassNode metadata and does not decompile code,
+            // so it can safely run without the global JADX decompilation lock.
+            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+            int resultsNeeded = offset + count + 1; // +1 to check has_more
+
+            outerLoop:
+            for (JavaClass cls : allClasses) {
+                // Timeout check every 100 classes
+                if (classesProcessed % 100 == 0) {
+                    long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                    if (elapsed > TIMEOUT_SECONDS) {
+                        timedOut = true;
+                        break;
                     }
-                    
-                    // Use ClassNode.getMethods() to avoid triggering decompilation!
-                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                    if (classNode == null) {
-                        classesProcessed++;
-                        continue;
-                    }
-                    
-                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                        String mthName = mth.getMethodInfo().getName();
-                        
-                        if (mthName.toLowerCase().contains(searchTerm)) {
-                            totalMatches++;
-                            
-                            if (skipped < offset) {
-                                skipped++;
-                                continue;
-                            }
-                            
-                            if (collected < count) {
-                                Map<String, String> match = new HashMap<>();
-                                match.put("class_name", cls.getFullName());
-                                match.put("method_name", mthName);
-                                match.put("is_constructor", String.valueOf(mth.getMethodInfo().isConstructor()));
-                                results.add(match);
-                                collected++;
-                            }
-                            
-                            // Early exit when we have enough
-                            if (totalMatches >= resultsNeeded) {
-                                break outerLoop;
-                            }
-                        }
-                    }
-                    classesProcessed++;
                 }
-            } finally {
-                JadxSearchLock.release();
+
+                // Use ClassNode.getMethods() to avoid triggering decompilation.
+                jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
+                if (classNode == null) {
+                    classesProcessed++;
+                    continue;
+                }
+
+                for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
+                    String mthName = mth.getMethodInfo().getName();
+
+                    if (mthName.toLowerCase().contains(searchTerm)) {
+                        totalMatches++;
+
+                        if (skipped < offset) {
+                            skipped++;
+                            continue;
+                        }
+
+                        if (collected < count) {
+                            Map<String, String> match = new HashMap<>();
+                            match.put("class_name", cls.getFullName());
+                            match.put("method_name", mthName);
+                            match.put("is_constructor", String.valueOf(mth.getMethodInfo().isConstructor()));
+                            results.add(match);
+                            collected++;
+                        }
+
+                        // Early exit when we have enough
+                        if (totalMatches >= resultsNeeded) {
+                            break outerLoop;
+                        }
+                    }
+                }
+                classesProcessed++;
             }
             
             long elapsed = (System.currentTimeMillis() - startTime) / 1000;

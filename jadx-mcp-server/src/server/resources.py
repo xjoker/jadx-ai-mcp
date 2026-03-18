@@ -128,8 +128,7 @@ def register_resources(mcp):
                 "tools": [
                     "get_class_source",
                     "get_method_by_name",
-                    "get_xrefs_to_class",
-                    "get_xrefs_to_method",
+                    "get_xrefs",
                     "batch_get_class_source"
                 ]
             },
@@ -189,12 +188,9 @@ def register_resources(mcp):
                 "get_class_info",
                 "get_all_classes",
                 "search_classes_by_keyword",
-                "get_xrefs_to_class",
-                "get_xrefs_to_method",
-                "get_xrefs_to_field",
-                "rename_class",
-                "rename_method",
-                "rename_field",
+                "get_xrefs",
+                "batch_get_xrefs",
+                "rename",
                 "batch_get_class_source",
                 "batch_get_method_by_name",
             ],

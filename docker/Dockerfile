@@ -17,6 +17,8 @@ LABEL description="JADX-AI-MCP with noVNC for headless server deployment"
 
 # Additional environment variables
 ENV JADX_API_PORT=8650
+ENV JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
+ENV JADX_MCP_AUTH_ENABLED=true
 
 # ============================================================================
 # Layer 1: Download JADX (changes only when JADX_VERSION changes)
@@ -55,15 +57,10 @@ RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
 # ============================================================================
 USER root
 
-# Fix uv binary - ALWAYS reinstall to ensure it's a real binary, not a symlink
+# Reinstall pinned uv in the runtime image
 # ARG CACHE_BUST forces this layer to rebuild when value changes
 ARG CACHE_BUST=1
-RUN rm -f /usr/local/bin/uv /usr/local/bin/uvx && \
-    curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    cp -L /root/.local/bin/uv /usr/local/bin/uv && \
-    cp -L /root/.local/bin/uvx /usr/local/bin/uvx && \
-    chmod +x /usr/local/bin/uv /usr/local/bin/uvx && \
-    rm -rf /root/.local/bin /root/.cache && \
+RUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --upgrade uv==0.10.9 && \
     uv --version
 
 COPY jadx-mcp-server /opt/jadx/jadx-mcp-server

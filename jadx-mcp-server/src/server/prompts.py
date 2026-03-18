@@ -104,8 +104,8 @@ else:
 - Expected time: <1s
 
 **Step 5: Trace Cross-References**
-- Use `get_xrefs_to_class(class_name)` to find who uses this Activity.
-- Use `get_xrefs_to_method(class_name, method_name)` for method callers.
+- Use `get_xrefs("class", class_name)` to find who uses this Activity.
+- Use `get_xrefs("method", class_name, method_name)` for method callers.
 - Expected time: <1s with pagination.
 
 **Performance Tips**:
@@ -201,7 +201,7 @@ if not found:
     - Analyze what the method does (input -> processing -> output).
 
 2.  **Find Callers (Who calls this?)**:
-    - Call `get_xrefs_to_method(class_name="{class_name}", method_name="{method_name}")`.
+    - Call `get_xrefs("method", class_name="{class_name}", member_name="{method_name}")`.
     - This reveals *entry points* to this logic.
 
 3.  **Find Callees (What does this call?)**:
