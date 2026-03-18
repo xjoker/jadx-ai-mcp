@@ -257,21 +257,37 @@ public class ClassRoutes {
         }
 
         try {
+            // Check decompiled code cache first
+            String code = ClassCacheManager.getCachedCode(className);
+            if (code != null) {
+                Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                    code, chunk, "response");
+                if (result.containsKey("error")) {
+                    JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
+                    return;
+                }
+                ctx.json(result);
+                return;
+            }
+
             JadxWrapper wrapper = mainWindow.getWrapper();
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
-                    String code = cls.getCode();
-                    
+                    code = cls.getCode();
+
+                    // Cache the decompiled result
+                    ClassCacheManager.putCachedCode(className, code);
+
                     // Use SmartChunker for automatic chunking of large responses
                     Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
                         code, chunk, "response");
-                    
+
                     // Check for chunking errors
                     if (result.containsKey("error")) {
                         JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
                         return;
                     }
-                    
+
                     ctx.json(result);
                     return;
                 }
@@ -356,61 +372,39 @@ public class ClassRoutes {
             // Get the cached class map
             Map<String, JavaClass> classMap = ClassCacheManager.getCache();
 
-            // Submit decompilation tasks in parallel using SEARCH_EXECUTOR
-            // Each task acquires/releases JadxSearchLock independently so one failure
-            // doesn't abort the batch. Non-found classes return immediately without locking.
-            List<Future<Map<String, Object>>> futures = new ArrayList<>();
+            List<Map<String, Object>> results = new ArrayList<>();
+            int foundCount = 0;
+
             for (String className : classNames) {
                 String trimmedName = className.trim();
-                futures.add(SEARCH_EXECUTOR.submit(() -> {
-                    Map<String, Object> classResult = new HashMap<>();
-                    classResult.put("name", trimmedName);
+                Map<String, Object> classResult = new HashMap<>();
+                classResult.put("name", trimmedName);
 
-                    JavaClass cls = classMap.get(trimmedName);
-                    if (cls != null) {
-                        if (!JadxSearchLock.tryAcquire(30)) {
-                            classResult.put("found", false);
-                            classResult.put("error", "Decompilation lock timeout");
-                            return classResult;
-                        }
+                JavaClass cls = classMap.get(trimmedName);
+                if (cls != null) {
+                    // Check decompiled code cache first
+                    String cachedCode = ClassCacheManager.getCachedCode(trimmedName);
+                    if (cachedCode != null) {
+                        classResult.put("found", true);
+                        classResult.put("content", cachedCode);
+                        foundCount++;
+                    } else {
                         try {
+                            String code = cls.getCode();
                             classResult.put("found", true);
-                            classResult.put("content", cls.getCode());
+                            classResult.put("content", code);
+                            ClassCacheManager.putCachedCode(trimmedName, code);
+                            foundCount++;
                         } catch (Exception e) {
                             classResult.put("found", true);
                             classResult.put("error", "Decompilation failed: " + e.getMessage());
-                        } finally {
-                            JadxSearchLock.release();
                         }
-                    } else {
-                        classResult.put("found", false);
-                        classResult.put("error", "Class not found");
                     }
-                    return classResult;
-                }));
-            }
-
-            // Collect results, preserving request order
-            List<Map<String, Object>> results = new ArrayList<>();
-            int foundCount = 0;
-            for (Future<Map<String, Object>> future : futures) {
-                try {
-                    Map<String, Object> classResult = future.get(60, TimeUnit.SECONDS);
-                    results.add(classResult);
-                    if (Boolean.TRUE.equals(classResult.get("found")) && !classResult.containsKey("error")) {
-                        foundCount++;
-                    }
-                } catch (TimeoutException e) {
-                    Map<String, Object> classResult = new HashMap<>();
+                } else {
                     classResult.put("found", false);
-                    classResult.put("error", "Decompilation timed out");
-                    results.add(classResult);
-                } catch (Exception e) {
-                    Map<String, Object> classResult = new HashMap<>();
-                    classResult.put("found", false);
-                    classResult.put("error", "Decompilation error: " + e.getMessage());
-                    results.add(classResult);
+                    classResult.put("error", "Class not found");
                 }
+                results.add(classResult);
             }
 
             Map<String, Object> response = new HashMap<>();
@@ -419,10 +413,7 @@ public class ClassRoutes {
             response.put("total", classNames.length);
             response.put("found", foundCount);
 
-            // Note: Double JSON serialization (gson.toJson -> ctx.json) is intentional here.
-            // SmartChunker performs size-based string splitting to prevent MCP client truncation
-            // (8KB threshold). It requires the full serialized JSON string to calculate chunk
-            // boundaries. Refactoring to accept Map directly would lose this size-based chunking.
+            // Serialize and apply SmartChunker to prevent large response truncation
             com.google.gson.Gson gson = new com.google.gson.Gson();
             String responseJson = gson.toJson(response);
 

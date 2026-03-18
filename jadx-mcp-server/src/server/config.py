@@ -254,22 +254,47 @@ async def get_from_jadx(
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
 
+    # Response cache: check for cached result on deterministic endpoints
+    from .response_cache import (
+        CACHEABLE_ENDPOINTS, _MUTATING_ENDPOINTS, _make_cache_key, get_response_cache,
+    )
+    ep_stripped = endpoint.strip("/")
+    cache = get_response_cache()
+
+    # Mutating endpoints invalidate the entire cache
+    if ep_stripped in _MUTATING_ENDPOINTS:
+        cache.clear()
+
+    # Check cache for cacheable endpoints
+    cache_key = None
+    if ep_stripped in CACHEABLE_ENDPOINTS:
+        cache_key = _make_cache_key(instance_id, ep_stripped, params)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
     logger.debug(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
-    
+
     try:
         client = await HttpClientManager.get_client()
         effective_timeout = timeout if timeout is not None else _infer_timeout(endpoint)
         req_timeout = httpx.Timeout(effective_timeout)
         resp = await client.get(url, params=params, headers=headers, timeout=req_timeout)
         resp.raise_for_status()
-        
+
         logger.debug(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")
 
         # Try to parse JSON, fallback to text if not valid JSON
         try:
-            return resp.json()
+            result = resp.json()
         except json.JSONDecodeError:
-            return {"response": resp.text}
+            result = {"response": resp.text}
+
+        # Cache successful non-error responses for cacheable endpoints
+        if cache_key and isinstance(result, dict) and "error" not in result:
+            cache.put(cache_key, result)
+
+        return result
 
     except httpx.HTTPStatusError as e:
         status_code = e.response.status_code

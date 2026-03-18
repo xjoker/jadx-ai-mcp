@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -28,6 +29,19 @@ public class ClassCacheManager {
     private static final AtomicLong startTime = new AtomicLong(0);
     private static final AtomicLong completionTime = new AtomicLong(0);
     private static final AtomicReference<String> currentPhase = new AtomicReference<>("NOT_INITIALIZED");
+
+    // Decompiled source code LRU cache: className -> decompiled Java source
+    private static final int MAX_CODE_CACHE_SIZE = 200;
+    private static final Object codeCacheLock = new Object();
+    private static final LinkedHashMap<String, String> codeCache = new LinkedHashMap<>(
+            MAX_CODE_CACHE_SIZE, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > MAX_CODE_CACHE_SIZE;
+        }
+    };
+    private static final AtomicLong codeCacheHits = new AtomicLong(0);
+    private static final AtomicLong codeCacheMisses = new AtomicLong(0);
     
     public enum CacheStatus {
         NOT_INITIALIZED,
@@ -124,6 +138,68 @@ public class ClassCacheManager {
         return health;
     }
     
+    /**
+     * Get cached decompiled source code for a class.
+     * @return cached source code, or null if not cached
+     */
+    public static String getCachedCode(String className) {
+        synchronized (codeCacheLock) {
+            String code = codeCache.get(className);
+            if (code != null) {
+                codeCacheHits.incrementAndGet();
+                return code;
+            }
+            codeCacheMisses.incrementAndGet();
+            return null;
+        }
+    }
+
+    /**
+     * Store decompiled source code in the cache.
+     * Null or empty code is not cached.
+     */
+    public static void putCachedCode(String className, String code) {
+        if (className == null || code == null || code.isEmpty()) {
+            return;
+        }
+        synchronized (codeCacheLock) {
+            codeCache.put(className, code);
+        }
+    }
+
+    /**
+     * Invalidate cached code for a single class (e.g., after rename).
+     */
+    public static void invalidateCode(String className) {
+        synchronized (codeCacheLock) {
+            codeCache.remove(className);
+        }
+    }
+
+    /**
+     * Clear all cached decompiled source code.
+     */
+    public static void clearCodeCache() {
+        synchronized (codeCacheLock) {
+            codeCache.clear();
+        }
+        logger.info("[JAI] Decompiled code cache cleared");
+    }
+
+    /**
+     * Get code cache statistics for monitoring.
+     */
+    public static Map<String, Object> getCodeCacheStats() {
+        synchronized (codeCacheLock) {
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("code_cache_size", codeCache.size());
+            stats.put("code_cache_max", MAX_CODE_CACHE_SIZE);
+            stats.put("code_cache_hits", codeCacheHits.get());
+            stats.put("code_cache_misses", codeCacheMisses.get());
+            return stats;
+        }
+    }
+
     // Debounce for cache clearing (prevent rapid successive clears)
     // All cache clear operations share this global 30-second cooldown
     private static final long CLEAR_DEBOUNCE_MS = 30000; // 30 seconds cooldown
@@ -158,6 +234,7 @@ public class ClassCacheManager {
             isInitialized.set(false);
             initFuture.set(null);
             currentPhase.set("NOT_INITIALIZED");
+            clearCodeCache();
             logger.info("[JAI] Class cache cleared");
             return true;
         }

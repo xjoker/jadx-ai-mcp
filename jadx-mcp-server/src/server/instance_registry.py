@@ -552,7 +552,14 @@ class InstanceRegistry:
             
             if old_status != status:
                 logger.info(f"Instance '{name}' status: {old_status} -> {status}")
-            
+                # Invalidate response cache when instance becomes unavailable
+                if status in ("disconnected", "error", "pending"):
+                    try:
+                        from .response_cache import get_response_cache
+                        get_response_cache().invalidate_instance(name)
+                    except Exception:
+                        pass
+
             return True
     
     @classmethod

@@ -6,7 +6,6 @@ import io.javalin.Javalin;
 import jadx.gui.ui.MainWindow;
 import jadx.api.plugins.events.types.NodeRenamedByUser;
 import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -101,18 +100,11 @@ public class PluginServer {
             // Register global OOM detection handler
             installOomHandler();
 
-            // Configure Jetty thread pool with reasonable defaults
-            int maxThreads = Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
-            QueuedThreadPool threadPool = new QueuedThreadPool(maxThreads, 2, 60000);
-            threadPool.setName("JAI-Jetty");
-
             // Configure and start Javalin
             app = Javalin.create(config -> {
                 config.showJavalinBanner = false;
                 config.jetty.defaultHost = bindAddress;
-                config.jetty.threadPool = threadPool;
             }).start(port);
-            logger.info("[JAI] Jetty thread pool configured: maxThreads={}, minThreads=2, idleTimeout=60s", maxThreads);
 
             // Add authentication middleware (runs before all routes)
             app.before(ctx -> {
@@ -509,6 +501,9 @@ public class PluginServer {
                     // Settings access may fail, ignore
                 }
                 
+                // === Decompiled Code Cache Statistics ===
+                response.put("code_cache", ClassCacheManager.getCodeCacheStats());
+
                 // === Search Lock Status (from JadxSearchLock) ===
                 response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
                 response.put("search_coordinator", CodeSearchCoordinator.getStatus());
@@ -526,6 +521,7 @@ public class PluginServer {
         app.post("/cache/clear", ctx -> {
             try {
                 CodeSearchCoordinator.clearCache();
+                ClassCacheManager.clearCodeCache();
                 boolean cleared = ClassCacheManager.clearCache();
                 if (cleared) {
                     logger.info("[JAI] Class cache and code search cache cleared manually via API");

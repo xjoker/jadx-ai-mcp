@@ -262,10 +262,7 @@ public class MethodRoutes {
             response.put("total", methodPairs.length);
             response.put("found", foundCount);
 
-            // Note: Double JSON serialization (gson.toJson -> ctx.json) is intentional here.
-            // SmartChunker performs size-based string splitting to prevent MCP client truncation
-            // (8KB threshold). It requires the full serialized JSON string to calculate chunk
-            // boundaries. Refactoring to accept Map directly would lose this size-based chunking.
+            // Serialize and apply SmartChunker to prevent large response truncation
             com.google.gson.Gson gson = new com.google.gson.Gson();
             String responseJson = gson.toJson(response);
 
@@ -320,8 +317,18 @@ public class MethodRoutes {
             boolean timedOut = false;
             long startTime = System.currentTimeMillis();
 
-            // Method-name search only reads ClassNode metadata and does not decompile code,
-            // so it can safely run without the global JADX decompilation lock.
+            // Method-name search only reads ClassNode metadata and does not decompile code.
+            // Acquire read lock to allow concurrent metadata queries while blocking during
+            // exclusive decompilation (write lock) operations.
+            if (!JadxSearchLock.tryAcquireRead()) {
+                Map<String, Object> busyResponse = new HashMap<>();
+                busyResponse.put("error", "Decompilation operation in progress");
+                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                busyResponse.put("busy", true);
+                ctx.status(503).json(busyResponse);
+                return;
+            }
+            try {
             List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
             int resultsNeeded = offset + count + 1; // +1 to check has_more
 
@@ -370,6 +377,9 @@ public class MethodRoutes {
                     }
                 }
                 classesProcessed++;
+            }
+            } finally {
+                JadxSearchLock.releaseRead();
             }
             
             long elapsed = (System.currentTimeMillis() - startTime) / 1000;
@@ -665,51 +675,65 @@ public class MethodRoutes {
             List<Map<String, Object>> nativeMethods = new ArrayList<>();
             int totalFound = 0;
             int skipped = 0;
-            
+
+            // Metadata-only operation: acquire read lock to allow concurrent metadata queries
+            // while blocking during exclusive decompilation (write lock) operations.
+            if (!JadxSearchLock.tryAcquireRead()) {
+                Map<String, Object> busyResponse = new HashMap<>();
+                busyResponse.put("error", "Decompilation operation in progress");
+                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                busyResponse.put("busy", true);
+                ctx.status(503).json(busyResponse);
+                return;
+            }
+            try {
             // Iterate through all classes - only accessing metadata, no decompilation
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 String className = cls.getFullName();
-                
+
                 // Apply package filter if provided
                 if (packageFilter != null && !packageFilter.isEmpty()) {
                     if (!className.startsWith(packageFilter)) {
                         continue;
                     }
                 }
-                
+
                 jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
                 if (classNode == null) continue;
-                
+
                 // Check each method's access flags (metadata only, no decompilation)
                 for (jadx.core.dex.nodes.MethodNode method : classNode.getMethods()) {
                     if (method.getAccessFlags().isNative()) {
                         totalFound++;
-                        
+
                         // Apply pagination
                         if (skipped < offset) {
                             skipped++;
                             continue;
                         }
-                        
+
                         if (nativeMethods.size() >= count) {
                             continue; // Keep counting total but don't add more
                         }
-                        
+
                         Map<String, Object> methodInfo = new HashMap<>();
                         methodInfo.put("class_name", className);
                         methodInfo.put("method_name", method.getMethodInfo().getName());
                         methodInfo.put("short_id", method.getMethodInfo().getShortId());
-                        
+
                         // Get parameter types for Frida overload
                         List<String> paramTypes = new ArrayList<>();
                         for (jadx.core.dex.instructions.args.ArgType argType : method.getMethodInfo().getArgumentsTypes()) {
                             paramTypes.add(com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(argType));
                         }
                         methodInfo.put("param_types_frida", paramTypes);
-                        
+
                         nativeMethods.add(methodInfo);
                     }
                 }
+            }
+            } finally {
+                JadxSearchLock.releaseRead();
             }
             
             Map<String, Object> response = new HashMap<>();
