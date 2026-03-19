@@ -28,7 +28,7 @@ class JadxInstance:
     name: str                 # Instance name (user-defined or auto-generated)
     host: str                 # IP address
     port: int                 # Port number
-    status: str = "unknown"   # "connected" | "disconnected" | "error"
+    status: str = "unknown"   # "connected" | "disconnected" | "error" | "auth_failed"
     apk_info: dict = field(default_factory=dict)  # Info from /apk-info endpoint
     last_health_check: Optional[datetime] = None
     error_message: str = ""   # Most recent error message
@@ -72,7 +72,30 @@ class InstanceRegistry:
     _shared_auth_token: Optional[str] = None
     _async_lock = asyncio.Lock()  # For async operations
     _thread_lock = threading.RLock()  # For cross-thread safety
-    
+    _http_client: Optional[httpx.AsyncClient] = None  # Shared HTTP client for health checks
+    _http_client_lock: asyncio.Lock = asyncio.Lock()
+
+    @classmethod
+    async def _get_http_client(cls) -> httpx.AsyncClient:
+        """Get or create the shared async HTTP client for registry operations."""
+        if cls._http_client is not None and not cls._http_client.is_closed:
+            return cls._http_client
+        async with cls._http_client_lock:
+            if cls._http_client is None or cls._http_client.is_closed:
+                cls._http_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(CONNECT_TIMEOUT),
+                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                )
+        return cls._http_client
+
+    @classmethod
+    async def close_http_client(cls) -> None:
+        """Close the shared HTTP client (call on shutdown)."""
+        if cls._http_client is not None and not cls._http_client.is_closed:
+            await cls._http_client.aclose()
+            cls._http_client = None
+            logger.debug("Registry HTTP client closed")
+
     @classmethod
     def set_auth_token(cls, token: str) -> None:
         """Set the shared authentication token for all instances"""
@@ -257,12 +280,12 @@ class InstanceRegistry:
 
         actual_timeout = timeout if timeout is not None else CONNECT_TIMEOUT
         logger.info(f"Connecting to JADX instance: {url}")
-        async with httpx.AsyncClient(timeout=actual_timeout) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            logger.info(f"Connected to JADX: {data.get('apk_package', 'unknown')} v{data.get('version_name', 'unknown')}")
-            return data
+        client = await cls._get_http_client()
+        response = await client.get(url, headers=headers, timeout=httpx.Timeout(actual_timeout))
+        response.raise_for_status()
+        data = response.json()
+        logger.info(f"Connected to JADX: {data.get('apk_package', 'unknown')} v{data.get('version_name', 'unknown')}")
+        return data
     
     @classmethod
     async def _check_health(cls, host: str, port: int) -> bool:
@@ -273,11 +296,11 @@ class InstanceRegistry:
             headers["Authorization"] = f"Bearer {cls._shared_auth_token}"
 
         try:
-            async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
-                response = await client.get(url, headers=headers)
-                is_healthy = response.status_code == 200
-                logger.debug(f"Health check {host}:{port}: {'OK' if is_healthy else 'FAILED'}")
-                return is_healthy
+            client = await cls._get_http_client()
+            response = await client.get(url, headers=headers, timeout=httpx.Timeout(HEALTH_TIMEOUT))
+            is_healthy = response.status_code == 200
+            logger.debug(f"Health check {host}:{port}: {'OK' if is_healthy else 'FAILED'}")
+            return is_healthy
         except Exception as e:
             logger.debug(f"Health check {host}:{port} failed: {e}")
             return False
@@ -296,10 +319,10 @@ class InstanceRegistry:
         if actual_token:
             headers["Authorization"] = f"Bearer {actual_token}"
 
-        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            return response.json()
+        client = await cls._get_http_client()
+        response = await client.get(url, headers=headers, timeout=httpx.Timeout(HEALTH_TIMEOUT))
+        response.raise_for_status()
+        return response.json()
     
     @classmethod
     def remove_instance(cls, name: str, username: str = None, is_admin: bool = False) -> dict:
@@ -482,10 +505,84 @@ class InstanceRegistry:
             return cls._instances.get(name)
     
     @classmethod
+    def find_instance_by_apk(cls, query: str) -> Optional[JadxInstance]:
+        """
+        Find a connected instance by APK package name, file name, or instance name (fuzzy).
+
+        Matching priority:
+        1. Exact instance name match
+        2. Exact apk_package match (e.g., "com.xingin.xhs")
+        3. Exact JADX instance_name from apk_info (e.g., "xhs-v835")
+        4. Partial apk_package match (e.g., "xingin" matches "com.xingin.xhs")
+        5. Instance name or JADX instance_name contains query
+        6. file_name match (e.g., "target.apk")
+        7. version_name match (e.g., "8.35.0")
+
+        Only returns connected instances. Returns None if no match.
+        """
+        query_lower = query.lower()
+        with cls._thread_lock:
+            connected = [i for i in cls._instances.values() if i.status == "connected"]
+
+        # 1. Exact instance name (registry name)
+        for inst in connected:
+            if inst.name.lower() == query_lower:
+                return inst
+
+        # 2. Exact apk_package
+        for inst in connected:
+            pkg = inst.apk_info.get("apk_package", "")
+            if pkg and pkg.lower() == query_lower:
+                return inst
+
+        # 3. Exact JADX instance_name from apk_info (auto-generated like "xhs-v835")
+        for inst in connected:
+            jadx_name = inst.apk_info.get("instance_name", "")
+            if jadx_name and jadx_name.lower() == query_lower:
+                return inst
+
+        # 4. Partial apk_package
+        for inst in connected:
+            pkg = inst.apk_info.get("apk_package", "")
+            if pkg and query_lower in pkg.lower():
+                return inst
+
+        # 5. Exact app_name match (Android display name, e.g., "小红书")
+        for inst in connected:
+            app_name = inst.apk_info.get("app_name", "")
+            if app_name and app_name.lower() == query_lower:
+                return inst
+
+        # 6. Partial match on registry name, JADX instance_name, or app_name
+        for inst in connected:
+            jadx_name = inst.apk_info.get("instance_name", "")
+            app_name = inst.apk_info.get("app_name", "")
+            if query_lower in inst.name.lower():
+                return inst
+            if jadx_name and query_lower in jadx_name.lower():
+                return inst
+            if app_name and query_lower in app_name.lower():
+                return inst
+
+        # 7. file_name match
+        for inst in connected:
+            fname = inst.apk_info.get("file_name", "")
+            if fname and query_lower in fname.lower():
+                return inst
+
+        # 8. version_name match
+        for inst in connected:
+            ver = inst.apk_info.get("version_name", "")
+            if ver and query_lower == ver.lower():
+                return inst
+
+        return None
+
+    @classmethod
     def get_all_instances(cls) -> Dict[str, JadxInstance]:
         """
         Get all registered instances (thread-safe copy for health monitoring).
-        
+
         Returns a copy to prevent modification during iteration.
         """
         with cls._thread_lock:
@@ -493,23 +590,25 @@ class InstanceRegistry:
     
     @classmethod
     def update_instance_status(
-        cls, 
-        name: str, 
-        status: str, 
+        cls,
+        name: str,
+        status: str,
         apk_info: Optional[dict] = None,
-        last_check: Optional[str] = None
+        last_check: Optional[str] = None,
+        error_message: Optional[str] = None
     ) -> bool:
         """
         Update instance status (thread-safe).
-        
+
         Used by HealthMonitor from background thread to update instance state.
-        
+
         Args:
             name: Instance name
-            status: New status ("connected", "disconnected", "pending")
+            status: New status ("connected", "disconnected", "pending", "error")
             apk_info: Optional APK info to update (for newly connected instances)
             last_check: Optional ISO timestamp of health check
-        
+            error_message: Optional error description (cleared on successful connect)
+
         Returns:
             True if updated successfully, False if instance not found
         """
@@ -517,19 +616,31 @@ class InstanceRegistry:
             instance = cls._instances.get(name)
             if not instance:
                 return False
-            
+
             old_status = instance.status
             instance.status = status
-            
+
             if apk_info is not None:
                 instance.apk_info = apk_info
-            
+
             if last_check is not None:
                 instance.last_health_check = datetime.fromisoformat(last_check)
-            
+
+            if error_message is not None:
+                instance.error_message = error_message
+            elif status == "connected":
+                instance.error_message = ""  # Clear error on successful connect
+
             if old_status != status:
                 logger.info(f"Instance '{name}' status: {old_status} -> {status}")
-            
+                # Invalidate response cache when instance becomes unavailable
+                if status in ("disconnected", "error", "pending", "auth_failed"):
+                    try:
+                        from .response_cache import get_response_cache
+                        get_response_cache().invalidate_instance(name)
+                    except Exception:
+                        pass
+
             return True
     
     @classmethod

@@ -82,36 +82,43 @@ async def test_two_code_read_requests_can_run_concurrently():
 
 
 @pytest.mark.asyncio
-async def test_third_code_read_request_waits_in_queue_and_acquires_after_release():
-    first = await InstanceBusyTracker.try_acquire("demo", "get_class_source")
-    second = await InstanceBusyTracker.try_acquire("demo", "get_method_by_name")
+async def test_code_read_request_waits_in_queue_and_acquires_after_release():
+    # Fill all active slots (DEFAULT_CODE_READ_ACTIVE_LIMIT = 4)
+    active_tokens = []
+    for _ in range(DEFAULT_CODE_READ_ACTIVE_LIMIT):
+        result = await InstanceBusyTracker.try_acquire("demo", "get_class_source")
+        assert result["success"] is True
+        active_tokens.append(result["token"])
 
     queued_task = asyncio.create_task(InstanceBusyTracker.try_acquire("demo", "get_method_callees"))
     await asyncio.sleep(0)
     assert not queued_task.done()
 
     snapshot = InstanceBusyTracker.get_snapshot("demo")
-    assert snapshot["code_read_inflight"] == 2
+    assert snapshot["code_read_inflight"] == DEFAULT_CODE_READ_ACTIVE_LIMIT
     assert snapshot["queue_depth"] == 1
 
-    await InstanceBusyTracker.release("demo", first["token"])
-    third = await queued_task
+    await InstanceBusyTracker.release("demo", active_tokens[0])
+    queued_result = await queued_task
 
-    assert third["success"] is True
+    assert queued_result["success"] is True
     post_snapshot = InstanceBusyTracker.get_snapshot("demo")
-    assert post_snapshot["code_read_inflight"] == 2
+    assert post_snapshot["code_read_inflight"] == DEFAULT_CODE_READ_ACTIVE_LIMIT
     assert post_snapshot["queue_depth"] == 0
 
-    await InstanceBusyTracker.release("demo", second["token"])
-    await InstanceBusyTracker.release("demo", third["token"])
+    for token in active_tokens[1:]:
+        await InstanceBusyTracker.release("demo", token)
+    await InstanceBusyTracker.release("demo", queued_result["token"])
 
 
 @pytest.mark.asyncio
 async def test_code_read_queue_has_bounded_capacity():
-    first = await InstanceBusyTracker.try_acquire("demo", "get_class_source")
-    second = await InstanceBusyTracker.try_acquire("demo", "get_method_by_name")
-    assert first["success"] is True
-    assert second["success"] is True
+    # Fill all active slots first
+    active_tokens = []
+    for _ in range(DEFAULT_CODE_READ_ACTIVE_LIMIT):
+        result = await InstanceBusyTracker.try_acquire("demo", "get_class_source")
+        assert result["success"] is True
+        active_tokens.append(result["token"])
 
     queued_tasks = [
         asyncio.create_task(InstanceBusyTracker.try_acquire("demo", "get_method_by_name"))
@@ -125,8 +132,8 @@ async def test_code_read_queue_has_bounded_capacity():
     assert saturated["queue_limit"] == DEFAULT_CODE_READ_QUEUE_LIMIT
     assert saturated["busy_reason"] == "code_read_queue_full"
 
-    await InstanceBusyTracker.release("demo", first["token"])
-    await InstanceBusyTracker.release("demo", second["token"])
+    for token in active_tokens:
+        await InstanceBusyTracker.release("demo", token)
     for task in queued_tasks:
         acquired = await task
         assert acquired["success"] is True

@@ -154,7 +154,7 @@ rename("package", "com.example.old", "com.example.new")
 
 | 工具 | 参数 | 说明 |
 |:-----|:-----|:-----|
-| `list_jadx_instances()` | - | 列出所有连接的实例 |
+| `list_jadx_instances()` | - | 列出所有实例及其状态。不需要已连接的实例。 |
 | `add_jadx_instance(host, port)` | `host`, `port`, `name?`, `token?` | 动态添加实例 |
 | `remove_jadx_instance(name)` | `name` | 移除实例 |
 | `set_default_jadx_instance(name)` | `name` | 设置默认实例 |

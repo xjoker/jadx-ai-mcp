@@ -501,6 +501,9 @@ public class PluginServer {
                     // Settings access may fail, ignore
                 }
                 
+                // === Decompiled Code Cache Statistics ===
+                response.put("code_cache", ClassCacheManager.getCodeCacheStats());
+
                 // === Search Lock Status (from JadxSearchLock) ===
                 response.put("search_lock", com.zin.jadxaimcp.utils.JadxSearchLock.getStatus());
                 response.put("search_coordinator", CodeSearchCoordinator.getStatus());
@@ -518,6 +521,7 @@ public class PluginServer {
         app.post("/cache/clear", ctx -> {
             try {
                 CodeSearchCoordinator.clearCache();
+                ClassCacheManager.clearCodeCache();
                 boolean cleared = ClassCacheManager.clearCache();
                 if (cleared) {
                     logger.info("[JAI] Class cache and code search cache cleared manually via API");

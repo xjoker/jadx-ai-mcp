@@ -38,6 +38,7 @@ STATUS_CLASS = {
     "degraded": "warn",
     "disconnected": "err",
     "error": "err",
+    "auth_failed": "err",
 }
 
 STATUS_REFRESH_INTERVAL_MS = 5000
@@ -117,9 +118,11 @@ def build_status_snapshot(
             "No visible JADX instances. Pure pull mode requires config, CLI args, or add_jadx_instance()."
         )
     if status_counts.get("pending", 0):
-        warnings.append("Some instances are still pending initial pull connection.")
+        warnings.append("Some instances are still pending initial connection.")
     if status_counts.get("disconnected", 0):
         warnings.append("Some instances are disconnected and need operator attention.")
+    if status_counts.get("auth_failed", 0):
+        warnings.append("Some instances have authentication failures. Check jadx_token in config.")
 
     rendered_instances = []
     for inst in sorted(instances, key=lambda item: (item.get("registration_source", ""), item["name"])):
@@ -605,6 +608,7 @@ def render_status_html(snapshot: dict[str, Any], csrf_token: str = "") -> str:
           degraded: "warn",
           disconnected: "err",
           error: "err",
+          auth_failed: "err",
         }}[inst.status] || "";
         const defaultBadge = inst.is_default ? ' <span class="chip">default</span>' : "";
         const loaded = inst.loaded ? "yes" : "no";

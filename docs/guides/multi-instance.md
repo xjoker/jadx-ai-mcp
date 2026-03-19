@@ -64,13 +64,48 @@ set_default_jadx_instance(name="dev-build")
 Most tools accept `instance_id` parameter:
 
 ```python
-# Query specific instance
+# Query specific instance by name
 get_class_source(class_name="com.example.Main", instance_id="app-v2")
 
 # Compare across instances
 source_v1 = get_class_source(class_name="com.example.Main", instance_id="app-v1")
 source_v2 = get_class_source(class_name="com.example.Main", instance_id="app-v2")
 ```
+
+### Fuzzy Matching (v6.1.6+)
+
+`instance_id` supports fuzzy matching — you don't need the exact instance name:
+
+```python
+# Match by APK package name
+get_class_source(class_name="...", instance_id="com.xingin.xhs")
+
+# Match by partial package name
+get_class_source(class_name="...", instance_id="xingin")
+
+# Match by app display name (if available)
+get_class_source(class_name="...", instance_id="小红书")
+
+# Match by partial instance name
+get_class_source(class_name="...", instance_id="xhs")
+```
+
+**Matching priority:** exact name → exact package → exact JADX name → exact app name → partial matches → file name → version.
+
+> **Note:** Fuzzy matching only returns connected instances. Each instance loads a different app — there is no cross-instance fallback.
+
+---
+
+## Instance States
+
+| Status | Description |
+|:-------|:------------|
+| `connected` | Healthy and ready for requests |
+| `pending` | Registered but not yet connected (startup) |
+| `disconnected` | Was connected but lost contact |
+| `degraded` | Connected but low memory or OOM detected |
+| `auth_failed` | JADX plugin returned 401 — check token config |
+| `error` | Other error state |
 
 ---
 

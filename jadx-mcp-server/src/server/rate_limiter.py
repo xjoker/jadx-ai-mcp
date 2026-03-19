@@ -4,9 +4,9 @@ Rate Limiter - 速率限制
 """
 
 import time
-from collections import defaultdict
-from typing import Dict, List
-from dataclasses import dataclass, field
+from collections import defaultdict, deque
+from typing import Deque, Dict
+from dataclasses import dataclass
 from src.server.logging_config import get_logger
 
 logger = get_logger("rate_limiter")
@@ -31,7 +31,7 @@ class RateLimiter:
     
     def __init__(self, config: RateLimitConfig = None):
         self.config = config or RateLimitConfig()
-        self.requests: Dict[str, List[float]] = defaultdict(list)
+        self.requests: Dict[str, Deque[float]] = defaultdict(deque)
         logger.info(
             f"RateLimiter initialized: {self.config.max_requests} requests "
             f"per {self.config.window_seconds}s"
@@ -48,15 +48,15 @@ class RateLimiter:
             True 如果允许请求，False 如果超过限制
         """
         now = time.time()
-        
-        # 清理过期记录（超出时间窗口）
-        self.requests[client_id] = [
-            timestamp for timestamp in self.requests[client_id]
-            if now - timestamp < self.config.window_seconds
-        ]
-        
+        cutoff = now - self.config.window_seconds
+
+        # 清理过期记录 — O(1) popleft（时间戳天然有序）
+        dq = self.requests[client_id]
+        while dq and dq[0] <= cutoff:
+            dq.popleft()
+
         # 检查是否超过限制
-        if len(self.requests[client_id]) >= self.config.max_requests:
+        if len(dq) >= self.config.max_requests:
             logger.warning(
                 f"Rate limit exceeded for {client_id}: "
                 f"{len(self.requests[client_id])}/{self.config.max_requests} "
@@ -71,19 +71,20 @@ class RateLimiter:
     def get_remaining(self, client_id: str) -> int:
         """获取剩余可用请求数"""
         now = time.time()
-        self.requests[client_id] = [
-            timestamp for timestamp in self.requests[client_id]
-            if now - timestamp < self.config.window_seconds
-        ]
-        return max(0, self.config.max_requests - len(self.requests[client_id]))
+        cutoff = now - self.config.window_seconds
+        dq = self.requests[client_id]
+        while dq and dq[0] <= cutoff:
+            dq.popleft()
+        return max(0, self.config.max_requests - len(dq))
     
     def get_reset_time(self, client_id: str) -> int:
         """获取限制重置时间（秒）"""
-        if not self.requests[client_id]:
+        dq = self.requests[client_id]
+        if not dq:
             return 0
-        
-        oldest = min(self.requests[client_id])
-        reset_time = oldest + self.config.window_seconds - time.time()
+
+        # deque 天然有序，dq[0] 即最早的时间戳
+        reset_time = dq[0] + self.config.window_seconds - time.time()
         return max(0, int(reset_time))
 
 

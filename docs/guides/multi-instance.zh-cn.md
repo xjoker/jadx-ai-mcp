@@ -64,13 +64,48 @@ set_default_jadx_instance(name="dev-build")
 大多数工具支持 `instance_id` 参数：
 
 ```python
-# 查询特定实例
+# 通过名称指定实例
 get_class_source(class_name="com.example.Main", instance_id="app-v2")
 
 # 跨实例对比
 source_v1 = get_class_source(class_name="com.example.Main", instance_id="app-v1")
 source_v2 = get_class_source(class_name="com.example.Main", instance_id="app-v2")
 ```
+
+### 模糊匹配（v6.1.6+）
+
+`instance_id` 支持模糊匹配 — 不需要精确的实例名称：
+
+```python
+# 通过 APK 包名匹配
+get_class_source(class_name="...", instance_id="com.xingin.xhs")
+
+# 通过部分包名匹配
+get_class_source(class_name="...", instance_id="xingin")
+
+# 通过应用显示名称匹配
+get_class_source(class_name="...", instance_id="小红书")
+
+# 通过部分实例名匹配
+get_class_source(class_name="...", instance_id="xhs")
+```
+
+**匹配优先级：** 精确名称 → 精确包名 → 精确 JADX 名 → 精确应用名 → 部分匹配 → 文件名 → 版本号。
+
+> **注意：** 模糊匹配仅返回已连接的实例。每个实例加载不同的应用 — 不存在跨实例自动切换。
+
+---
+
+## 实例状态
+
+| 状态 | 说明 |
+|:-----|:-----|
+| `connected` | 健康，可接收请求 |
+| `pending` | 已注册但尚未连接（启动中） |
+| `disconnected` | 曾连接但已失联 |
+| `degraded` | 已连接但内存不足或检测到 OOM |
+| `auth_failed` | JADX 插件返回 401 — 检查 token 配置 |
+| `error` | 其他错误状态 |
 
 ---
 

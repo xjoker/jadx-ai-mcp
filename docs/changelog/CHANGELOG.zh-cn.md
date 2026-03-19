@@ -12,6 +12,66 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.1.6] - 2026-03-19
+
+### 🐛 Bug 修复
+
+**实例管理**
+- 修复：`register_instance_tools(mcp)` 已导入但从未调用 — 7 个实例管理工具（`list_jadx_instances` 等）在运行时不可用。这是 AI 将实例查询误路由到 `get_file_info` 的根本原因。
+- 移除跨实例 fallback：每个 JADX 实例加载不同的 APK/JAR，静默切换到其他实例会返回错误应用的数据。现在改为返回明确的错误提示。
+- 修复 `auth_failed` 状态振荡：401 错误的实例不再在每次健康检查时在 `auth_failed` 和 `connected` 之间来回切换。
+- 修复：已连接实例的 token 被撤销后，现在正确转换为 `auth_failed`（之前因 `/health` 不需要认证而保持 `connected`）。
+
+**并发与缓存**
+- `handleClassSource` 和 `handleBatchClassSource` 现在在调用 `cls.getCode()` 前获取 write lock — JADX 内部状态对并发反编译不是线程安全的。
+- 所有重命名操作（`rename_class/method/field/package`）现在调用 `ClassCacheManager.invalidateCode()` 防止返回过期的反编译代码。
+- `JadxSearchLock.tryAcquire()`：tracking 状态仅在成功获取锁后重置，而非之前 — 防止 tracking 永久丢失。
+- 重命名操作现在仅清除受影响实例的 response cache，而非所有实例。
+- 批量 `handleBatchClassSource`：增加 `else` 分支确保 `found` 字段始终存在。
+- `handleBatchClassSource`：`chunk` 参数增加 `NumberFormatException` 捕获。
+- `ResponseCache.get()`：TTL 过期时将 `del` 改为 `pop(key, None)` 避免并发 `KeyError`。
+
+**实例连接**
+- 消除启动竞争条件：health monitor 不再等待 2 秒才执行首次检查。启动后立即调用的 MCP 工具现在可以正常工作。
+- On-demand probe：访问 pending/disconnected 实例时，先执行 3 秒快速探测。如果 JADX 可达，立即提升为 `connected`。
+- `get_from_jadx`：`ConnectError` 和 `ConnectTimeout` 现在立即将实例标记为 `disconnected`（之前需等待最多 30 秒的 health monitor）。
+- Health monitor：pending 实例的健康统计不再重复计入 `unhealthy_count`。
+- APK 切换检测：health monitor 现在同时检查 `apk_package` 和 `version_name` 变化，变化时清除 response cache。
+
+### 🚀 改进
+
+**模糊实例路由**（新功能）
+- `instance_id` 参数现在支持模糊匹配：实例名、APK 包名（`com.xingin.xhs`）、JADX 实例名（`xhs-v835`）、应用显示名称、文件名、版本号。
+- 匹配优先级：精确名称 → 精确包名 → 精确 JADX 名 → 精确应用名 → 部分匹配 → 文件名 → 版本号。
+- 示例：`get_class_source(class_name="...", instance_id="xhs")` 自动路由到加载了小红书的实例。
+
+**认证错误明确化**（新功能）
+- 新增 `auth_failed` 实例状态（区别于通用 `error`），附带可操作的错误消息。
+- On-demand probe 和 health monitor 均区分 401 和连接问题。
+- 状态页面：`auth_failed` 实例显示红色徽章和警告横幅。
+
+**APK 显示名称**（新功能）
+- `/apk-info` 端点现在从 AndroidManifest.xml 的 `<application android:label="...">` 提取 `app_name`。
+- 用于模糊实例匹配，支持按应用显示名称路由。
+
+**工具描述优化**
+- `list_jadx_instances`：添加使用场景指引和模糊匹配提示。
+- `get_file_info`：明确需要已连接实例，不是用于查询实例状态。
+- `get_decompile_status`：明确返回运行时指标，非文件元数据。
+- `search_classes_by_keyword`：标记为"主力搜索工具"，附各 `search_in` 值的速度指南。
+- `search_method_by_name`：添加"建议改用 search_classes_by_keyword"提示。
+
+### ⚡ 性能优化
+
+- **ReadWriteLock**：元数据读取操作不再互相阻塞，仅反编译需要排他写锁。
+- **反编译代码缓存**：`ClassCacheManager.codeCache`（LRU，200 条目，10 分钟 TTL）。
+- **MCP 响应缓存**：Python 侧 `ResponseCache`（LRU，100 条目，60 秒 TTL）。
+- **并行健康检查**：`asyncio.gather()` 并发检查所有实例。
+- **Strings 缓存**：`ResourceCacheManager.parsedStringsCache` 缓存解析后的 `strings.xml`。
+- **共享 HTTP 客户端**：`InstanceRegistry` 使用连接池化的 `httpx.AsyncClient`。
+
+---
+
 ## [6.1.5] - 2026-03-18
 
 ### 🚀 改进

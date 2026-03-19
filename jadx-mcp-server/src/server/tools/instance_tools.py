@@ -26,13 +26,32 @@ def register_instance_tools(mcp):
     @mcp.tool()
     async def list_jadx_instances() -> dict:
         """
-        List all connected JADX instances.
-        
+        List all registered JADX instances and their current status.
+
+        USE THIS TOOL WHEN the user asks:
+        - "which instances are open/running/available"
+        - "show me all JADX instances"
+        - "what JADX connections do I have"
+        - any question about instance status, count, or availability
+
+        This tool does NOT require a connected instance — it reads from the
+        local registry and always succeeds.
+
+        TIP: When multiple instances are running, you can pass instance_id to
+        other tools using any of: instance name, APK package name (e.g.,
+        "com.xingin.xhs"), or partial match (e.g., "xhs"). The system will
+        fuzzy-match to the correct connected instance.
+
         Returns instances visible to the current user:
         - Shared/static instances (from config file)
         - Dynamic instances owned by the current user
         - Admin users can see ALL instances
-        
+
+        Each instance includes: name, host, port, url, status
+        (connected/pending/disconnected/degraded/error/auth_failed),
+        is_default, owner, is_dynamic, apk_info, last_health_check,
+        error_message (non-empty when status is error or auth_failed).
+
         Returns:
             {
                 "instances": [

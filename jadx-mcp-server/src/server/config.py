@@ -27,6 +27,33 @@ JADX_HTTP_BASE = f"http://{JADX_HOST}:{JADX_PORT}"
 AUTH_TOKEN: Optional[str] = None
 REQUEST_TIMEOUT: int = 120  # Default timeout in seconds (configurable)
 
+# Tiered timeout constants (seconds)
+TIMEOUT_HEALTH: int = 10      # Health/ping endpoints
+TIMEOUT_METADATA: int = 30    # Lightweight metadata (class-info, methods-of-class, fields-of-class, etc.)
+TIMEOUT_CODE_READ: int = 120  # Heavy code retrieval (class-source, smali, batch-class-source, etc.)
+
+# Endpoints classified by timeout tier
+_METADATA_ENDPOINTS = frozenset({
+    "class-info", "methods-of-class", "fields-of-class", "all-classes",
+    "main-application-classes-names", "search-classes-by-keyword",
+    "search-native-methods", "file-info", "package-classes",
+    "decompile-status", "apk-info", "current-class", "selected-text",
+    "batch-xrefs", "jar-manifest", "jar-services", "jar-entry-points",
+    "jar-dependencies", "rename-class", "rename-method", "rename-field",
+    "rename-package", "get-method-signature",
+})
+_HEALTH_ENDPOINTS = frozenset({"health", "warmup"})
+
+
+def _infer_timeout(endpoint: str) -> int:
+    """Infer the appropriate timeout for a JADX endpoint."""
+    ep = endpoint.strip("/")
+    if ep in _HEALTH_ENDPOINTS:
+        return TIMEOUT_HEALTH
+    if ep in _METADATA_ENDPOINTS:
+        return TIMEOUT_METADATA
+    return TIMEOUT_CODE_READ
+
 
 # HTTP Connection Pool Manager
 class HttpClientManager:
@@ -47,6 +74,8 @@ class HttpClientManager:
     @classmethod
     async def get_client(cls) -> httpx.AsyncClient:
         """Get or create the shared async HTTP client (thread-safe)."""
+        if cls._client is not None and not cls._client.is_closed:
+            return cls._client
         async with cls._get_lock():
             if cls._client is None or cls._client.is_closed:
                 cls._client = httpx.AsyncClient(
@@ -130,9 +159,10 @@ def _get_auth_headers() -> Dict[str, str]:
 
 
 async def get_from_jadx(
-    endpoint: str, 
+    endpoint: str,
     params: Dict[str, Any] = {},
-    instance_id: Optional[str] = None
+    instance_id: Optional[str] = None,
+    timeout: Optional[int] = None
 ) -> Union[str, Dict[str, Any]]:
     """
     Generic async helper to request data from the JADX plugin.
@@ -141,6 +171,7 @@ async def get_from_jadx(
         endpoint: API endpoint path (e.g., "class-source", "manifest")
         params: Query parameters dictionary for the request
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
+        timeout: Optional per-request timeout in seconds. Overrides the client default.
 
     Returns:
         Union[str, Dict[str, Any]]: Parsed JSON response or error dictionary
@@ -166,17 +197,23 @@ async def get_from_jadx(
         if instance_id:
             instance_obj = InstanceRegistry.get_instance(instance_id)
             if not instance_obj:
-                return make_error(ErrorCode.INSTANCE_NOT_FOUND, f"Instance '{instance_id}' not found")
+                # Fuzzy match: try APK package name, file name, or partial instance name
+                instance_obj = InstanceRegistry.find_instance_by_apk(instance_id)
+                if instance_obj:
+                    logger.info(f"Fuzzy matched instance_id '{instance_id}' -> '{instance_obj.name}'")
+                else:
+                    return make_error(
+                        ErrorCode.INSTANCE_NOT_FOUND,
+                        f"Instance '{instance_id}' not found",
+                        suggestion="Use 'list_jadx_instances' to see available instances. "
+                                   "You can specify instance by name, APK package, or partial match.",
+                    )
             base_url = instance_obj.url
         else:
-            # Use default instance if available, with fallback
+            # Use default instance — no fallback to other instances,
+            # because each instance loads a different APK/JAR.
+            # Silently switching would return data from the wrong app.
             instance_obj = InstanceRegistry.get_default()
-            if instance_obj and instance_obj.status == "disconnected":
-                # Default is disconnected — try the first connected instance
-                fallback = InstanceRegistry.get_first_connected()
-                if fallback:
-                    logger.info(f"Default instance '{instance_obj.name}' disconnected, falling back to '{fallback.name}'")
-                    instance_obj = fallback
             if instance_obj:
                 base_url = instance_obj.url
 
@@ -189,17 +226,68 @@ async def get_from_jadx(
         # InstanceRegistry not available, use legacy single-instance mode
         logger.warning(f"InstanceRegistry import failed, using legacy mode: {e}")
 
-    # Pre-check: skip HTTP request if instance is known to be unavailable
+    # Pre-check: if instance is pending/disconnected, attempt a quick probe before failing.
+    # This eliminates the startup race where tools are called before the health monitor
+    # has had time to promote the instance from "pending" to "connected".
     if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status in ("disconnected", "pending"):
         instance_name = getattr(instance_obj, 'name', instance_id or 'default')
+        try:
+            from .instance_registry import InstanceRegistry
+            apk_info = await InstanceRegistry._fetch_apk_info(
+                instance_obj.host, instance_obj.port, instance_obj.token,
+                timeout=3.0  # quick probe, don't block long
+            )
+            # Instance is actually reachable — promote it now
+            InstanceRegistry.update_instance_status(
+                name=instance_obj.name,
+                status="connected",
+                apk_info=apk_info,
+            )
+            logger.info(f"Instance '{instance_name}' promoted to connected via on-demand probe")
+            base_url = instance_obj.url
+        except Exception as probe_err:
+            # Distinguish auth failures from connectivity issues
+            import httpx as _httpx
+            if isinstance(probe_err, _httpx.HTTPStatusError) and probe_err.response.status_code == 401:
+                return make_error(
+                    ErrorCode.CONNECTION_FAILED,
+                    f"JADX instance '{instance_name}' authentication failed (401 Unauthorized)",
+                    status="auth_failed",
+                    detail="The JADX plugin rejected the request: token is missing or incorrect.",
+                    suggestion="Set 'jadx_token' in your config TOML under [defaults], "
+                               "or pass --auth-token on the CLI. "
+                               "The token must match the JADX plugin's JADX_MCP_AUTH_TOKEN.",
+                )
+            return make_error(
+                ErrorCode.CONNECTION_FAILED,
+                f"JADX instance '{instance_name}' is {instance_obj.status}",
+                status=instance_obj.status,
+                detail=f"The JADX instance is currently {instance_obj.status} and cannot process requests. "
+                       "This may happen after a 'Reset Code Cache' operation or if JADX was closed.",
+                suggestion="Use 'list_instances' tool to check instance status. "
+                           "If the instance was restarted, wait a few seconds and try again.",
+            )
+
+    # Pre-check: instance in error/auth_failed state — show stored error message
+    if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status in ("error", "auth_failed"):
+        instance_name = getattr(instance_obj, 'name', instance_id or 'default')
+        error_msg = getattr(instance_obj, 'error_message', '') or "Unknown error"
+        if instance_obj.status == "auth_failed":
+            return make_error(
+                ErrorCode.CONNECTION_FAILED,
+                f"JADX instance '{instance_name}' authentication failed (401 Unauthorized)",
+                status="auth_failed",
+                detail=error_msg,
+                suggestion="Set 'jadx_token' in your config TOML under [defaults], "
+                           "or pass --auth-token on the CLI. "
+                           "Then use 'health_check_jadx_instances' to retry.",
+            )
         return make_error(
             ErrorCode.CONNECTION_FAILED,
-            f"JADX instance '{instance_name}' is {instance_obj.status}",
-            status=instance_obj.status,
-            detail=f"The JADX instance is currently {instance_obj.status} and cannot process requests. "
-                   "This may happen after a 'Reset Code Cache' operation or if JADX was closed.",
-            suggestion="Use 'list_instances' tool to check instance status. "
-                       "If the instance was restarted, wait a few seconds and try again.",
+            f"JADX instance '{instance_name}' is in error state",
+            status="error",
+            detail=error_msg,
+            suggestion="Fix the configuration issue and restart, or use 'health_check_jadx_instances' to retry.",
         )
 
     # Pre-check: warn AI client if instance is in degraded state (OOM or critical memory)
@@ -223,20 +311,48 @@ async def get_from_jadx(
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
 
-    logger.info(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
-    
+    # Response cache: check for cached result on deterministic endpoints
+    from .response_cache import (
+        CACHEABLE_ENDPOINTS, _MUTATING_ENDPOINTS, _make_cache_key, get_response_cache,
+    )
+    ep_stripped = endpoint.strip("/")
+    cache = get_response_cache()
+
+    # Mutating endpoints invalidate cache for the affected instance only
+    if ep_stripped in _MUTATING_ENDPOINTS:
+        effective_id = (instance_obj.name if instance_obj else None) or instance_id or "default"
+        cache.invalidate_instance(effective_id)
+
+    # Check cache for cacheable endpoints
+    cache_key = None
+    if ep_stripped in CACHEABLE_ENDPOINTS:
+        cache_key = _make_cache_key(instance_id, ep_stripped, params)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    logger.debug(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
+
     try:
         client = await HttpClientManager.get_client()
-        resp = await client.get(url, params=params, headers=headers)
+        effective_timeout = timeout if timeout is not None else _infer_timeout(endpoint)
+        req_timeout = httpx.Timeout(effective_timeout)
+        resp = await client.get(url, params=params, headers=headers, timeout=req_timeout)
         resp.raise_for_status()
-        
-        logger.info(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")
+
+        logger.debug(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")
 
         # Try to parse JSON, fallback to text if not valid JSON
         try:
-            return resp.json()
+            result = resp.json()
         except json.JSONDecodeError:
-            return {"response": resp.text}
+            result = {"response": resp.text}
+
+        # Cache successful non-error responses for cacheable endpoints
+        if cache_key and isinstance(result, dict) and "error" not in result:
+            cache.put(cache_key, result)
+
+        return result
 
     except httpx.HTTPStatusError as e:
         status_code = e.response.status_code
@@ -293,6 +409,16 @@ async def get_from_jadx(
 
     except httpx.ConnectError as e:
         logger.error(f"JADX connection refused: {e}")
+        # Mark instance disconnected immediately (don't wait for health monitor)
+        if instance_obj:
+            try:
+                from .instance_registry import InstanceRegistry
+                InstanceRegistry.update_instance_status(
+                    name=instance_obj.name, status="disconnected",
+                    error_message=f"Connection refused: {type(e).__name__}",
+                )
+            except Exception:
+                pass
         return make_error(
             ErrorCode.CONNECTION_FAILED,
             "Connection refused: JADX instance is not reachable",
@@ -306,6 +432,16 @@ async def get_from_jadx(
 
     except httpx.ConnectTimeout as e:
         logger.error(f"JADX connection timeout: {e}")
+        # Mark instance disconnected immediately
+        if instance_obj:
+            try:
+                from .instance_registry import InstanceRegistry
+                InstanceRegistry.update_instance_status(
+                    name=instance_obj.name, status="disconnected",
+                    error_message=f"Connection timeout: {type(e).__name__}",
+                )
+            except Exception:
+                pass
         return make_error(
             ErrorCode.TIMEOUT,
             "Connection timeout: JADX instance did not respond",

@@ -201,8 +201,12 @@ public class ResourceRoutes {
                 return;
             }
             
-            // Parse strings.xml into key-value map
-            Map<String, String> strings = parseStringsXml(ResourceCacheManager.getContent(stringsFile));
+            // Parse strings.xml into key-value map (cached after first parse per locale)
+            Map<String, String> strings = ResourceCacheManager.getParsedStrings(targetFile);
+            if (strings == null) {
+                strings = parseStringsXml(ResourceCacheManager.getContent(stringsFile));
+                ResourceCacheManager.putParsedStrings(targetFile, strings);
+            }
             List<String> allKeys = new ArrayList<>(strings.keySet());
             java.util.Collections.sort(allKeys);
             
