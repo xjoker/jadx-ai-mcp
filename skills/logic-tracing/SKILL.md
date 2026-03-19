@@ -23,8 +23,8 @@ Understand code execution paths, method call chains, and data flow in decompiled
 | `get_xrefs_to_method` | Find all callers | Reverse tracing - "where is this called?" |
 | `get_method_callees` | Find all callees | Forward tracing - "what does this call?" |
 | `get_class_source` | Read full source | Understand implementation details |
-| `search_method` | Find methods | Locate entry points by name pattern |
-| `search_class` | Find classes | Locate components by name |
+| `search_method_by_name` | Find methods | Locate entry points by name pattern |
+| `search_classes_by_keyword` | Find classes | Locate components by name |
 
 ## Tracing Patterns
 
@@ -91,14 +91,14 @@ Follow how data moves through the application.
 
 ```python
 # Find entry points by component type
-search_class("Activity")    # UI entry points
-search_class("Service")     # Background entry points
-search_class("Receiver")    # Broadcast entry points
+search_classes_by_keyword(keyword="Activity")    # UI entry points
+search_classes_by_keyword(keyword="Service")     # Background entry points
+search_classes_by_keyword(keyword="Receiver")    # Broadcast entry points
 
 # Find by functionality
-search_method("login")
-search_method("encrypt")
-search_method("sendRequest")
+search_method_by_name(method_name="login")
+search_method_by_name(method_name="encrypt")
+search_method_by_name(method_name="sendRequest")
 ```
 
 ### Step 2: Read Source Code
@@ -161,8 +161,8 @@ Build a clear representation:
 | Find method callers | `get_xrefs_to_method` | Who calls `sendSMS()`? |
 | Find method callees | `get_method_callees` | What does `processPayment()` call? |
 | Read implementation | `get_class_source` | Full source of AuthManager |
-| Find by name | `search_method` | Methods containing "encrypt" |
-| Find components | `search_class` | Classes ending in "Activity" |
+| Find by name | `search_method_by_name` | Methods containing "encrypt" |
+| Find components | `search_classes_by_keyword` | Classes ending in "Activity" |
 
 ## Best Practices
 

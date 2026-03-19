@@ -7,18 +7,16 @@ description: Use this skill when the user wants to rename, deobfuscate, or refac
 
 Rename and deobfuscate Java code using JADX MCP tools to improve readability and understanding.
 
-## Unified Rename Interface
+## Rename Tools
 
-All rename operations use the same tool with a `type` parameter:
+Each identifier type has its own dedicated rename tool:
 
-```
-mcp__jadx__rename_identifier(
-    original_name: str,      # Current name (e.g., "a", "com.example.a")
-    new_name: str,           # New meaningful name
-    type: str,               # "package" | "class" | "method" | "field"
-    instance_name: str       # JADX instance (default: "local")
-)
-```
+| Tool | Purpose | Key Parameters |
+|:-----|:--------|:---------------|
+| `rename_package` | Rename a package | `original_name`, `new_name` |
+| `rename_class` | Rename a class | `original_name`, `new_name` |
+| `rename_method` | Rename a method | `original_name`, `new_name` |
+| `rename_field` | Rename a field | `original_name`, `new_name` |
 
 ## Naming Conventions
 
@@ -53,8 +51,8 @@ Process in this order to maintain valid references:
 ### Step 1: Analyze Obfuscated Code
 
 ```
-mcp__jadx__search_class(query="a")
-mcp__jadx__get_class_source(class_name="com.example.a")
+search_classes_by_keyword(keyword="a")
+get_class_source(class_name="com.example.a")
 ```
 
 Review the code structure and identify patterns.
@@ -70,55 +68,39 @@ Analyze:
 ### Step 3: Rename Packages First
 
 ```
-mcp__jadx__rename_identifier(
-    original_name="com.a.b",
-    new_name="com.example.network",
-    type="package"
-)
+rename_package(original_name="com.a.b", new_name="com.example.network")
 ```
 
 ### Step 4: Rename Classes
 
 ```
-mcp__jadx__rename_identifier(
-    original_name="com.example.network.a",
-    new_name="HttpClient",
-    type="class"
-)
+rename_class(original_name="com.example.network.a", new_name="HttpClient")
 ```
 
 ### Step 5: Rename Methods and Fields
 
 ```
-mcp__jadx__rename_identifier(
-    original_name="a",
-    new_name="sendRequest",
-    type="method"
-)
+rename_method(original_name="a", new_name="sendRequest")
 
-mcp__jadx__rename_identifier(
-    original_name="b",
-    new_name="responseData",
-    type="field"
-)
+rename_field(original_name="b", new_name="responseData")
 ```
 
 ### Step 6: Verify Changes
 
 ```
-mcp__jadx__get_class_source(class_name="com.example.network.HttpClient")
+get_class_source(class_name="com.example.network.HttpClient")
 ```
 
 ## Quick Reference
 
-| Task | Tool | Parameters |
-|:-----|:-----|:-----------|
-| Find classes | `search_class` | `query` |
-| View source | `get_class_source` | `class_name` |
-| Rename package | `rename_identifier` | `type="package"` |
-| Rename class | `rename_identifier` | `type="class"` |
-| Rename method | `rename_identifier` | `type="method"` |
-| Rename field | `rename_identifier` | `type="field"` |
+| Task | Tool |
+|:-----|:-----|
+| Find classes | `search_classes_by_keyword` |
+| View source | `get_class_source` |
+| Rename package | `rename_package` |
+| Rename class | `rename_class` |
+| Rename method | `rename_method` |
+| Rename field | `rename_field` |
 
 ## Common Pitfalls
 

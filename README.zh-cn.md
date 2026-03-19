@@ -18,8 +18,6 @@
 
 ---
 
-> 版本说明：仓库源码里的版本号是开发占位值。正式发布时由 GitHub Actions 在构建阶段把版本写入产物、`pom.xml`、Java Banner 和 Python Server Banner。
-
 ## 🌟 本 Fork 的独特优势
 
 相比原版，本 Fork 提供**重大功能增强**：
@@ -36,21 +34,112 @@
 
 ---
 
-## ⚡ 30 秒快速开始
+## ⚡ 快速开始
+
+> **前置条件**：已安装并运行 [Docker](https://docs.docker.com/get-docker/)。
+
+**第 1 步：启动服务**
 
 ```bash
-# 一键启动（图形界面 + AI）
 docker run -d --name jadx -p 6080:6080 -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
-
-# 在浏览器中打开 JADX 图形界面
-open http://localhost:6080
 ```
 
-**完成！** 将你的 APK 或 JAR 放入 `~/apks/`，在 JADX 中打开，让 AI 帮你分析。
+验证服务是否正常：
+
+```bash
+curl http://localhost:8651/health
+# 预期输出: {"status": "ok", ...}
+```
+
+**第 2 步：加载文件**
+
+浏览器打开 `http://localhost:6080`，将 APK/JAR 放入 `~/apks/` 并在 JADX 中打开。
 
 > 💡 **自动加载**：将文件命名为 `target.apk`、`target.jar`、`target.aar` 或 `target.dex`，JADX 启动时自动加载。
+>
+> ⚠️ AI 连接前**必须**先在 JADX 中加载文件。插件只有在加载文件后才会初始化。
 
-> ⚠️ **重要**：AI 连接前必须先在 JADX 中加载文件（APK/JAR/AAR/DEX）。插件只有在加载文件后才会初始化，未加载时 MCP Server 无法连接到 JADX。
+**第 3 步：连接 AI 客户端**
+
+默认 MCP 认证 Token 为 `admin-secret-token`。
+
+<details open>
+<summary><b>Claude Code</b>（一行命令）</summary>
+
+```bash
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization:Bearer admin-secret-token"
+```
+
+</details>
+
+<details>
+<summary><b>OpenAI Codex CLI</b></summary>
+
+添加到 `~/.codex/config.toml`：
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+http_headers = { Authorization = "Bearer admin-secret-token" }
+```
+
+验证：`codex mcp list`
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+添加到[配置文件](docs/guides/ai-clients.zh-cn.md#claude-desktop-setup)：
+
+```json
+{
+  "mcpServers": {
+    "jadx": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer admin-secret-token"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Cursor / 其他 MCP 客户端</b></summary>
+
+添加到 `.cursor/mcp.json` 或你的客户端 MCP 配置文件：
+
+```json
+{
+  "mcpServers": {
+    "jadx": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer admin-secret-token"
+      }
+    }
+  }
+}
+```
+
+详见 [AI 客户端配置](docs/guides/ai-clients.zh-cn.md)。
+
+</details>
+
+> ⚠️ **默认凭据** — 生产环境务必更换！详见 [安全策略](docs/security/security.zh-cn.md)。
+>
+> | Token | 默认值 |
+> |:------|:------|
+> | MCP 管理 Token | `admin-secret-token` |
+> | JADX 插件 Token | `jadx-plugin-secret-token` |
+>
+> 通过环境变量或 `jadx-config.toml` 覆盖。
 
 ---
 
@@ -125,3 +214,7 @@ npx skills add xjoker/jadx-ai-mcp --skill security-audit
 ## 📜 许可证
 
 Apache 2.0 - 见 [LICENSE](LICENSE)
+
+---
+
+> **说明**：仓库源码里的版本号是开发占位值。正式发布时由 GitHub Actions 在构建阶段把版本写入产物、`pom.xml`、Java Banner 和 Python Server Banner。

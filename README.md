@@ -19,8 +19,6 @@
 
 ---
 
-> Versioning note: source files keep development placeholder versions. GitHub Actions injects the release version into build artifacts, `pom.xml`, the Java banner, and the Python server banner during release builds.
-
 ## 🌟 What Makes This Fork Different?
 
 This fork provides **major enhancements** over the original project:
@@ -37,21 +35,112 @@ This fork provides **major enhancements** over the original project:
 
 ---
 
-## ⚡ 30-Second Quick Start
+## ⚡ Quick Start
+
+> **Prerequisites**: [Docker](https://docs.docker.com/get-docker/) installed and running.
+
+**Step 1: Start the server**
 
 ```bash
-# One command to start (GUI + AI)
 docker run -d --name jadx -p 6080:6080 -p 8651:8651 -v ~/apks:/apks xjoker/jadx-ai-mcp:latest
-
-# Open JADX GUI in browser
-open http://localhost:6080
 ```
 
-**That's it!** Put your APK or JAR in `~/apks/`, open it in JADX, and let AI analyze it.
+Verify the server is healthy:
 
-> 💡 **Auto-load**: Name your file `target.apk`, `target.jar`, `target.aar`, or `target.dex`. JADX loads it automatically on startup.
+```bash
+curl http://localhost:8651/health
+# Expected: {"status": "ok", ...}
+```
 
-> ⚠️ **Important**: You MUST load a file (APK/JAR/AAR/DEX) in JADX before AI can connect. The plugin only initializes after loading a file—MCP Server cannot connect to JADX until then.
+**Step 2: Load a file**
+
+Open `http://localhost:6080` in your browser. Put your APK/JAR in `~/apks/` and open it in JADX.
+
+> 💡 **Auto-load**: Name your file `target.apk`, `target.jar`, `target.aar`, or `target.dex` — JADX loads it automatically on startup.
+>
+> ⚠️ You **MUST** load a file in JADX before AI can connect. The plugin only initializes after loading a file.
+
+**Step 3: Connect your AI client**
+
+The default MCP authentication token is `admin-secret-token`.
+
+<details open>
+<summary><b>Claude Code</b> (one command)</summary>
+
+```bash
+claude mcp add --transport http jadx http://localhost:8651/mcp \
+  --header "Authorization:Bearer admin-secret-token"
+```
+
+</details>
+
+<details>
+<summary><b>OpenAI Codex CLI</b></summary>
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.jadx]
+url = "http://localhost:8651/mcp"
+http_headers = { Authorization = "Bearer admin-secret-token" }
+```
+
+Verify: `codex mcp list`
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+Add to your [config file](docs/guides/ai-clients.md#claude-desktop-setup):
+
+```json
+{
+  "mcpServers": {
+    "jadx": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer admin-secret-token"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Cursor / Other MCP Clients</b></summary>
+
+Add to `.cursor/mcp.json` or your client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "jadx": {
+      "type": "http",
+      "url": "http://localhost:8651/mcp",
+      "headers": {
+        "Authorization": "Bearer admin-secret-token"
+      }
+    }
+  }
+}
+```
+
+See [AI Client Configuration](docs/guides/ai-clients.md) for full details.
+
+</details>
+
+> ⚠️ **Default Credentials** — change before production use! See [Security Policy](docs/security/security.md).
+>
+> | Token | Default Value |
+> |:------|:-------------|
+> | MCP Admin Token | `admin-secret-token` |
+> | JADX Plugin Token | `jadx-plugin-secret-token` |
+>
+> Override via environment variables or `jadx-config.toml`.
 
 ---
 
@@ -126,3 +215,7 @@ npx skills add xjoker/jadx-ai-mcp --skill security-audit
 ## 📜 License
 
 Apache 2.0 - See [LICENSE](LICENSE)
+
+---
+
+> **Note**: Source files keep development placeholder versions. GitHub Actions injects the release version into build artifacts, `pom.xml`, the Java banner, and the Python server banner during release builds.

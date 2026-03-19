@@ -20,19 +20,19 @@ Systematic security audit workflow for Android APKs using JADX-AI-MCP tools.
 
 | Category | Focus Areas | MCP Tools |
 |:---------|:------------|:----------|
-| Manifest | Exported components, permissions, backup flags | `get_manifest`, `search_code` |
-| Secrets | API keys, passwords, tokens, credentials | `search_code`, `get_field` |
-| Network | HTTP usage, certificate pinning, SSL/TLS | `search_code`, `get_method` |
-| Crypto | Weak algorithms, hardcoded keys, insecure random | `search_code`, `get_class` |
-| Injection | SQL, command, path traversal, intent redirect | `search_code`, `get_method` |
-| Storage | SharedPrefs, SQLite, file permissions | `search_code`, `get_class` |
+| Manifest | Exported components, permissions, backup flags | `get_android_manifest`, `get_strings` |
+| Secrets | API keys, passwords, tokens, credentials | `get_strings`, `get_fields_of_class` |
+| Network | HTTP usage, certificate pinning, SSL/TLS | `get_class_source`, `get_method_by_name` |
+| Crypto | Weak algorithms, hardcoded keys, insecure random | `get_class_source`, `search_classes_by_keyword` |
+| Injection | SQL, command, path traversal, intent redirect | `get_class_source`, `get_method_by_name` |
+| Storage | SharedPrefs, SQLite, file permissions | `get_class_source`, `search_classes_by_keyword` |
 
 ## Audit Workflow
 
 ### Step 1: Manifest Analysis
 
 ```
-1. Get AndroidManifest.xml using get_manifest tool
+1. Get AndroidManifest.xml using get_android_manifest tool
 2. Check for:
    - android:debuggable="true"
    - android:allowBackup="true"
@@ -150,7 +150,7 @@ search_code: "openOrCreateDatabase"
 ## Common Pitfalls
 
 - **False positives**: Verify findings in decompiled code context before reporting
-- **Obfuscated code**: Use `get_class` to understand obfuscated class relationships
+- **Obfuscated code**: Use `get_class_source` to understand obfuscated class relationships
 - **Native libraries**: Note that .so files require separate analysis
 - **Third-party SDKs**: Distinguish app code from SDK vulnerabilities
 - **ProGuard mapping**: Check if mapping file available for better analysis

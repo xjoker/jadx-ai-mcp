@@ -28,43 +28,42 @@ Shows decompilation progress and whether background processing is complete.
 ### Step 3: Explore Package Structure
 
 ```
-list_packages
+get_all_classes
 ```
 
-Lists all packages in the loaded file for navigation.
+Lists all classes in the loaded file for navigation.
 
 ## APK vs JAR Tool Selection
 
 | Analysis Target | Tool | Use Case |
 |:----------------|:-----|:---------|
-| Android app structure | `list_packages` | Browse package hierarchy |
-| Class discovery | `search_class` | Find classes by name pattern |
-| Method discovery | `search_method` | Find methods across classes |
+| All classes | `get_all_classes` | Browse full class list |
+| Class discovery | `search_classes_by_keyword` | Find classes by name pattern |
+| Method discovery | `search_method_by_name` | Find methods across classes |
 | Code inspection | `get_class_source` | View decompiled Java source |
-| String analysis | `search_code` | Find hardcoded strings/patterns |
-| Resource files | `list_resources` | APK resources (layouts, strings) |
-| Manifest | `get_manifest` | Android manifest analysis |
+| String analysis | `get_strings` | Find hardcoded strings |
+| Resource files | `get_all_resource_file_names` | APK resources (layouts, strings) |
+| Manifest | `get_android_manifest` | Android manifest analysis |
 
 ## Quick Reference
 
 | Task | Tool | Key Parameters |
 |:-----|:-----|:---------------|
-| Find class by name | `search_class` | `query` (supports wildcards) |
+| Find class by name | `search_classes_by_keyword` | `keyword` |
 | Get class source | `get_class_source` | `class_name` (full qualified) |
-| Search in code | `search_code` | `query`, `case_sensitive` |
-| List all methods | `get_class_methods` | `class_name` |
-| Get method details | `get_method_source` | `class_name`, `method_name` |
-| Find field usages | `search_field` | `query` |
-| List resources | `list_resources` | `path` (optional filter) |
-| Get resource content | `get_resource` | `path` |
+| List all methods | `get_methods_of_class` | `class_name` |
+| Get method details | `get_method_by_name` | `class_name`, `method_name` |
+| List fields | `get_fields_of_class` | `class_name` |
+| List resources | `get_all_resource_file_names` | |
+| Get resource content | `get_resource_file` | `file_name` |
 
 ## Batch Operations Best Practices
 
 ### 1. Use Pagination for Large Results
 
 ```
-search_class(query="Activity", limit=50, offset=0)
-search_class(query="Activity", limit=50, offset=50)
+search_classes_by_keyword(keyword="Activity", limit=50, offset=0)
+search_classes_by_keyword(keyword="Activity", limit=50, offset=50)
 ```
 
 ### 2. Check Cache Before Repeated Calls
@@ -86,16 +85,13 @@ Use search first, then fetch selectively:
 
 ```
 # Efficient
-search_class(query="*Activity")  # Get list first
+search_classes_by_keyword(keyword="Activity")  # Get list first
 get_class_source("com.app.MainActivity")  # Fetch only what you need
 ```
 
 ### 4. Narrow Search Scope
 
-| Approach | Performance |
-|:---------|:------------|
-| `search_code(query="password")` | Scans entire codebase |
-| `search_code(query="password", package="com.app.auth")` | Scans only auth package |
+Use specific class or method search instead of broad queries when possible.
 
 ## Performance Optimization Tips
 
@@ -103,15 +99,15 @@ get_class_source("com.app.MainActivity")  # Fetch only what you need
 
 1. **Use `limit` parameter** - Most search tools support pagination
 2. **Filter by package** - Narrow scope when possible
-3. **Request specific data** - Use `get_method_source` instead of full class when only one method needed
+3. **Request specific data** - Use `get_method_by_name` instead of full class when only one method needed
 
 ### Timeout Prevention
 
 | Symptom | Solution |
 |:--------|:---------|
-| Search timeout | Add `limit` parameter, narrow package scope |
-| Large class timeout | Use `get_method_source` for specific methods |
-| Resource timeout | Use `list_resources` first, then `get_resource` selectively |
+| Search timeout | Add `limit` parameter, narrow scope |
+| Large class timeout | Use `get_method_by_name` for specific methods |
+| Resource timeout | Use `get_all_resource_file_names` first, then `get_resource_file` selectively |
 
 ### Caching Behavior
 
@@ -123,7 +119,7 @@ get_class_source("com.app.MainActivity")  # Fetch only what you need
 
 | Error | Cause | Solution |
 |:------|:------|:---------|
-| "Class not found" | Wrong class name | Use `search_class` to find correct name |
+| "Class not found" | Wrong class name | Use `search_classes_by_keyword` to find correct name |
 | "No file loaded" | JADX not ready | Call `get_file_info` to check status |
 | "Connection refused" | Server not running | Check JADX instance is running |
 | "Timeout" | Large result set | Add pagination, narrow scope |
