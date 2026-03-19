@@ -210,14 +210,10 @@ async def get_from_jadx(
                     )
             base_url = instance_obj.url
         else:
-            # Use default instance if available, with fallback
+            # Use default instance — no fallback to other instances,
+            # because each instance loads a different APK/JAR.
+            # Silently switching would return data from the wrong app.
             instance_obj = InstanceRegistry.get_default()
-            if instance_obj and instance_obj.status in ("disconnected", "pending", "auth_failed"):
-                # Default is unavailable — try the first connected instance
-                fallback = InstanceRegistry.get_first_connected()
-                if fallback:
-                    logger.info(f"Default instance '{instance_obj.name}' {instance_obj.status}, falling back to '{fallback.name}'")
-                    instance_obj = fallback
             if instance_obj:
                 base_url = instance_obj.url
 
