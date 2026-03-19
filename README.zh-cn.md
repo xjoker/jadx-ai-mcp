@@ -10,6 +10,8 @@
 ![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 
+<a href="https://buymeacoffee.com/xjoker" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="217" height="60"></a>
+
 **[English](README.md)** | [📖 文档](docs/index.zh-cn.md)
 
 </div>

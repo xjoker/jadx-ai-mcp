@@ -11,6 +11,8 @@
 ![Python 3.10+](https://img.shields.io/badge/python-3%2E10%2B-blue)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
+<a href="https://buymeacoffee.com/xjoker" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="217" height="60"></a>
+
 **[简体中文](README.zh-cn.md)** | [📖 Documentation](docs/index.md)
 
 </div>
