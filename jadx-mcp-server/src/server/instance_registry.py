@@ -516,23 +516,25 @@ class InstanceRegistry:
     
     @classmethod
     def update_instance_status(
-        cls, 
-        name: str, 
-        status: str, 
+        cls,
+        name: str,
+        status: str,
         apk_info: Optional[dict] = None,
-        last_check: Optional[str] = None
+        last_check: Optional[str] = None,
+        error_message: Optional[str] = None
     ) -> bool:
         """
         Update instance status (thread-safe).
-        
+
         Used by HealthMonitor from background thread to update instance state.
-        
+
         Args:
             name: Instance name
-            status: New status ("connected", "disconnected", "pending")
+            status: New status ("connected", "disconnected", "pending", "error")
             apk_info: Optional APK info to update (for newly connected instances)
             last_check: Optional ISO timestamp of health check
-        
+            error_message: Optional error description (cleared on successful connect)
+
         Returns:
             True if updated successfully, False if instance not found
         """
@@ -540,16 +542,21 @@ class InstanceRegistry:
             instance = cls._instances.get(name)
             if not instance:
                 return False
-            
+
             old_status = instance.status
             instance.status = status
-            
+
             if apk_info is not None:
                 instance.apk_info = apk_info
-            
+
             if last_check is not None:
                 instance.last_health_check = datetime.fromisoformat(last_check)
-            
+
+            if error_message is not None:
+                instance.error_message = error_message
+            elif status == "connected":
+                instance.error_message = ""  # Clear error on successful connect
+
             if old_status != status:
                 logger.info(f"Instance '{name}' status: {old_status} -> {status}")
                 # Invalidate response cache when instance becomes unavailable

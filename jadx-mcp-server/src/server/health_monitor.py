@@ -138,13 +138,30 @@ class HealthMonitor:
                 asyncio.create_task(cls._warmup_instance(name, instance.host, instance.port))
                 return {"healthy": True, "pending": True}
             except Exception as e:
-                InstanceRegistry.update_instance_status(
-                    name=name,
-                    status=old_status,
-                    last_check=now_iso
-                )
-                logger.debug(f"[HEALTH] Instance '{name}' still unavailable: {e}")
-                return {"healthy": False, "pending": True}
+                import httpx
+                # Distinguish auth failures from connectivity issues
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401:
+                    InstanceRegistry.update_instance_status(
+                        name=name,
+                        status="error",
+                        last_check=now_iso,
+                        error_message="Authentication failed (HTTP 401). Check jadx_token in config or --auth-token CLI flag.",
+                    )
+                    logger.error(
+                        f"[HEALTH] Instance '{name}' authentication failed (401). "
+                        f"The JADX plugin requires a valid token. "
+                        f"Set jadx_token in config or pass --auth-token on CLI."
+                    )
+                    return {"healthy": False, "pending": False}
+                else:
+                    InstanceRegistry.update_instance_status(
+                        name=name,
+                        status=old_status,
+                        last_check=now_iso,
+                        error_message=str(e) if str(e) else None,
+                    )
+                    logger.debug(f"[HEALTH] Instance '{name}' still unavailable: {e}")
+                    return {"healthy": False, "pending": True}
         else:
             # For connected/degraded instances, fetch apk_info and health info
             try:

@@ -239,7 +239,19 @@ async def get_from_jadx(
             )
             logger.info(f"Instance '{instance_name}' promoted to connected via on-demand probe")
             base_url = instance_obj.url
-        except Exception:
+        except Exception as probe_err:
+            # Distinguish auth failures from connectivity issues
+            import httpx as _httpx
+            if isinstance(probe_err, _httpx.HTTPStatusError) and probe_err.response.status_code == 401:
+                return make_error(
+                    ErrorCode.CONNECTION_FAILED,
+                    f"JADX instance '{instance_name}' authentication failed (HTTP 401)",
+                    status="error",
+                    detail="The JADX plugin returned 401 Unauthorized. The authentication token is missing or incorrect.",
+                    suggestion="Set 'jadx_token' in your config TOML under [defaults], "
+                               "or pass --auth-token on the CLI. "
+                               "The token must match the JADX plugin's JADX_MCP_AUTH_TOKEN.",
+                )
             return make_error(
                 ErrorCode.CONNECTION_FAILED,
                 f"JADX instance '{instance_name}' is {instance_obj.status}",
@@ -249,6 +261,18 @@ async def get_from_jadx(
                 suggestion="Use 'list_instances' tool to check instance status. "
                            "If the instance was restarted, wait a few seconds and try again.",
             )
+
+    # Pre-check: instance in error state (e.g., auth failure) — show stored error message
+    if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status == "error":
+        instance_name = getattr(instance_obj, 'name', instance_id or 'default')
+        error_msg = getattr(instance_obj, 'error_message', '') or "Unknown error"
+        return make_error(
+            ErrorCode.CONNECTION_FAILED,
+            f"JADX instance '{instance_name}' is in error state",
+            status="error",
+            detail=error_msg,
+            suggestion="Fix the configuration issue and restart, or use 'health_check_jadx_instances' to retry.",
+        )
 
     # Pre-check: warn AI client if instance is in degraded state (OOM or critical memory)
     if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status == "degraded":
