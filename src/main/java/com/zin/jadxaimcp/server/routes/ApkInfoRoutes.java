@@ -168,6 +168,21 @@ public class ApkInfoRoutes {
                     }
                 }
             }
+
+            // Extract app display name from <application android:label="...">
+            org.w3c.dom.NodeList appNodes = doc.getElementsByTagName("application");
+            if (appNodes.getLength() > 0) {
+                Element appElement = (Element) appNodes.item(0);
+                String appLabel = appElement.getAttribute("android:label");
+                if (!appLabel.isEmpty()) {
+                    // Resolve @string/ references if possible
+                    if (appLabel.startsWith("@string/")) {
+                        result.put("app_name_ref", appLabel);
+                    } else {
+                        result.put("app_name", appLabel);
+                    }
+                }
+            }
         } catch (Exception e) {
             logger.debug("Failed to parse AndroidManifest: {}", e.getMessage());
         }
