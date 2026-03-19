@@ -340,8 +340,16 @@ public class ClassRoutes {
         }
 
         // Parse chunk parameter for large response handling
+        int chunk = 0;
         String chunkParam = ctx.queryParam("chunk");
-        int chunk = chunkParam != null ? Integer.parseInt(chunkParam) : 0;
+        if (chunkParam != null && !chunkParam.isEmpty()) {
+            try {
+                chunk = Integer.parseInt(chunkParam.trim());
+            } catch (NumberFormatException e) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Invalid chunk parameter: " + chunkParam, logger);
+                return;
+            }
+        }
 
         String[] classNames = classNamesParam.split(",");
         

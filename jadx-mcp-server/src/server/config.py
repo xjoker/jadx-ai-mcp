@@ -318,9 +318,10 @@ async def get_from_jadx(
     ep_stripped = endpoint.strip("/")
     cache = get_response_cache()
 
-    # Mutating endpoints invalidate the entire cache
+    # Mutating endpoints invalidate cache for the affected instance only
     if ep_stripped in _MUTATING_ENDPOINTS:
-        cache.clear()
+        effective_id = (instance_obj.name if instance_obj else None) or instance_id or "default"
+        cache.invalidate_instance(effective_id)
 
     # Check cache for cacheable endpoints
     cache_key = None
