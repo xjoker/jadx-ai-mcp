@@ -114,6 +114,7 @@ register_search_tools(mcp, with_busy_check)
 register_resource_tools(mcp, with_busy_check)
 register_xrefs_tools(mcp, with_busy_check)
 register_refactor_tools(mcp, with_busy_check)
+register_instance_tools(mcp)
 register_transfer_tools(mcp)
 
 
