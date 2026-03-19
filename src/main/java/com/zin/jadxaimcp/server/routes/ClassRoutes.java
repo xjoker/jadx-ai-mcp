@@ -461,6 +461,10 @@ public class ClassRoutes {
                 } else if (!classMap.containsKey(trimmedName)) {
                     classResult.put("found", false);
                     classResult.put("error", "Class not found");
+                } else {
+                    // Class exists in classMap but was not decompiled (should not happen)
+                    classResult.put("found", false);
+                    classResult.put("error", "Decompilation not attempted");
                 }
                 results.add(classResult);
             }

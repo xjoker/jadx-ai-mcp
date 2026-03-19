@@ -121,8 +121,8 @@ class HealthMonitor:
         old_status = instance.status
         now_iso = datetime.now().isoformat()
 
-        # For pending/disconnected instances, try to fetch APK info
-        if old_status in ("pending", "disconnected"):
+        # For pending/disconnected/auth_failed instances, try to (re-)connect
+        if old_status in ("pending", "disconnected", "auth_failed"):
             try:
                 apk_info = await InstanceRegistry._fetch_apk_info(
                     instance.host, instance.port, instance.token,
@@ -229,7 +229,19 @@ class HealthMonitor:
                     last_check=now_iso
                 )
                 return {"healthy": True, "pending": False}
-            except Exception:
+            except Exception as ex:
+                # Detect auth failure for connected/degraded instances (e.g., token revoked)
+                import httpx as _httpx
+                if isinstance(ex, _httpx.HTTPStatusError) and ex.response.status_code == 401:
+                    InstanceRegistry.update_instance_status(
+                        name=name,
+                        status="auth_failed",
+                        last_check=now_iso,
+                        error_message="JADX plugin returned 401 Unauthorized. Token may have been revoked or changed.",
+                    )
+                    logger.error(f"[HEALTH] Instance '{name}' authentication failed (401) — was {old_status}")
+                    return {"healthy": False, "pending": False}
+
                 is_healthy = await InstanceRegistry._check_health(instance.host, instance.port)
 
                 if is_healthy:
