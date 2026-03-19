@@ -78,10 +78,11 @@ class HealthMonitor:
     async def _monitor_loop(cls):
         """Main monitoring loop."""
         from .instance_registry import InstanceRegistry
-        
-        # Wait a bit before first check to let server fully start
-        await asyncio.sleep(2)
-        
+
+        # Run first health check immediately (no startup delay).
+        # Previous 2-second sleep caused a race: MCP tools could be called
+        # before any instance transitioned from "pending" to "connected".
+
         while cls._running:
             cycle = {"retry_needed": False}
             try:
@@ -154,8 +155,20 @@ class HealthMonitor:
 
                 old_pkg = instance.apk_info.get("apk_package")
                 new_pkg = apk_info.get("apk_package")
-                if old_pkg != new_pkg:
-                    logger.info(f"[HEALTH] Instance '{name}' loaded file changed: {old_pkg} -> {new_pkg}")
+                old_ver = instance.apk_info.get("version_name")
+                new_ver = apk_info.get("version_name")
+                if old_pkg != new_pkg or old_ver != new_ver:
+                    logger.info(
+                        f"[HEALTH] Instance '{name}' loaded file changed: "
+                        f"{old_pkg}@{old_ver} -> {new_pkg}@{new_ver}"
+                    )
+                    # APK switched — invalidate all cached responses for this instance
+                    try:
+                        from .response_cache import get_response_cache
+                        get_response_cache().invalidate_instance(name)
+                        logger.info(f"[HEALTH] Response cache invalidated for '{name}' due to APK change")
+                    except Exception:
+                        pass
 
                 new_status = "connected"
                 try:
@@ -254,7 +267,7 @@ class HealthMonitor:
                 continue
             if result.get("pending"):
                 pending_count += 1
-            if result.get("healthy"):
+            elif result.get("healthy"):
                 healthy_count += 1
             else:
                 unhealthy_count += 1

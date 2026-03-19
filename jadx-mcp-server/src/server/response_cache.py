@@ -68,8 +68,8 @@ class ResponseCache:
 
         ts, value = entry
         if time.monotonic() - ts > self._ttl_seconds:
-            # Expired
-            del self._cache[key]
+            # Expired — use pop to avoid KeyError if concurrent coroutine already removed it
+            self._cache.pop(key, None)
             self._misses += 1
             logger.debug("Cache EXPIRED: %s", key)
             return None

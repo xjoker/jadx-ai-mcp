@@ -561,10 +561,15 @@ def register_resource_tools(mcp, with_busy_check):
     @mcp.tool()
     @with_busy_check
     async def get_file_info(instance_id: Optional[str] = None) -> dict:
-        """Get unified file information for both APK and JAR files.
+        """Get unified file information for the APK/JAR currently loaded in a JADX instance.
 
-        This is the recommended first tool to call when starting analysis.
+        This is the recommended first tool to call when starting **code analysis**.
         Returns file type, class count, and recommends which tools to use.
+
+        NOTE: This tool requires a connected JADX instance. It queries the file
+        loaded in that instance — it does NOT list or manage instances.
+        To check which instances are available or their status, use
+        'list_jadx_instances' instead.
 
         Args:
             instance_id: Optional. Target JADX instance name. Uses default if not specified.

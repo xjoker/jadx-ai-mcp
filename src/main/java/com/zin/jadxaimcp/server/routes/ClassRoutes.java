@@ -257,7 +257,7 @@ public class ClassRoutes {
         }
 
         try {
-            // Check decompiled code cache first
+            // Check decompiled code cache first (no lock needed for cache read)
             String code = ClassCacheManager.getCachedCode(className);
             if (code != null) {
                 Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
@@ -270,29 +270,43 @@ public class ClassRoutes {
                 return;
             }
 
-            JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    code = cls.getCode();
-
-                    // Cache the decompiled result
-                    ClassCacheManager.putCachedCode(className, code);
-
-                    // Use SmartChunker for automatic chunking of large responses
-                    Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
-                        code, chunk, "response");
-
-                    // Check for chunking errors
-                    if (result.containsKey("error")) {
-                        JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
-                        return;
-                    }
-
-                    ctx.json(result);
-                    return;
-                }
+            // Decompilation requires write lock (JADX internal state is not thread-safe)
+            if (!JadxSearchLock.tryAcquire()) {
+                ctx.status(503).json(Map.of(
+                    "error", "Decompilation operation in progress",
+                    "retry_after", JadxSearchLock.RETRY_AFTER_SECONDS
+                ));
+                return;
             }
-            ctx.status(404).json(Map.of("error", "Class " + className + " not found"));
+            try {
+                // Re-check cache after acquiring lock (another thread may have decompiled it)
+                code = ClassCacheManager.getCachedCode(className);
+                if (code == null) {
+                    JadxWrapper wrapper = mainWindow.getWrapper();
+                    for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                        if (cls.getFullName().equals(className)) {
+                            code = cls.getCode();
+                            ClassCacheManager.putCachedCode(className, code);
+                            break;
+                        }
+                    }
+                }
+            } finally {
+                JadxSearchLock.release();
+            }
+
+            if (code == null) {
+                ctx.status(404).json(Map.of("error", "Class " + className + " not found"));
+                return;
+            }
+
+            Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                code, chunk, "response");
+            if (result.containsKey("error")) {
+                JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
+                return;
+            }
+            ctx.json(result);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving class source: " + e.getMessage(), e,
                     logger);
@@ -375,32 +389,76 @@ public class ClassRoutes {
             List<Map<String, Object>> results = new ArrayList<>();
             int foundCount = 0;
 
+            // Collect classes that need decompilation (cache miss)
+            List<String> needDecompile = new ArrayList<>();
+            Map<String, String> cachedResults = new HashMap<>();
+
+            for (String className : classNames) {
+                String trimmedName = className.trim();
+                String cachedCode = ClassCacheManager.getCachedCode(trimmedName);
+                if (cachedCode != null) {
+                    cachedResults.put(trimmedName, cachedCode);
+                } else if (classMap.containsKey(trimmedName)) {
+                    needDecompile.add(trimmedName);
+                }
+            }
+
+            // Decompile cache-missed classes under write lock
+            Map<String, String> decompiledResults = new HashMap<>();
+            if (!needDecompile.isEmpty()) {
+                if (!JadxSearchLock.tryAcquire()) {
+                    ctx.status(503).json(Map.of(
+                        "error", "Decompilation operation in progress",
+                        "retry_after", JadxSearchLock.RETRY_AFTER_SECONDS
+                    ));
+                    return;
+                }
+                try {
+                    for (String name : needDecompile) {
+                        // Re-check cache (another thread may have decompiled it)
+                        String code = ClassCacheManager.getCachedCode(name);
+                        if (code != null) {
+                            decompiledResults.put(name, code);
+                            continue;
+                        }
+                        JavaClass cls = classMap.get(name);
+                        if (cls != null) {
+                            try {
+                                code = cls.getCode();
+                                ClassCacheManager.putCachedCode(name, code);
+                                decompiledResults.put(name, code);
+                            } catch (Exception e) {
+                                logger.error("Decompilation failed for {}: {}", name, e.getMessage());
+                                decompiledResults.put(name, null); // mark as failed
+                            }
+                        }
+                    }
+                } finally {
+                    JadxSearchLock.release();
+                }
+            }
+
+            // Build response
             for (String className : classNames) {
                 String trimmedName = className.trim();
                 Map<String, Object> classResult = new HashMap<>();
                 classResult.put("name", trimmedName);
 
-                JavaClass cls = classMap.get(trimmedName);
-                if (cls != null) {
-                    // Check decompiled code cache first
-                    String cachedCode = ClassCacheManager.getCachedCode(trimmedName);
-                    if (cachedCode != null) {
+                if (cachedResults.containsKey(trimmedName)) {
+                    classResult.put("found", true);
+                    classResult.put("content", cachedResults.get(trimmedName));
+                    foundCount++;
+                } else if (decompiledResults.containsKey(trimmedName)) {
+                    String code = decompiledResults.get(trimmedName);
+                    if (code != null) {
                         classResult.put("found", true);
-                        classResult.put("content", cachedCode);
+                        classResult.put("content", code);
                         foundCount++;
                     } else {
-                        try {
-                            String code = cls.getCode();
-                            classResult.put("found", true);
-                            classResult.put("content", code);
-                            ClassCacheManager.putCachedCode(trimmedName, code);
-                            foundCount++;
-                        } catch (Exception e) {
-                            classResult.put("found", true);
-                            classResult.put("error", "Decompilation failed: " + e.getMessage());
-                        }
+                        classResult.put("found", true);
+                        classResult.put("error", "Decompilation failed (see server log)");
                     }
-                } else {
+                } else if (!classMap.containsKey(trimmedName)) {
                     classResult.put("found", false);
                     classResult.put("error", "Class not found");
                 }

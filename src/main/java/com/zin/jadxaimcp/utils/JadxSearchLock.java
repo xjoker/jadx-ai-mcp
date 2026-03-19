@@ -110,9 +110,9 @@ public final class JadxSearchLock {
                     logger.warn("Write lock held for {}s (timeout: {}s), but holding thread unknown",
                         heldSeconds, LOCK_TIMEOUT_SECONDS);
                 }
-                // Reset tracking so the lock can be re-acquired after release
-                lockAcquireTime.set(0);
-                holdingThread.set(null);
+                // Do NOT reset tracking here — only reset after successfully acquiring the lock.
+                // Resetting before acquire creates a window where tracking is inconsistent
+                // (lock still held by old thread, but tracking says "not held").
             }
         }
 

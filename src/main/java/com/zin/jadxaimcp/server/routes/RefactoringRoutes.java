@@ -63,11 +63,14 @@ public class RefactoringRoutes {
                 event.setResetName(newName.isEmpty());
                 mainWindow.events().send(event);
 
+                // Invalidate decompiled code cache — renamed class code is stale
+                ClassCacheManager.invalidateCode(className);
+
                 logger.info("Renaming Class {} to {}", cls.getName(), newName);
                 ctx.json(Map.of("result", "Renamed Class " + cls.getName() + " to " + newName));
                 return;
             }
-            
+
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error while trying to rename the class: " + e.getMessage(), e, logger);
@@ -135,6 +138,9 @@ public class RefactoringRoutes {
                         event.setResetName(newName.isEmpty());
                         mainWindow.events().send(event);
 
+                        // Invalidate decompiled code cache — class source changed after method rename
+                        ClassCacheManager.invalidateCode(className);
+
                         logger.info("Renaming method {} to {}", method.getName(), newName);
                         ctx.json(Map.of("result", "Rename method " + method.getName() + " to " + newName));
                         return;
@@ -187,6 +193,9 @@ public class RefactoringRoutes {
                         event.setRenameNode(field.getFieldNode());
                         event.setResetName(newFieldName.isEmpty());
                         mainWindow.events().send(event);
+
+                        // Invalidate decompiled code cache — class source changed after field rename
+                        ClassCacheManager.invalidateCode(className);
 
                         logger.info("Renaming field {} to {}", field.getName(), newFieldName);
                         ctx.json(Map.of("result", "Renamed field " + field.getName() + " to " + newFieldName));
@@ -241,6 +250,11 @@ public class RefactoringRoutes {
                         errors.add("Failed to rename " + fullName + ": " + e.getMessage());
                     }
                 }
+            }
+
+            // Invalidate all decompiled code cache — package rename affects many classes
+            if (count > 0) {
+                ClassCacheManager.clearCodeCache();
             }
 
             Map<String, Object> result = new HashMap<>();

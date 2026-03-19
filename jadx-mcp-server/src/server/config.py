@@ -202,11 +202,11 @@ async def get_from_jadx(
         else:
             # Use default instance if available, with fallback
             instance_obj = InstanceRegistry.get_default()
-            if instance_obj and instance_obj.status == "disconnected":
-                # Default is disconnected — try the first connected instance
+            if instance_obj and instance_obj.status in ("disconnected", "pending"):
+                # Default is unavailable — try the first connected instance
                 fallback = InstanceRegistry.get_first_connected()
                 if fallback:
-                    logger.info(f"Default instance '{instance_obj.name}' disconnected, falling back to '{fallback.name}'")
+                    logger.info(f"Default instance '{instance_obj.name}' {instance_obj.status}, falling back to '{fallback.name}'")
                     instance_obj = fallback
             if instance_obj:
                 base_url = instance_obj.url
@@ -220,18 +220,35 @@ async def get_from_jadx(
         # InstanceRegistry not available, use legacy single-instance mode
         logger.warning(f"InstanceRegistry import failed, using legacy mode: {e}")
 
-    # Pre-check: skip HTTP request if instance is known to be unavailable
+    # Pre-check: if instance is pending/disconnected, attempt a quick probe before failing.
+    # This eliminates the startup race where tools are called before the health monitor
+    # has had time to promote the instance from "pending" to "connected".
     if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status in ("disconnected", "pending"):
         instance_name = getattr(instance_obj, 'name', instance_id or 'default')
-        return make_error(
-            ErrorCode.CONNECTION_FAILED,
-            f"JADX instance '{instance_name}' is {instance_obj.status}",
-            status=instance_obj.status,
-            detail=f"The JADX instance is currently {instance_obj.status} and cannot process requests. "
-                   "This may happen after a 'Reset Code Cache' operation or if JADX was closed.",
-            suggestion="Use 'list_instances' tool to check instance status. "
-                       "If the instance was restarted, wait a few seconds and try again.",
-        )
+        try:
+            from .instance_registry import InstanceRegistry
+            apk_info = await InstanceRegistry._fetch_apk_info(
+                instance_obj.host, instance_obj.port, instance_obj.token,
+                timeout=3.0  # quick probe, don't block long
+            )
+            # Instance is actually reachable — promote it now
+            InstanceRegistry.update_instance_status(
+                name=instance_obj.name,
+                status="connected",
+                apk_info=apk_info,
+            )
+            logger.info(f"Instance '{instance_name}' promoted to connected via on-demand probe")
+            base_url = instance_obj.url
+        except Exception:
+            return make_error(
+                ErrorCode.CONNECTION_FAILED,
+                f"JADX instance '{instance_name}' is {instance_obj.status}",
+                status=instance_obj.status,
+                detail=f"The JADX instance is currently {instance_obj.status} and cannot process requests. "
+                       "This may happen after a 'Reset Code Cache' operation or if JADX was closed.",
+                suggestion="Use 'list_instances' tool to check instance status. "
+                           "If the instance was restarted, wait a few seconds and try again.",
+            )
 
     # Pre-check: warn AI client if instance is in degraded state (OOM or critical memory)
     if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status == "degraded":
