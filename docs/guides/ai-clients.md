@@ -83,7 +83,7 @@
 Ask Claude:
 > "Can you list the available JADX tools?"
 
-If connected, Claude will show 51 MCP tools.
+If connected, Claude will show 39 MCP tools.
 
 ---
 

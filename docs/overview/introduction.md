@@ -202,7 +202,7 @@ Compared to the original [zinja-coder/jadx-ai-mcp](https://github.com/zinja-code
 | ⚡ **ClassCacheManager** | Background caching + auto-invalidation, 10-50x faster repeated analysis. |
 | 🐳 **All-in-One Docker** | One-command deployment of GUI + AI server. Multi-platform (amd64/arm64). |
 
-> 📚 **44 bilingual guides** covering deployment, tools, troubleshooting, and AI testing prompts.
+> 📚 **30+ bilingual guides** covering deployment, tools, troubleshooting, and AI testing prompts.
 
 ---
 

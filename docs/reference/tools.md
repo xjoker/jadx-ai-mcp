@@ -21,8 +21,8 @@
 | `get_method_callees` | ✅ | ✅ | ✅ | ✅ | Methods called by a method |
 | `get_all_classes` | ✅ | ✅ | ✅ | ✅ | List all classes (paginated) |
 | `get_package_classes` | ✅ | ✅ | ✅ | ✅ | Get classes by package prefix |
-| `fetch_current_class` | ✅ | ✅ | ✅ | ✅ | Get currently selected class |
-| `get_selected_text` | ✅ | ✅ | ✅ | ✅ | Get selected text |
+| `fetch_current_class` | ✅ | ✅ | ✅ | ✅ | Get currently selected class (GUI only) |
+| `get_selected_text` | ✅ | ✅ | ✅ | ✅ | Get selected text (GUI only) |
 | **Search Tools** |
 | `search_classes_by_keyword` | ✅ | ✅ | ✅ | ✅ | Search classes by keyword |
 | `search_method_by_name` | ✅ | ✅ | ✅ | ✅ | Search method by name |
@@ -54,14 +54,7 @@
 | `get_all_resource_file_names` | ✅ | ✅ | ✅ | ❌ | List all resource files |
 | `get_resource_file` | ✅ | ✅ | ✅ | ❌ | Get resource file content |
 | **Rename Tools** |
-| `rename_class` | ✅ | ✅ | ✅ | ✅ | Rename class |
-| `rename_method` | ✅ | ✅ | ✅ | ✅ | Rename method |
-| `rename_field` | ✅ | ✅ | ✅ | ✅ | Rename field |
-| `rename_package` | ✅ | ✅ | ✅ | ✅ | Rename package |
-| **Debug Tools** |
-| `debug_get_stack_frames` | ✅ | ❌ | ✅ | ✅ | Get stack frames |
-| `debug_get_threads` | ✅ | ❌ | ✅ | ✅ | Get thread info |
-| `debug_get_variables` | ✅ | ❌ | ✅ | ✅ | Get variables |
+| `rename` | ✅ | ✅ | ✅ | ✅ | Unified rename (class/method/field/package) with dry_run preview |
 | **Instance Management Tools** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | List all instances |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | Add new instance |
@@ -69,7 +62,6 @@
 | `set_default_jadx_instance` | ✅ | ✅ | ✅ | ✅ | Set default instance |
 | `get_jadx_instance_info` | ✅ | ✅ | ✅ | ✅ | Get instance details |
 | `health_check_jadx_instances` | ✅ | ✅ | ✅ | ✅ | Health check |
-| `check_instance_status` | ✅ | ✅ | ✅ | ✅ | Check instance busy status |
 | `clear_class_cache` | ✅ | ✅ | ✅ | ✅ | Clear class cache |
 | **Status Monitor Tools** |
 | `get_decompile_status` | ✅ | ✅ | ✅ | ✅ | Get decompile status and metrics |

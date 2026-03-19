@@ -21,8 +21,8 @@
 | `get_method_callees` | ✅ | ✅ | ✅ | ✅ | 方法调用的其他方法 |
 | `get_all_classes` | ✅ | ✅ | ✅ | ✅ | 列出所有类（分页） |
 | `get_package_classes` | ✅ | ✅ | ✅ | ✅ | 按包前缀获取类 |
-| `fetch_current_class` | ✅ | ✅ | ✅ | ✅ | 获取当前选中的类 |
-| `get_selected_text` | ✅ | ✅ | ✅ | ✅ | 获取选中的文本 |
+| `fetch_current_class` | ✅ | ✅ | ✅ | ✅ | 获取当前选中的类（仅 GUI） |
+| `get_selected_text` | ✅ | ✅ | ✅ | ✅ | 获取选中的文本（仅 GUI） |
 | **搜索工具** |
 | `search_classes_by_keyword` | ✅ | ✅ | ✅ | ✅ | 按关键字搜索类 |
 | `search_method_by_name` | ✅ | ✅ | ✅ | ✅ | 按方法名搜索 |
@@ -54,14 +54,7 @@
 | `get_all_resource_file_names` | ✅ | ✅ | ✅ | ❌ | 列出所有资源文件 |
 | `get_resource_file` | ✅ | ✅ | ✅ | ❌ | 获取资源文件内容 |
 | **重命名工具** |
-| `rename_class` | ✅ | ✅ | ✅ | ✅ | 重命名类 |
-| `rename_method` | ✅ | ✅ | ✅ | ✅ | 重命名方法 |
-| `rename_field` | ✅ | ✅ | ✅ | ✅ | 重命名字段 |
-| `rename_package` | ✅ | ✅ | ✅ | ✅ | 重命名包 |
-| **调试工具** |
-| `debug_get_stack_frames` | ✅ | ❌ | ✅ | ✅ | 获取堆栈帧 |
-| `debug_get_threads` | ✅ | ❌ | ✅ | ✅ | 获取线程信息 |
-| `debug_get_variables` | ✅ | ❌ | ✅ | ✅ | 获取变量 |
+| `rename` | ✅ | ✅ | ✅ | ✅ | 统一重命名（class/method/field/package），支持 dry_run 预览 |
 | **实例管理工具** |
 | `list_jadx_instances` | ✅ | ✅ | ✅ | ✅ | 列出所有实例 |
 | `add_jadx_instance` | ✅ | ✅ | ✅ | ✅ | 添加新实例 |
@@ -69,7 +62,6 @@
 | `set_default_jadx_instance` | ✅ | ✅ | ✅ | ✅ | 设置默认实例 |
 | `get_jadx_instance_info` | ✅ | ✅ | ✅ | ✅ | 获取实例详情 |
 | `health_check_jadx_instances` | ✅ | ✅ | ✅ | ✅ | 健康检查 |
-| `check_instance_status` | ✅ | ✅ | ✅ | ✅ | 检查实例忙碌状态 |
 | `clear_class_cache` | ✅ | ✅ | ✅ | ✅ | 清除类缓存 |
 | **状态监控工具** |
 | `get_decompile_status` | ✅ | ✅ | ✅ | ✅ | 获取反编译状态和指标 |

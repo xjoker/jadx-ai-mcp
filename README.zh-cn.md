@@ -30,7 +30,7 @@
 | ⚡ **ClassCacheManager** | 后台缓存 + 自动失效，重复分析快 10-50 倍。 |
 | 🐳 **All-in-One Docker** | 一键部署 GUI + AI 服务器。多平台支持（amd64/arm64）。 |
 
-> 📚 **44 篇中英双语指南**，涵盖部署、工具、故障排查和 AI 测试提示词。
+> 📚 **30+ 篇中英双语指南**，涵盖部署、工具、故障排查和 AI 测试提示词。
 
 ---
 
@@ -173,7 +173,7 @@ http_headers = { Authorization = "Bearer admin-secret-token" }
 
 | 文档 | 说明 |
 |:-----|:-----|
-| [工具参考](docs/reference/tools.zh-cn.md) | 完整的 45 个 MCP 工具矩阵 |
+| [工具参考](docs/reference/tools.zh-cn.md) | 完整的 39 个 MCP 工具矩阵 |
 | [配置参考](docs/reference/configuration.zh-cn.md) | 所有配置项详解 |
 | [安全策略](docs/security/security.zh-cn.md) | 认证、权限、SSRF 防护 |
 

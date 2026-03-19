@@ -7,16 +7,22 @@ description: Use this skill when the user wants to rename, deobfuscate, or refac
 
 Rename and deobfuscate Java code using JADX MCP tools to improve readability and understanding.
 
-## Rename Tools
+## Unified Rename Tool
 
-Each identifier type has its own dedicated rename tool:
+All rename operations use a single `rename` tool with a `target_type` parameter:
 
-| Tool | Purpose | Key Parameters |
-|:-----|:--------|:---------------|
-| `rename_package` | Rename a package | `original_name`, `new_name` |
-| `rename_class` | Rename a class | `original_name`, `new_name` |
-| `rename_method` | Rename a method | `original_name`, `new_name` |
-| `rename_field` | Rename a field | `original_name`, `new_name` |
+```
+rename(
+    target_type: str,      # "class" | "method" | "field" | "package"
+    old_name: str,         # Current name (fully qualified for class/package)
+    new_name: str,         # New name
+    class_name: str = "",  # Required for method/field
+    dry_run: bool = False, # Preview without executing
+    instance_id: str       # JADX instance (optional)
+)
+```
+
+Use `dry_run=True` to verify the target exists before renaming — this avoids triggering the 30s cache cooldown.
 
 ## Naming Conventions
 
@@ -65,27 +71,33 @@ Analyze:
 - Field usage patterns
 - Import statements
 
-### Step 3: Rename Packages First
+### Step 3: Preview Before Renaming
 
 ```
-rename_package(original_name="com.a.b", new_name="com.example.network")
+rename(target_type="class", old_name="com.example.a", new_name="HttpClient", dry_run=True)
 ```
 
-### Step 4: Rename Classes
+### Step 4: Rename Packages First
 
 ```
-rename_class(original_name="com.example.network.a", new_name="HttpClient")
+rename(target_type="package", old_name="com.a.b", new_name="com.example.network")
 ```
 
-### Step 5: Rename Methods and Fields
+### Step 5: Rename Classes
 
 ```
-rename_method(original_name="a", new_name="sendRequest")
-
-rename_field(original_name="b", new_name="responseData")
+rename(target_type="class", old_name="com.example.network.a", new_name="HttpClient")
 ```
 
-### Step 6: Verify Changes
+### Step 6: Rename Methods and Fields
+
+```
+rename(target_type="method", old_name="a", new_name="sendRequest", class_name="com.example.network.HttpClient")
+
+rename(target_type="field", old_name="b", new_name="responseData", class_name="com.example.network.HttpClient")
+```
+
+### Step 7: Verify Changes
 
 ```
 get_class_source(class_name="com.example.network.HttpClient")
@@ -93,19 +105,21 @@ get_class_source(class_name="com.example.network.HttpClient")
 
 ## Quick Reference
 
-| Task | Tool |
-|:-----|:-----|
-| Find classes | `search_classes_by_keyword` |
-| View source | `get_class_source` |
-| Rename package | `rename_package` |
-| Rename class | `rename_class` |
-| Rename method | `rename_method` |
-| Rename field | `rename_field` |
+| Task | Command |
+|:-----|:--------|
+| Find classes | `search_classes_by_keyword(keyword="...")` |
+| View source | `get_class_source(class_name="...")` |
+| Preview rename | `rename(target_type="...", old_name="...", new_name="...", dry_run=True)` |
+| Rename package | `rename(target_type="package", old_name="...", new_name="...")` |
+| Rename class | `rename(target_type="class", old_name="...", new_name="...")` |
+| Rename method | `rename(target_type="method", old_name="...", new_name="...", class_name="...")` |
+| Rename field | `rename(target_type="field", old_name="...", new_name="...", class_name="...")` |
 
 ## Common Pitfalls
 
 - **Renaming out of order**: Always rename packages before classes, classes before methods/fields
 - **Not waiting for cache**: Changes may not appear immediately; wait 30 seconds
+- **Skipping dry_run**: Always preview first to avoid wasting the cache cooldown
 - **Invalid names**: Ensure new names follow Java naming rules (no spaces, no keywords)
 - **Duplicate names**: Check for existing names before renaming to avoid conflicts
 - **Missing context**: Always read the source code before deciding on meaningful names

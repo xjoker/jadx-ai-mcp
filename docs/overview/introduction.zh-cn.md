@@ -202,7 +202,7 @@ npx skills add xjoker/jadx-ai-mcp --skill security-audit
 | ⚡ **ClassCacheManager** | 后台缓存 + 自动失效，重复分析快 10-50 倍。 |
 | 🐳 **All-in-One Docker** | 一键部署 GUI + AI 服务器。多平台支持（amd64/arm64）。 |
 
-> 📚 **44 篇中英双语指南**，涵盖部署、工具、故障排查和 AI 测试提示词。
+> 📚 **30+ 篇中英双语指南**，涵盖部署、工具、故障排查和 AI 测试提示词。
 
 ---
 

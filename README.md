@@ -31,7 +31,7 @@ This fork provides **major enhancements** over the original project:
 | ⚡ **ClassCacheManager** | 10-50x faster repeated analysis with background caching and auto-invalidation. |
 | 🐳 **All-in-One Docker** | One command deploys GUI + AI server. Multi-platform (amd64/arm64). |
 
-> 📚 **44 bilingual guides** covering deployment, tools, troubleshooting, and AI testing prompts.
+> 📚 **30+ bilingual guides** covering deployment, tools, troubleshooting, and AI testing prompts.
 
 ---
 
@@ -174,7 +174,7 @@ See [AI Client Configuration](docs/guides/ai-clients.md) for full details.
 
 | Document | Description |
 |:---------|:------------|
-| [Tools Reference](docs/reference/tools.md) | Complete 45 MCP tools matrix |
+| [Tools Reference](docs/reference/tools.md) | Complete 39 MCP tools matrix |
 | [Configuration Reference](docs/reference/configuration.md) | All configuration options |
 | [Security Policy](docs/security/security.md) | Authentication, permissions, SSRF protection |
 
