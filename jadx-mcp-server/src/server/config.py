@@ -197,12 +197,22 @@ async def get_from_jadx(
         if instance_id:
             instance_obj = InstanceRegistry.get_instance(instance_id)
             if not instance_obj:
-                return make_error(ErrorCode.INSTANCE_NOT_FOUND, f"Instance '{instance_id}' not found")
+                # Fuzzy match: try APK package name, file name, or partial instance name
+                instance_obj = InstanceRegistry.find_instance_by_apk(instance_id)
+                if instance_obj:
+                    logger.info(f"Fuzzy matched instance_id '{instance_id}' -> '{instance_obj.name}'")
+                else:
+                    return make_error(
+                        ErrorCode.INSTANCE_NOT_FOUND,
+                        f"Instance '{instance_id}' not found",
+                        suggestion="Use 'list_jadx_instances' to see available instances. "
+                                   "You can specify instance by name, APK package, or partial match.",
+                    )
             base_url = instance_obj.url
         else:
             # Use default instance if available, with fallback
             instance_obj = InstanceRegistry.get_default()
-            if instance_obj and instance_obj.status in ("disconnected", "pending"):
+            if instance_obj and instance_obj.status in ("disconnected", "pending", "auth_failed"):
                 # Default is unavailable — try the first connected instance
                 fallback = InstanceRegistry.get_first_connected()
                 if fallback:
@@ -402,6 +412,16 @@ async def get_from_jadx(
 
     except httpx.ConnectError as e:
         logger.error(f"JADX connection refused: {e}")
+        # Mark instance disconnected immediately (don't wait for health monitor)
+        if instance_obj:
+            try:
+                from .instance_registry import InstanceRegistry
+                InstanceRegistry.update_instance_status(
+                    name=instance_obj.name, status="disconnected",
+                    error_message=f"Connection refused: {type(e).__name__}",
+                )
+            except Exception:
+                pass
         return make_error(
             ErrorCode.CONNECTION_FAILED,
             "Connection refused: JADX instance is not reachable",
@@ -415,6 +435,16 @@ async def get_from_jadx(
 
     except httpx.ConnectTimeout as e:
         logger.error(f"JADX connection timeout: {e}")
+        # Mark instance disconnected immediately
+        if instance_obj:
+            try:
+                from .instance_registry import InstanceRegistry
+                InstanceRegistry.update_instance_status(
+                    name=instance_obj.name, status="disconnected",
+                    error_message=f"Connection timeout: {type(e).__name__}",
+                )
+            except Exception:
+                pass
         return make_error(
             ErrorCode.TIMEOUT,
             "Connection timeout: JADX instance did not respond",

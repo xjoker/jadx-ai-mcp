@@ -505,10 +505,58 @@ class InstanceRegistry:
             return cls._instances.get(name)
     
     @classmethod
+    def find_instance_by_apk(cls, query: str) -> Optional[JadxInstance]:
+        """
+        Find a connected instance by APK package name, file name, or instance name (fuzzy).
+
+        Matching priority:
+        1. Exact instance name match
+        2. Exact apk_package match (e.g., "com.xingin.xhs")
+        3. Partial apk_package match (e.g., "xingin" matches "com.xingin.xhs")
+        4. Instance name contains query (e.g., "xhs" matches "xhs-v8")
+        5. file_name match (e.g., "target.apk")
+
+        Only returns connected instances. Returns None if no match.
+        """
+        query_lower = query.lower()
+        with cls._thread_lock:
+            connected = [i for i in cls._instances.values() if i.status == "connected"]
+
+        # 1. Exact instance name
+        for inst in connected:
+            if inst.name.lower() == query_lower:
+                return inst
+
+        # 2. Exact apk_package
+        for inst in connected:
+            pkg = inst.apk_info.get("apk_package", "")
+            if pkg and pkg.lower() == query_lower:
+                return inst
+
+        # 3. Partial apk_package
+        for inst in connected:
+            pkg = inst.apk_info.get("apk_package", "")
+            if pkg and query_lower in pkg.lower():
+                return inst
+
+        # 4. Instance name contains query
+        for inst in connected:
+            if query_lower in inst.name.lower():
+                return inst
+
+        # 5. file_name match
+        for inst in connected:
+            fname = inst.apk_info.get("file_name", "")
+            if fname and query_lower in fname.lower():
+                return inst
+
+        return None
+
+    @classmethod
     def get_all_instances(cls) -> Dict[str, JadxInstance]:
         """
         Get all registered instances (thread-safe copy for health monitoring).
-        
+
         Returns a copy to prevent modification during iteration.
         """
         with cls._thread_lock:

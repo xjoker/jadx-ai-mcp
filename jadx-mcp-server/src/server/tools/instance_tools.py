@@ -37,6 +37,11 @@ def register_instance_tools(mcp):
         This tool does NOT require a connected instance — it reads from the
         local registry and always succeeds.
 
+        TIP: When multiple instances are running, you can pass instance_id to
+        other tools using any of: instance name, APK package name (e.g.,
+        "com.xingin.xhs"), or partial match (e.g., "xhs"). The system will
+        fuzzy-match to the correct connected instance.
+
         Returns instances visible to the current user:
         - Shared/static instances (from config file)
         - Dynamic instances owned by the current user
