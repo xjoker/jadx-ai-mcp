@@ -12,6 +12,86 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.6] - 2026-03-19
+
+### 🐛 Bug Fixes
+
+**Instance Management**
+- Fixed: `register_instance_tools(mcp)` was imported but never called — all 7 instance management tools (`list_jadx_instances`, `add_jadx_instance`, etc.) were unavailable at runtime. This was the root cause of AI mis-routing instance queries to `get_file_info`.
+- Removed cross-instance fallback: each JADX instance loads a different APK/JAR, so silently routing to another instance returns data from the wrong app. Now reports a clear error instead.
+- Fixed `auth_failed` status oscillation: instances with 401 errors no longer flip between `auth_failed` and `connected` every health check cycle.
+- Fixed: connected instances whose token is revoked now correctly transition to `auth_failed` (previously stayed `connected` because `/health` doesn't require auth).
+
+**Concurrency & Caching**
+- `handleClassSource` and `handleBatchClassSource` now acquire write lock before calling `cls.getCode()` — JADX internal state is not thread-safe for concurrent decompilation.
+- All rename operations (`rename_class/method/field/package`) now call `ClassCacheManager.invalidateCode()` to prevent stale decompiled code from being returned after rename.
+- `JadxSearchLock.tryAcquire()`: tracking state (`holdingThread`, `lockAcquireTime`) is only reset after successfully acquiring the lock, not before — prevents permanent tracking loss.
+- Rename operations now only invalidate response cache for the affected instance, not all instances.
+- Batch `handleBatchClassSource`: added `else` branch to ensure `found` field is always present in response (prevents client NPE).
+- `handleBatchClassSource`: `chunk` parameter now wrapped in `try/catch NumberFormatException` (matching all other chunk parse sites).
+- `ResponseCache.get()`: changed `del` to `pop(key, None)` for TTL expiry to avoid potential `KeyError` in concurrent asyncio scenarios.
+
+**Instance Connectivity**
+- Startup race condition eliminated: health monitor no longer waits 2 seconds before first check. MCP tools called immediately after startup now work.
+- On-demand probe: when a pending/disconnected instance is accessed, a 3-second quick probe attempts to connect before returning an error. If JADX is reachable, the instance is promoted to `connected` instantly.
+- `get_from_jadx`: `ConnectError` and `ConnectTimeout` now immediately mark the instance as `disconnected` (previously had to wait up to 30s for health monitor).
+- Health monitor: pending instance health stats no longer double-count as `unhealthy_count`.
+- APK switch detection: health monitor now checks both `apk_package` and `version_name` for changes, and invalidates response cache when either changes.
+
+### 🚀 Improvements
+
+**Fuzzy Instance Routing** (new)
+- `instance_id` parameter now supports fuzzy matching across: instance name, APK package name (`com.xingin.xhs`), JADX instance name (`xhs-v835`), app display name, file name, and version.
+- Matching priority: exact name → exact package → exact JADX name → exact app name → partial matches → file name → version.
+- Example: `get_class_source(class_name="...", instance_id="xhs")` automatically routes to the instance loading XHS.
+
+**Auth Error Clarity** (new)
+- New `auth_failed` instance status (distinct from generic `error`) with actionable error messages: "Check jadx_token in config or --auth-token CLI flag."
+- On-demand probe and health monitor both distinguish 401 from connectivity issues.
+- Status page: `auth_failed` instances show red badge with warning banner.
+
+**APK Display Name** (new)
+- `/apk-info` endpoint now extracts `app_name` from `<application android:label="...">` in AndroidManifest.xml.
+- If the label is a `@string/` resource reference, returned as `app_name_ref`.
+- Used in fuzzy instance matching to route by app display name.
+
+**Tool Description Improvements**
+- `list_jadx_instances`: added "USE THIS TOOL WHEN" guidance and fuzzy match tips.
+- `get_file_info`: clarified it requires a connected instance and is not for listing instances.
+- `get_decompile_status`: clarified it returns runtime metrics, not file metadata.
+- `search_classes_by_keyword`: marked as "PRIMARY search tool" with speed guide per `search_in` value.
+- `search_method_by_name`: added "PREFER search_classes_by_keyword instead" warning.
+- `batch_get_class_source`: added "for single class use get_class_source" guidance.
+
+### ⚡ Performance
+
+- **ReadWriteLock**: JADX operations now use `ReentrantReadWriteLock` — multiple concurrent metadata reads (class listing, method listing) no longer block each other. Only decompilation (`getCode`, `getSmali`) requires exclusive write lock.
+- **Decompiled code cache**: `ClassCacheManager.codeCache` (LRU, 200 entries, 10-min TTL) caches decompiled Java source. Subsequent requests for the same class skip decompilation.
+- **MCP response cache**: Python-side `ResponseCache` (LRU, 100 entries, 60s TTL) caches deterministic endpoint responses (`class-info`, `methods-of-class`, `fields-of-class`, etc.).
+- **Parallel health checks**: `asyncio.gather()` checks all instances concurrently instead of serially.
+- **Strings cache**: `ResourceCacheManager.parsedStringsCache` (ConcurrentHashMap) caches parsed `strings.xml` to avoid re-parsing.
+- **Shared HTTP client**: `InstanceRegistry` uses a shared `httpx.AsyncClient` with connection pooling for health checks.
+
+### 📦 Changed Files
+- `jadx-mcp-server/jadx_mcp_server.py` — Added `register_instance_tools(mcp)` call
+- `jadx-mcp-server/src/server/config.py` — On-demand probe, fuzzy matching, scoped cache invalidation, instant disconnect marking, 401 detection, no cross-instance fallback
+- `jadx-mcp-server/src/server/health_monitor.py` — No startup delay, auth_failed handling, APK change detection, parallel checks, pending count fix
+- `jadx-mcp-server/src/server/instance_registry.py` — `find_instance_by_apk()`, `update_instance_status(error_message=)`, `auth_failed` status
+- `jadx-mcp-server/src/server/response_cache.py` — New LRU response cache module, TTL expiry fix
+- `jadx-mcp-server/src/server/status_page.py` — `auth_failed` badge and warning
+- `jadx-mcp-server/src/server/tools/class_tools.py` — Tool description improvements
+- `jadx-mcp-server/src/server/tools/search_tools.py` — Tool description improvements
+- `jadx-mcp-server/src/server/tools/instance_tools.py` — Tool description improvements, fuzzy match guidance
+- `jadx-mcp-server/src/server/tools/resource_tools.py` — `get_file_info` description clarification
+- `src/main/java/com/zin/jadxaimcp/server/routes/ClassRoutes.java` — Write lock on decompilation, batch chunk validation, batch found field
+- `src/main/java/com/zin/jadxaimcp/server/routes/RefactoringRoutes.java` — Cache invalidation after rename
+- `src/main/java/com/zin/jadxaimcp/server/routes/ApkInfoRoutes.java` — `app_name` extraction from AndroidManifest
+- `src/main/java/com/zin/jadxaimcp/utils/JadxSearchLock.java` — ReadWriteLock, tracking reset fix
+- `src/main/java/com/zin/jadxaimcp/utils/ClassCacheManager.java` — Decompiled code LRU cache
+- `src/main/java/com/zin/jadxaimcp/utils/ResourceCacheManager.java` — Strings cache
+
+---
+
 ## [6.1.5] - 2026-03-18
 
 ### 🚀 Improvements

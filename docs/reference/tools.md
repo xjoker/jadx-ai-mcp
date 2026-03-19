@@ -154,7 +154,7 @@ rename("package", "com.example.old", "com.example.new")
 
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
-| `list_jadx_instances()` | - | List all connected instances |
+| `list_jadx_instances()` | - | List all instances and their status. Does not require a connected instance. |
 | `add_jadx_instance(host, port)` | `host`, `port`, `name?`, `token?` | Dynamically add instance |
 | `remove_jadx_instance(name)` | `name` | Remove instance |
 | `set_default_jadx_instance(name)` | `name` | Set default instance |
