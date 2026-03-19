@@ -516,7 +516,9 @@ def register_class_tools(mcp, with_busy_check):
         force: bool = False,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Fetch multiple class sources in a single request with intelligent size management.
+        """Fetch 2-20 class sources in a single request with intelligent size management.
+
+        For a SINGLE class, use get_class_source instead — it is simpler and faster.
 
         SMART BATCHING: Automatically estimates response size and provides optimization guidance.
         - Small batches (<20KB): Execute directly
@@ -619,28 +621,17 @@ def register_class_tools(mcp, with_busy_check):
     @mcp.tool()
     @with_busy_check
     async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
-        """Get current JADX status with cache, memory, and thread metrics.
+        """Check JADX runtime health: decompilation progress, memory, and lock state.
 
-        **IMPORTANT: Call this BEFORE resource-intensive operations!**
+        NOT the same as get_file_info (which returns APK/JAR metadata like package
+        name and class count). This tool returns live runtime metrics.
 
-        Use the returned metrics to make informed decisions:
+        Call this BEFORE resource-intensive operations like search_in='code':
         - `cached_percentage` < 20%: Avoid search_in='code', use 'class'/'method' instead
         - `memory.usage_percentage` > 85%: Reduce batch sizes, avoid smali
         - `search_lock.locked` = true: Wait and retry, another search is running
 
-        Expected response time: <100ms
-
         Args:
             instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
-        Returns:
-            dict with:
-            - total_classes: Total classes in APK
-            - cached_classes: Classes with state PROCESS_COMPLETE
-            - cached_percentage: Percentage of cached classes (0-100)
-            - memory: {max_mb, total_mb, used_mb, free_mb, usage_percentage}
-            - threads: {active_count, peak_count, daemon_count}
-            - jadx_config: {threads_count, code_cache_mode}
-            - search_lock: {locked, held_seconds, timeout_seconds}
         """
         return await _get_decompile_status(instance_id=instance_id)

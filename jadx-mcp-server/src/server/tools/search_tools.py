@@ -359,9 +359,12 @@ def register_search_tools(mcp, with_busy_check):
     ) -> dict:
         """Search for a method name across all classes in the APK.
 
-        WARNING: This performs a global search and may timeout or crash on large/obfuscated APKs.
-        For safer search, consider using search_classes_by_keyword with search_in='method' instead.
-        Refer to the 'search-code' prompt for best practices.
+        PREFER search_classes_by_keyword(search_term=..., search_in='method') instead!
+        That tool is faster, safer, and supports package filtering.
+
+        This tool performs an unscoped global search and may timeout or crash
+        on large/obfuscated APKs. Only use this if search_classes_by_keyword
+        does not return the results you need.
 
         Args:
             method_name: Method name to search for (partial matching supported).
@@ -420,10 +423,19 @@ def register_search_tools(mcp, with_busy_check):
         count: int = 20,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Search for classes containing a keyword with flexible filtering.
+        """PRIMARY search tool — find classes, methods, fields, or code by keyword.
 
-        IMPORTANT: Call get_decompile_status() first! Use search_in='class/method/field'
-        for fast searches (<100ms). Use 'code' only when cached_percentage > 20%.
+        USE THIS TOOL for any search task. It replaces search_method_by_name for
+        method searches (use search_in='method') and is faster and safer.
+
+        Speed guide for search_in values:
+        - 'class': <100ms, always fast — match class names
+        - 'method': <100ms, always fast — match method names
+        - 'field': <100ms, always fast — match field names
+        - 'code': 1-60s, requires decompilation — match inside source code
+        - 'comment': similar to code — match inside comments
+
+        Call get_decompile_status() first if using search_in='code'.
 
         Args:
             search_term: Keyword to search for.
