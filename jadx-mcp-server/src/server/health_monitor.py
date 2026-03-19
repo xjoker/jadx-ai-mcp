@@ -143,9 +143,9 @@ class HealthMonitor:
                 if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401:
                     InstanceRegistry.update_instance_status(
                         name=name,
-                        status="error",
+                        status="auth_failed",
                         last_check=now_iso,
-                        error_message="Authentication failed (HTTP 401). Check jadx_token in config or --auth-token CLI flag.",
+                        error_message="JADX plugin returned 401 Unauthorized. Check jadx_token in config or --auth-token CLI flag.",
                     )
                     logger.error(
                         f"[HEALTH] Instance '{name}' authentication failed (401). "

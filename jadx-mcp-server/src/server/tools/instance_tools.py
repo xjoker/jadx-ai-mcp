@@ -43,8 +43,9 @@ def register_instance_tools(mcp):
         - Admin users can see ALL instances
 
         Each instance includes: name, host, port, url, status
-        (connected/pending/disconnected/degraded/error), is_default,
-        owner, is_dynamic, apk_info, last_health_check.
+        (connected/pending/disconnected/degraded/error/auth_failed),
+        is_default, owner, is_dynamic, apk_info, last_health_check,
+        error_message (non-empty when status is error or auth_failed).
 
         Returns:
             {

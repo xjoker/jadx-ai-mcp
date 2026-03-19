@@ -245,9 +245,9 @@ async def get_from_jadx(
             if isinstance(probe_err, _httpx.HTTPStatusError) and probe_err.response.status_code == 401:
                 return make_error(
                     ErrorCode.CONNECTION_FAILED,
-                    f"JADX instance '{instance_name}' authentication failed (HTTP 401)",
-                    status="error",
-                    detail="The JADX plugin returned 401 Unauthorized. The authentication token is missing or incorrect.",
+                    f"JADX instance '{instance_name}' authentication failed (401 Unauthorized)",
+                    status="auth_failed",
+                    detail="The JADX plugin rejected the request: token is missing or incorrect.",
                     suggestion="Set 'jadx_token' in your config TOML under [defaults], "
                                "or pass --auth-token on the CLI. "
                                "The token must match the JADX plugin's JADX_MCP_AUTH_TOKEN.",
@@ -262,10 +262,20 @@ async def get_from_jadx(
                            "If the instance was restarted, wait a few seconds and try again.",
             )
 
-    # Pre-check: instance in error state (e.g., auth failure) — show stored error message
-    if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status == "error":
+    # Pre-check: instance in error/auth_failed state — show stored error message
+    if instance_obj and hasattr(instance_obj, 'status') and instance_obj.status in ("error", "auth_failed"):
         instance_name = getattr(instance_obj, 'name', instance_id or 'default')
         error_msg = getattr(instance_obj, 'error_message', '') or "Unknown error"
+        if instance_obj.status == "auth_failed":
+            return make_error(
+                ErrorCode.CONNECTION_FAILED,
+                f"JADX instance '{instance_name}' authentication failed (401 Unauthorized)",
+                status="auth_failed",
+                detail=error_msg,
+                suggestion="Set 'jadx_token' in your config TOML under [defaults], "
+                           "or pass --auth-token on the CLI. "
+                           "Then use 'health_check_jadx_instances' to retry.",
+            )
         return make_error(
             ErrorCode.CONNECTION_FAILED,
             f"JADX instance '{instance_name}' is in error state",

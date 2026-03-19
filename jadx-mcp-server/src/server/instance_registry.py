@@ -28,7 +28,7 @@ class JadxInstance:
     name: str                 # Instance name (user-defined or auto-generated)
     host: str                 # IP address
     port: int                 # Port number
-    status: str = "unknown"   # "connected" | "disconnected" | "error"
+    status: str = "unknown"   # "connected" | "disconnected" | "error" | "auth_failed"
     apk_info: dict = field(default_factory=dict)  # Info from /apk-info endpoint
     last_health_check: Optional[datetime] = None
     error_message: str = ""   # Most recent error message
@@ -560,7 +560,7 @@ class InstanceRegistry:
             if old_status != status:
                 logger.info(f"Instance '{name}' status: {old_status} -> {status}")
                 # Invalidate response cache when instance becomes unavailable
-                if status in ("disconnected", "error", "pending"):
+                if status in ("disconnected", "error", "pending", "auth_failed"):
                     try:
                         from .response_cache import get_response_cache
                         get_response_cache().invalidate_instance(name)
