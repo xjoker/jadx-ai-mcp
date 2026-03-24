@@ -586,7 +586,9 @@ def main():
         
         print(f"  Health monitor: enabled (interval: {health_interval}s)")
         
-        mcp.run(transport="http", host=args.host, port=args.port)
+        # Stateless HTTP: no session tracking, survives server restarts.
+        # Trade-off: no SSE streaming / server-initiated notifications (GET /mcp disabled).
+        mcp.run(transport="http", host=args.host, port=args.port, stateless_http=True)
     else:
         print("\nStarting MCP server in stdio mode...")
         mcp.run()

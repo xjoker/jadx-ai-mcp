@@ -53,7 +53,7 @@ EXPOSE 8651
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8651/status || exit 1
+    CMD curl -f http://localhost:8651/health || exit 1
 
 # Default command - can be overridden with --config
 CMD ["uv", "run", "jadx_mcp_server", "--http", "--host", "0.0.0.0", "--port", "8651"]

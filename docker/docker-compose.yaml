@@ -2,7 +2,7 @@
 #
 # 这个配置包含:
 # - 1 个 MCP 服务器 (端口 8651)
-# - 3 个 JADX 实例 (端口 6080-6082 用于 noVNC，8650-8652 用于 API)
+# - 3 个 JADX 实例 (端口 6080-6082 用于 noVNC，8650/8660/8670 用于 API)
 #
 # 快速启动:
 #   docker compose up -d
@@ -10,6 +10,11 @@
 # 默认 APK 挂载:
 #   - 所有实例默认挂载项目根目录的 ../temp 到 /apks
 #   - 可通过 JADX1_APK_DIR / JADX2_APK_DIR / JADX3_APK_DIR 分别覆盖
+#
+# 内存配置:
+#   - 每个 JADX 实例默认 4GB 容器内存，JVM 堆限制 2560MB
+#   - 剩余空间留给 JVM 元空间、线程栈、noVNC 等辅助进程
+#   - 可通过 JADX_MEM_LIMIT / JADX_JAVA_OPTS 覆盖
 #
 # 访问:
 #   - MCP Server: http://localhost:8651/mcp (连接 LLM)
@@ -37,6 +42,7 @@ services:
       - ./config:/app/data/config:ro
     environment:
       - TZ=${TZ:-UTC}
+    mem_limit: 512m
     depends_on:
       - jadx-1
       - jadx-2
@@ -69,6 +75,8 @@ services:
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
       - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
       - JADX_MCP_AUTH_ENABLED=true
+      - JAVA_OPTS=${JADX_JAVA_OPTS:--Xmx2560m}
+    mem_limit: ${JADX_MEM_LIMIT:-4g}
     restart: unless-stopped
     networks:
       - jadx-network
@@ -92,6 +100,8 @@ services:
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
       - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
       - JADX_MCP_AUTH_ENABLED=true
+      - JAVA_OPTS=${JADX_JAVA_OPTS:--Xmx2560m}
+    mem_limit: ${JADX_MEM_LIMIT:-4g}
     restart: unless-stopped
     networks:
       - jadx-network
@@ -115,6 +125,8 @@ services:
       - JADX_MCP_BIND_ADDRESS=0.0.0.0
       - JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
       - JADX_MCP_AUTH_ENABLED=true
+      - JAVA_OPTS=${JADX_JAVA_OPTS:--Xmx2560m}
+    mem_limit: ${JADX_MEM_LIMIT:-4g}
     restart: unless-stopped
     networks:
       - jadx-network
