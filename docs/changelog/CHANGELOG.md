@@ -12,6 +12,39 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [6.1.7] - 2026-03-24
+
+### 🐛 Bug Fixes
+
+- Fixed Dockerfile.mcp health check endpoint (`/status` → `/health`) to match the actual server endpoint.
+
+### 🚀 Improvements
+
+**Docker OOM Recovery**
+- `jadx-gui-wrapper.sh`: Detects OOM crash (exit code 3 from `-XX:+ExitOnOutOfMemoryError`) and sets a flag to skip auto-loading on next restart, preventing infinite OOM→restart→OOM loops.
+- Signal forwarding: JADX runs as a background child so the wrapper can forward `SIGTERM`/`SIGINT` from `docker stop` / supervisord and still capture the exit code.
+
+**Container Memory Limits**
+- Each JADX instance now has a default container memory limit of 4GB (`mem_limit`) with JVM heap capped at 2560MB (`-Xmx2560m`).
+- MCP server container limited to 512MB.
+- Configurable via `JADX_MEM_LIMIT` and `JADX_JAVA_OPTS` environment variables.
+
+**Supervisord Improvements**
+- `jadx-gui` logs now redirect to `stdout`/`stderr` for `docker logs` visibility (OOM warnings, crash messages).
+- Added `startretries=5`, `stopwaitsecs=30`, `stopsignal=TERM` for more robust process management.
+
+**Stateless HTTP Transport**
+- MCP HTTP mode now uses `stateless_http=True`: no session tracking, survives server restarts. Trade-off: no SSE streaming or server-initiated notifications.
+
+### 📦 Changed Files
+- `docker/Dockerfile.mcp` — Health check endpoint fix
+- `docker/docker-compose.yaml` — Memory limits, JAVA_OPTS support
+- `docker/scripts/jadx-gui-wrapper.sh` — OOM recovery, signal forwarding
+- `docker/scripts/supervisord.conf` — Log redirection, retry/stop config
+- `jadx-mcp-server/jadx_mcp_server.py` — Stateless HTTP transport
+
+---
+
 ## [6.1.6] - 2026-03-19
 
 ### 🐛 Bug Fixes

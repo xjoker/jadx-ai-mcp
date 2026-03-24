@@ -53,6 +53,12 @@ docker compose up -d
 ```bash
 # 时区（默认 UTC）
 TZ=Asia/Shanghai
+
+# 内存：每个 JADX 实例容器限制（默认 4g）
+JADX_MEM_LIMIT=4g
+
+# JVM 堆大小（默认 -Xmx2560m，需小于容器限制）
+JADX_JAVA_OPTS=-Xmx2560m
 ```
 
 如果你希望每个实例使用不同的 APK 目录，可以用环境变量覆盖：

@@ -128,6 +128,16 @@ search_classes_by_keyword("password", package="com.example", search_in="class")
 ### Q: Returns "INSTANCE_BUSY"
 **A:** Another search is in progress. Wait a few seconds and retry.
 
+### Q: JADX keeps crashing with OutOfMemoryError
+**A:** The Docker wrapper includes automatic OOM recovery. When JADX crashes with OOM (exit code 3 from `-XX:+ExitOnOutOfMemoryError`), it sets a flag and restarts **without auto-loading** the file to prevent an infinite OOM→restart loop.
+
+**To resolve:**
+1. Increase container memory: set `JADX_MEM_LIMIT=8g` in `.env`
+2. Increase JVM heap: set `JADX_JAVA_OPTS=-Xmx5120m` in `.env`
+3. Restart: `docker compose restart`
+
+After OOM recovery, load the file manually via noVNC GUI, or increase memory first and restart the container.
+
 ---
 
 ## 📱 APK/JAR Issues

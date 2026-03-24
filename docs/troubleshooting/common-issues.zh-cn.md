@@ -92,6 +92,16 @@ search_classes_by_keyword("password", package="com.example", search_in="class")
 ### Q: 返回 "INSTANCE_BUSY"
 **A:** 另一个搜索正在进行，等待几秒后重试。
 
+### Q: JADX 持续因 OutOfMemoryError 崩溃
+**A:** Docker 包装脚本内置了 OOM 自动恢复机制。当 JADX 因 OOM 崩溃（`-XX:+ExitOnOutOfMemoryError` 触发 exit code 3）时，会设置标记并**跳过自动加载文件**重启，防止 OOM→重启→OOM 的无限循环。
+
+**解决方法：**
+1. 增加容器内存：在 `.env` 中设置 `JADX_MEM_LIMIT=8g`
+2. 增加 JVM 堆：在 `.env` 中设置 `JADX_JAVA_OPTS=-Xmx5120m`
+3. 重启：`docker compose restart`
+
+OOM 恢复后可通过 noVNC GUI 手动加载文件，或先增大内存后重启容器。
+
 ---
 
 ## 📱 APK/JAR 问题

@@ -12,6 +12,39 @@ JADX-AI-MCP 的所有重要变更都记录在此文件中。
 
 ---
 
+## [6.1.7] - 2026-03-24
+
+### 🐛 Bug 修复
+
+- 修复 Dockerfile.mcp 健康检查端点（`/status` → `/health`），与实际服务器端点一致。
+
+### 🚀 改进
+
+**Docker OOM 恢复**
+- `jadx-gui-wrapper.sh`：检测 OOM 崩溃（`-XX:+ExitOnOutOfMemoryError` 触发的 exit code 3），设置标记使下次重启跳过自动加载，防止 OOM→重启→OOM 无限循环。
+- 信号转发：JADX 作为后台子进程运行，包装脚本可将 `docker stop` / supervisord 的 `SIGTERM`/`SIGINT` 转发给 JVM，同时捕获退出码。
+
+**容器内存限制**
+- 每个 JADX 实例默认容器内存限制 4GB（`mem_limit`），JVM 堆上限 2560MB（`-Xmx2560m`）。
+- MCP Server 容器限制 512MB。
+- 可通过 `JADX_MEM_LIMIT` 和 `JADX_JAVA_OPTS` 环境变量配置。
+
+**Supervisord 改进**
+- `jadx-gui` 日志重定向到 `stdout`/`stderr`，通过 `docker logs` 可见（OOM 警告、崩溃信息等）。
+- 增加 `startretries=5`、`stopwaitsecs=30`、`stopsignal=TERM`，更健壮的进程管理。
+
+**无状态 HTTP 传输**
+- MCP HTTP 模式启用 `stateless_http=True`：无会话跟踪，服务器重启后自动恢复。代价：不支持 SSE 流和服务器主动通知。
+
+### 📦 变更文件
+- `docker/Dockerfile.mcp` — 健康检查端点修复
+- `docker/docker-compose.yaml` — 内存限制、JAVA_OPTS 支持
+- `docker/scripts/jadx-gui-wrapper.sh` — OOM 恢复、信号转发
+- `docker/scripts/supervisord.conf` — 日志重定向、重试/停止配置
+- `jadx-mcp-server/jadx_mcp_server.py` — 无状态 HTTP 传输
+
+---
+
 ## [6.1.6] - 2026-03-19
 
 ### 🐛 Bug 修复

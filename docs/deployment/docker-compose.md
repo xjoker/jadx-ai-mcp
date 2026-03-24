@@ -53,6 +53,12 @@ A `.env.example` file is included. Copy it to `.env` and customize:
 ```bash
 # Timezone (default: UTC)
 TZ=Asia/Shanghai
+
+# Memory: each JADX instance container limit (default: 4g)
+JADX_MEM_LIMIT=4g
+
+# JVM heap size (default: -Xmx2560m, must fit within container limit)
+JADX_JAVA_OPTS=-Xmx2560m
 ```
 
 If you want separate APK directories per instance, override the bind mounts with environment variables:
