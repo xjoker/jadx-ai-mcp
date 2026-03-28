@@ -8,6 +8,8 @@
 
 > ✅ Full support | ⚠️ Partial | ❌ Not available | 🔄 Returns NOT_APPLICABLE
 
+This server currently registers **39 MCP tools**, including **5 JAR-specific tools** and **1 Transfer API helper**.
+
 | Tool | APK | JAR | AAR | DEX | Description |
 |:-----|:---:|:---:|:---:|:---:|:------------|
 | **Universal Analysis Tools** |
@@ -21,25 +23,19 @@
 | `get_method_callees` | ✅ | ✅ | ✅ | ✅ | Methods called by a method |
 | `get_all_classes` | ✅ | ✅ | ✅ | ✅ | List all classes (paginated) |
 | `get_package_classes` | ✅ | ✅ | ✅ | ✅ | Get classes by package prefix |
-| `fetch_current_class` | ✅ | ✅ | ✅ | ✅ | Get currently selected class (GUI only) |
-| `get_selected_text` | ✅ | ✅ | ✅ | ✅ | Get selected text (GUI only) |
 | **Search Tools** |
 | `search_classes_by_keyword` | ✅ | ✅ | ✅ | ✅ | Search classes by keyword |
 | `search_method_by_name` | ✅ | ✅ | ✅ | ✅ | Search method by name |
 | `search_native_methods` | ✅ | ❌ | ✅ | ✅ | Search native methods (JNI) |
 | **Cross-Reference Tools** |
-| `get_xrefs_to_class` | ✅ | ✅ | ✅ | ✅ | Find class references |
-| `get_xrefs_to_method` | ✅ | ✅ | ✅ | ✅ | Find method references |
-| `get_xrefs_to_field` | ✅ | ✅ | ✅ | ✅ | Find field references |
+| `get_xrefs` | ✅ | ✅ | ✅ | ✅ | Unified xref lookup for class/method/field targets |
 | **Batch Tools** |
 | `batch_get_class_source` | ✅ | ✅ | ✅ | ✅ | Batch get class sources (max 20) |
 | `batch_get_method_by_name` | ✅ | ✅ | ✅ | ✅ | Batch get methods (max 20) |
-| `batch_get_xrefs` | ✅ | ✅ | ✅ | ✅ | Batch find references (max 10) |
+| `batch_get_xrefs` | ✅ | ✅ | ✅ | ✅ | Batch find references |
 | **Android-Specific Tools** |
 | `get_android_manifest` | ✅ | 🔄 | ✅ | ❌ | Get AndroidManifest.xml |
 | `get_main_activity_class` | ✅ | 🔄 | ✅ | ❌ | Get main Activity |
-| `get_main_application_classes_names` | ✅ | 🔄 | ✅ | ❌ | Main app class names |
-| `get_main_application_classes_code` | ✅ | 🔄 | ✅ | ❌ | Main app class sources |
 | `get_strings` | ✅ | 🔄 | ✅ | ❌ | String resources (strings.xml) |
 | `get_smali_of_class` | ✅ | ❌ | ✅ | ✅ | Smali bytecode |
 | **JAR-Specific Tools** |
@@ -65,6 +61,8 @@
 | `clear_class_cache` | ✅ | ✅ | ✅ | ✅ | Clear class cache |
 | **Status Monitor Tools** |
 | `get_decompile_status` | ✅ | ✅ | ✅ | ✅ | Get decompile status and metrics |
+| **Transfer API Tools** |
+| `create_transfer_token` | ✅ | ✅ | ✅ | ✅ | Create download tokens for large batch exports |
 
 ---
 
@@ -93,13 +91,19 @@
 | `search_method_by_name(method_name)` | `method_name`, `offset=0`, `count=50`, `instance_id?` | Global method search |
 | `search_native_methods(package)` | `package=""`, `offset=0`, `count=50`, `instance_id?` | Search JNI native methods |
 
+### Cross-Reference Tools
+
+| Tool | Parameters | Description |
+|:-----|:-----------|:------------|
+| `get_xrefs(target_type, class_name)` | `target_type` (`class`/`method`/`field`), `class_name`, `member_name=""`, `offset=0`, `count=20`, `instance_id?` | Unified xref lookup for classes, methods, and fields |
+
 ### Batch Tools
 
 | Tool | Parameters | Description |
 |:-----|:-----------|:------------|
 | `batch_get_class_source(class_names)` | `class_names[]`, `chunk=0`, `force=False`, `instance_id?` | Max 20 classes. Smart size management with chunking support |
 | `batch_get_method_by_name(methods)` | `methods[]` (format: `class:method`), `chunk=0`, `force=False`, `instance_id?` | Max 20 methods. Smart size management with chunking support |
-| `batch_get_xrefs(targets)` | `targets[]` (format: `type:class:member`), `instance_id?` | Max 10 targets |
+| `batch_get_xrefs(targets)` | `targets[]` (format: `type:class[:member]`), `instance_id?` | Batch xref lookup for mixed class/method/field targets |
 
 ### JAR-Specific Tools
 
@@ -152,9 +156,14 @@ rename("package", "com.example.old", "com.example.new")
 | `set_default_jadx_instance(name)` | `name` | Set default instance |
 | `get_jadx_instance_info(name)` | `name` | Get instance details |
 | `health_check_jadx_instances()` | - | Check all instances health |
-| `check_instance_status(instance_name)` | `instance_name?` | Check if instance is busy |
 | `clear_class_cache()` | `instance_id?` | Clear class cache (30s cooldown) |
-| `get_decompile_status()` | `instance_id?` | Get cache, memory, thread metrics |
+
+### Runtime And Transfer Tools
+
+| Tool | Parameters | Description |
+|:-----|:-----------|:------------|
+| `get_decompile_status()` | `instance_id?` | Get cache, memory, and search lock metrics before expensive operations |
+| `create_transfer_token(resource_type)` | `operation="download"`, `resource_type`, `timeout_seconds=120`, `params?`, `instance_id?` | Create a temporary HTTP download token for large batch exports |
 
 ---
 
@@ -200,7 +209,7 @@ result = get_smali_of_class(class_name="...", chunk=2)
 result = batch_get_class_source(class_names=["..."], chunk=2)
 ```
 
-**Affected Tools:** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `fetch_current_class`, `get_main_activity_class`, `get_resource_file`, `batch_get_class_source`, `batch_get_method_by_name`
+**Affected Tools:** `get_class_source`, `get_smali_of_class`, `get_android_manifest`, `get_main_activity_class`, `get_resource_file`, `batch_get_class_source`, `batch_get_method_by_name`
 
 ---
 

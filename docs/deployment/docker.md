@@ -58,7 +58,7 @@ docker run -d --name jadx \
 docker run -d --name jadx \
   -p 6080:6080 -p 8650:8650 -p 8651:8651 \
   -v ~/apks:/apks \
-  -v $(pwd)/config:/app/data/config \
+  -v $(pwd)/config:/opt/jadx/jadx-mcp-server/data/config \
   -v jadx-cache:/root/.cache \
   -v jadx-gui-cache:/root/.jadx-gui \
   xjoker/jadx-ai-mcp:latest
@@ -92,7 +92,7 @@ For detailed port explanations, see [System Architecture - Port Reference](../ov
 | Volume | Path | Purpose |
 |--------|------|---------|
 | APK Files | `/apks` | Mount APK/JAR files for analysis |
-| Config | `/app/data/config` | Configuration files (jadx-config.toml) |
+| Config | `/opt/jadx/jadx-mcp-server/data/config` | Configuration files (jadx-config.toml) |
 | Cache | `/root/.cache` | JADX decompilation cache (10-50x faster) |
 | GUI Settings | `/root/.jadx-gui` | GUI preferences persistence |
 
@@ -206,7 +206,7 @@ EOF
 # Run
 docker run -d --name jadx-mcp-server \
   -p 8651:8651 \
-  -v $(pwd)/config:/app/data/config \
+  -v $(pwd)/config:/opt/jadx/jadx-mcp-server/data/config \
   xjoker/jadx-mcp-server
 ```
 
@@ -268,9 +268,9 @@ Run with config:
 
 ```bash
 docker run -d -p 8651:8651 \
-  -v $(pwd)/config:/app/data/config \
+  -v $(pwd)/config:/opt/jadx/jadx-mcp-server/data/config \
   xjoker/jadx-mcp-server \
-  uv run jadx_mcp_server --http --host 0.0.0.0 --config /app/data/config/jadx-config.toml
+  uv run jadx_mcp_server --http --host 0.0.0.0 --config /opt/jadx/jadx-mcp-server/data/config/jadx-config.toml
 ```
 
 ### Permissions and Security

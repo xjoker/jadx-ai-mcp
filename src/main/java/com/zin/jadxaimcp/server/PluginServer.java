@@ -440,10 +440,10 @@ public class PluginServer {
         app.get("/package-classes", classRoutes::handlePackageClasses);
 
         // --- Renaming ---
-        app.get("/rename-class", refactoringRoutes::handleRenameClass);
-        app.get("/rename-method", refactoringRoutes::handleRenameMethod);
-        app.get("/rename-field", refactoringRoutes::handleRenameField);
-        app.get("/rename-package", refactoringRoutes::handleRenamePackage);
+        app.post("/rename-class", refactoringRoutes::handleRenameClass);
+        app.post("/rename-method", refactoringRoutes::handleRenameMethod);
+        app.post("/rename-field", refactoringRoutes::handleRenameField);
+        app.post("/rename-package", refactoringRoutes::handleRenamePackage);
 
         // --- Decompilation Status ---
         app.get("/decompile-status", ctx -> {

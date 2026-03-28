@@ -1,30 +1,89 @@
 # JADX-AI-MCP Docker Image with noVNC Support
 # Uses pre-built base image for faster builds
 #
-# Build: docker build -t jadx-ai-mcp -f docker/Dockerfile .
+# Build: docker build --platform=linux/amd64 -t jadx-ai-mcp -f docker/Dockerfile .
 # Run:   docker run -d -p 6080:6080 -p 8650:8650 -v ./apks:/apks jadx-ai-mcp
 
 # ============================================================================
-# Use pre-built base image with system dependencies
-# Build base image separately when system deps change:
-#   docker build -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
+# Global build arguments
 # ============================================================================
 ARG BASE_VERSION=1.2
-FROM xjoker/jadx-ai-mcp-base:${BASE_VERSION}
+ARG JADX_VERSION=1.5.5
+ARG PLUGIN_VERSION=6.1.5-dev
+ARG DOCKER_PLATFORM=linux/amd64
+
+# ============================================================================
+# Stage 1: Build plugin JAR from current source for deterministic installs
+# ============================================================================
+FROM --platform=${DOCKER_PLATFORM} maven:3.9.9-eclipse-temurin-11 AS plugin-builder
+
+ARG JADX_VERSION
+ARG PLUGIN_VERSION
+ARG DOCKER_PLATFORM
+
+ENV TZ=UTC
+
+WORKDIR /build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends unzip wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pom.xml .
+COPY src ./src
+
+# Install the exact JADX dependency expected by pom.xml before packaging.
+RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip \
+    && unzip -q /tmp/jadx.zip -d /tmp/jadx \
+    && JADX_JAR="$(find /tmp/jadx/lib -name 'jadx-*-all.jar' | head -1)" \
+    && test -n "${JADX_JAR}" \
+    && mvn -B install:install-file \
+        -Dfile="${JADX_JAR}" \
+        -DgroupId=io.github.skylot \
+        -DartifactId=jadx-all \
+        -Dversion="${JADX_VERSION}" \
+        -Dpackaging=jar \
+    && rm -rf /tmp/jadx.zip /tmp/jadx
+
+RUN set -e; \
+    for attempt in 1 2 3; do \
+        mvn -B -Dmaven.wagon.http.retryHandler.count=3 -DskipTests clean package && break; \
+        if [ "${attempt}" -eq 3 ]; then \
+            exit 1; \
+        fi; \
+        echo "mvn package failed on attempt ${attempt}, retrying..." >&2; \
+        sleep 5; \
+    done \
+    && test -f "target/jadx-ai-mcp-${PLUGIN_VERSION}.jar" \
+    && cp "target/jadx-ai-mcp-${PLUGIN_VERSION}.jar" /build/jadx-ai-mcp.jar
+
+# ============================================================================
+# Stage 2: Runtime image
+# Use pre-built base image with system dependencies
+# Build base image separately when system deps change:
+#   docker build --platform=linux/amd64 -t xjoker/jadx-ai-mcp-base:1.0 -f docker/Dockerfile.base .
+# ============================================================================
+ARG BASE_VERSION
+FROM --platform=${DOCKER_PLATFORM} xjoker/jadx-ai-mcp-base:${BASE_VERSION}
+
+ARG JADX_VERSION
+ARG PLUGIN_VERSION
+ARG DOCKER_PLATFORM
 
 LABEL maintainer="xjoker"
 LABEL description="JADX-AI-MCP with noVNC for headless server deployment"
 
 # Additional environment variables
-ENV JADX_API_PORT=8650
-ENV JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token
-ENV JADX_MCP_AUTH_ENABLED=true
+ENV JADX_API_PORT=8650 \
+    JADX_MCP_PORT=8651 \
+    JADX_MCP_AUTH_TOKEN=jadx-plugin-secret-token \
+    JADX_MCP_AUTH_ENABLED=true \
+    TZ=UTC
 
 # ============================================================================
 # Layer 1: Download JADX (changes only when JADX_VERSION changes)
 # This layer can be updated independently by changing JADX_VERSION
 # ============================================================================
-ARG JADX_VERSION=1.5.5
 RUN wget -q "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip \
     && unzip -q /tmp/jadx.zip -d /opt/jadx \
     && rm /tmp/jadx.zip \
@@ -44,11 +103,13 @@ RUN useradd -m -u 1001 jadx && \
 USER jadx
 
 # ============================================================================
-# Layer 3: Install plugin as jadx user (installs to /home/jadx/.jadx/plugins/)
-# Change PLUGIN_VERSION to force re-download of plugin when building
+# Layer 3: Install plugin as jadx user from the builder stage artifact
 # ============================================================================
-ARG PLUGIN_VERSION=6.0.7
-RUN /opt/jadx/bin/jadx plugins --install "github:xjoker:jadx-ai-mcp" \
+# Copy the freshly built JAR from the deterministic builder stage.
+COPY --from=plugin-builder --chown=jadx:jadx /build/jadx-ai-mcp.jar /tmp/jadx-ai-mcp.jar
+
+RUN /opt/jadx/bin/jadx plugins --install-jar /tmp/jadx-ai-mcp.jar \
+    && rm /tmp/jadx-ai-mcp.jar \
     && echo "Plugin version: ${PLUGIN_VERSION}" \
     && /opt/jadx/bin/jadx plugins --list
 
@@ -84,9 +145,11 @@ USER jadx
 # 8651: MCP Server HTTP endpoint (external, connect LLMs here)
 EXPOSE 6080 8650 8651
 
-# Health check for JADX Plugin API
+# Health check for both JADX Plugin API and MCP Server
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${JADX_API_PORT}/health || exit 1
+    CMD curl -fsS http://localhost:${JADX_API_PORT}/health >/dev/null \
+    && curl -fsS http://localhost:${JADX_MCP_PORT}/health >/dev/null \
+    || exit 1
 
 # Start services
 CMD ["/start.sh"]

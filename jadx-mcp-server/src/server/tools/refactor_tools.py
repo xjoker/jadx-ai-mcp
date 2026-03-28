@@ -31,7 +31,12 @@ async def rename_class(class_name: str, new_name: str, instance_id: Optional[str
     MCP Tool: rename_class
     Description: Refactors class name across the entire decompiled codebase
     """
-    return await get_from_jadx("rename-class", {"class_name": class_name, "new_name": new_name}, instance_id=instance_id)
+    return await get_from_jadx(
+        "rename-class",
+        instance_id=instance_id,
+        method="POST",
+        json_body={"class_name": class_name, "new_name": new_name},
+    )
 
 
 async def rename_method(class_name: str, method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
@@ -53,11 +58,16 @@ async def rename_method(class_name: str, method_name: str, new_name: str, instan
     MCP Tool: rename_method
     Description: Refactors method name and updates all call sites
     """
-    return await get_from_jadx("rename-method", {
-        "class_name": class_name,
-        "method_name": method_name,
-        "new_name": new_name
-    }, instance_id=instance_id)
+    return await get_from_jadx(
+        "rename-method",
+        instance_id=instance_id,
+        method="POST",
+        json_body={
+            "class_name": class_name,
+            "method_name": method_name,
+            "new_name": new_name,
+        },
+    )
 
 
 async def rename_field(class_name: str, field_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
@@ -79,11 +89,16 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
     MCP Tool: rename_field
     Description: Refactors field name and updates all references
     """
-    return await get_from_jadx("rename-field", {
-        "class_name": class_name,
-        "field_name": field_name,
-        "new_field_name": new_name
-    }, instance_id=instance_id)
+    return await get_from_jadx(
+        "rename-field",
+        instance_id=instance_id,
+        method="POST",
+        json_body={
+            "class_name": class_name,
+            "field_name": field_name,
+            "new_field_name": new_name,
+        },
+    )
 
 
 async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
@@ -104,10 +119,15 @@ async def rename_package(old_package_name: str, new_package_name: str, instance_
     MCP Tool: rename_package
     Description: Refactors entire package structure and class namespaces
     """
-    return await get_from_jadx("rename-package", {
-        "old_package_name": old_package_name,
-        "new_package_name": new_package_name
-    }, instance_id=instance_id)
+    return await get_from_jadx(
+        "rename-package",
+        instance_id=instance_id,
+        method="POST",
+        json_body={
+            "old_package_name": old_package_name,
+            "new_package_name": new_package_name,
+        },
+    )
 
 
 def register_refactor_tools(mcp, with_busy_check):

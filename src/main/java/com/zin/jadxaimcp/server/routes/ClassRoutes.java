@@ -11,9 +11,6 @@ import jadx.api.metadata.ICodeNodeRef;
 import jadx.api.security.IJadxSecurity;
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.instructions.args.ArgType;
-import jadx.core.dex.nodes.ClassNode;
-import jadx.core.dex.nodes.FieldNode;
-import jadx.core.dex.nodes.MethodNode;
 import jadx.core.utils.android.AndroidManifestParser;
 import jadx.core.utils.android.AppAttribute;
 import jadx.core.utils.android.ApplicationParams;
@@ -61,6 +58,7 @@ import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
 import com.zin.jadxaimcp.utils.CodeSearchCoordinator;
+import com.zin.jadxaimcp.utils.JadxApiAdapter;
 import com.zin.jadxaimcp.utils.SmartChunker;
 
 public class ClassRoutes {
@@ -550,10 +548,8 @@ public class ClassRoutes {
                         Map<String, Object> methodInfo = new HashMap<>();
                         methodInfo.put("name", method.getName());
                         
-                        // Access flags from MethodNode for accurate information
-                        MethodNode methodNode = method.getMethodNode();
-                        if (methodNode != null) {
-                            AccessInfo accessFlags = methodNode.getAccessFlags();
+                        AccessInfo accessFlags = method.getAccessFlags();
+                        if (accessFlags != null) {
                             methodInfo.put("is_static", accessFlags.isStatic());
                             methodInfo.put("is_native", accessFlags.isNative());
                             methodInfo.put("is_abstract", accessFlags.isAbstract());
@@ -638,9 +634,9 @@ public class ClassRoutes {
                         fieldInfo.put("type", typeStr);
                         
                         // Frida-compatible type
-                        if (field.getFieldNode() != null && field.getFieldNode().getType() != null) {
+                        if (field.getType() != null) {
                             fieldInfo.put("type_frida", 
-                                com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(field.getFieldNode().getType()));
+                                com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(field.getType()));
                         } else {
                             fieldInfo.put("type_frida", typeStr);
                         }
@@ -794,27 +790,35 @@ public class ClassRoutes {
                     info.put("simple_name", cls.getName());
                     info.put("package", cls.getPackage());
                     
-                    // Access modifiers - use ClassNode for detailed info
+                    // Access modifiers - metadata-only lookup via the adapter.
                     try {
-                        jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                        jadx.core.dex.info.AccessInfo accessInfo = classNode.getAccessFlags();
-                        info.put("access_flags", accessInfo.toString());
-                        info.put("is_interface", accessInfo.isInterface());
-                        info.put("is_enum", accessInfo.isEnum());
-                        info.put("is_abstract", accessInfo.isAbstract());
-                        info.put("is_final", accessInfo.isFinal());
+                        jadx.core.dex.info.AccessInfo accessInfo = JadxApiAdapter.getAccessFlags(cls);
+                        if (accessInfo != null) {
+                            info.put("access_flags", accessInfo.toString());
+                            info.put("is_interface", accessInfo.isInterface());
+                            info.put("is_enum", accessInfo.isEnum());
+                            info.put("is_abstract", accessInfo.isAbstract());
+                            info.put("is_final", accessInfo.isFinal());
+                        } else {
+                            info.put("access_flags", "unknown");
+                            info.put("is_interface", false);
+                            info.put("is_enum", false);
+                            info.put("is_abstract", false);
+                            info.put("is_final", false);
+                        }
                     } catch (Exception e) {
                         info.put("access_flags", "unknown");
                         info.put("is_interface", false);
                         info.put("is_enum", false);
+                        info.put("is_abstract", false);
+                        info.put("is_final", false);
                     }
                     info.put("is_inner", cls.isInner());
                     
-                    // Super class - using ClassNode to get parent info
+                    // Super class - metadata-only lookup via the adapter.
                     try {
-                        jadx.core.dex.instructions.args.ArgType superType = cls.getClassNode().getSuperClass();
-                        if (superType != null) {
-                            String superClass = superType.toString();
+                        String superClass = JadxApiAdapter.getSuperClass(cls);
+                        if (superClass != null) {
                             info.put("super_class", superClass);
                         } else {
                             info.put("super_class", "java.lang.Object");
@@ -826,9 +830,7 @@ public class ClassRoutes {
                     // Interfaces
                     List<String> interfaces = new ArrayList<>();
                     try {
-                        for (jadx.core.dex.instructions.args.ArgType iface : cls.getClassNode().getInterfaces()) {
-                            interfaces.add(iface.toString());
-                        }
+                        interfaces.addAll(JadxApiAdapter.getInterfaces(cls));
                     } catch (Exception e) {
                         logger.warn("Failed to get interfaces for {}: {}", className, e.getMessage());
                     }
@@ -845,41 +847,32 @@ public class ClassRoutes {
                     }
                     info.put("inner_classes", innerClasses);
                     
-                    // Method and field counts (using ClassNode to avoid triggering decompilation)
-                    jadx.core.dex.nodes.ClassNode infoClassNode = cls.getClassNode();
-                    if (infoClassNode != null) {
-                        info.put("methods_count", infoClassNode.getMethods().size());
-                        info.put("fields_count", infoClassNode.getFields().size());
-                        
-                        // Method names (for quick overview)
-                        List<String> methodNames = new ArrayList<>();
-                        List<String> nativeMethodNames = new ArrayList<>();
-                        for (jadx.core.dex.nodes.MethodNode m : infoClassNode.getMethods()) {
-                            String name = m.getMethodInfo().getName();
-                            methodNames.add(name);
-                            // Collect native methods for security analysis
-                            if (m.getAccessFlags().isNative()) {
-                                nativeMethodNames.add(name);
-                            }
+                    List<JadxApiAdapter.MethodInfoSnapshot> declaredMethods =
+                        JadxApiAdapter.getDeclaredMethodInfos(cls);
+                    List<JadxApiAdapter.FieldInfoSnapshot> declaredFields =
+                        JadxApiAdapter.getDeclaredFieldInfos(cls);
+
+                    info.put("methods_count", declaredMethods.size());
+                    info.put("fields_count", declaredFields.size());
+
+                    List<String> methodNames = new ArrayList<>();
+                    List<String> nativeMethodNames = new ArrayList<>();
+                    for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : declaredMethods) {
+                        String name = methodSnapshot.getName();
+                        methodNames.add(name);
+                        if (methodSnapshot.getAccessFlags() != null && methodSnapshot.getAccessFlags().isNative()) {
+                            nativeMethodNames.add(name);
                         }
-                        info.put("method_names", methodNames);
-                        info.put("native_method_names", nativeMethodNames);
-                        info.put("native_count", nativeMethodNames.size());
-                        
-                        // Field names
-                        List<String> fieldNames = new ArrayList<>();
-                        for (jadx.core.dex.nodes.FieldNode f : infoClassNode.getFields()) {
-                            fieldNames.add(f.getFieldInfo().getName());
-                        }
-                        info.put("field_names", fieldNames);
-                    } else {
-                        info.put("methods_count", 0);
-                        info.put("fields_count", 0);
-                        info.put("method_names", new ArrayList<>());
-                        info.put("field_names", new ArrayList<>());
-                        info.put("native_method_names", new ArrayList<>());
-                        info.put("native_count", 0);
                     }
+                    info.put("method_names", methodNames);
+                    info.put("native_method_names", nativeMethodNames);
+                    info.put("native_count", nativeMethodNames.size());
+
+                    List<String> fieldNames = new ArrayList<>();
+                    for (JadxApiAdapter.FieldInfoSnapshot fieldSnapshot : declaredFields) {
+                        fieldNames.add(fieldSnapshot.getName());
+                    }
+                    info.put("field_names", fieldNames);
 
                     
                     ctx.json(info);
@@ -1630,20 +1623,16 @@ public class ClassRoutes {
                     return cls.getName().toLowerCase().contains(term);
                     
                 case METHOD_NAME:
-                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                    if (classNode == null) return false;
-                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                        if (mth.getMethodInfo().getName().toLowerCase().contains(term)) {
+                    for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                        if (methodSnapshot.getName().toLowerCase().contains(term)) {
                             return true;
                         }
                     }
                     return false;
                     
                 case FIELD_NAME:
-                    jadx.core.dex.nodes.ClassNode fieldClassNode = cls.getClassNode();
-                    if (fieldClassNode == null) return false;
-                    for (jadx.core.dex.nodes.FieldNode field : fieldClassNode.getFields()) {
-                        if (field.getFieldInfo().getName().toLowerCase().contains(term)) {
+                    for (JadxApiAdapter.FieldInfoSnapshot fieldSnapshot : JadxApiAdapter.getDeclaredFieldInfos(cls)) {
+                        if (fieldSnapshot.getName().toLowerCase().contains(term)) {
                             return true;
                         }
                     }
@@ -2025,20 +2014,15 @@ public class ClassRoutes {
                     if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
                         return false;
                     }
-                    // Use ClassNode to avoid triggering decompilation
-                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                    if (classNode == null) return false;
-                    
-                    // Check each method in the class using MethodNode (no decompilation)
-                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                        String mthName = mth.getMethodInfo().getName().toLowerCase();
+                    for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                        String mthName = methodSnapshot.getName().toLowerCase();
                         // Check method name (includes constructors <init> and static initializers <clinit>)
                         if (mthName.contains(term)) {
                             return true;
                         }
 
                         // Check if it's a constructor - also match against class simple name
-                        if (mth.getMethodInfo().isConstructor()) {
+                        if (methodSnapshot.isConstructor()) {
                             String classSimpleName = cls.getName().toLowerCase();
                             if (classSimpleName.contains(term)) {
                                 return true;
@@ -2061,13 +2045,8 @@ public class ClassRoutes {
                     if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
                         return false;
                     }
-                    // Use ClassNode to avoid triggering decompilation
-                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                    if (classNode == null) return false;
-                    
-                    // Check if any field name contains the term (using FieldNode)
-                    for (jadx.core.dex.nodes.FieldNode field : classNode.getFields()) {
-                        if (field.getFieldInfo().getName().toLowerCase().contains(term)) {
+                    for (JadxApiAdapter.FieldInfoSnapshot fieldSnapshot : JadxApiAdapter.getDeclaredFieldInfos(cls)) {
+                        if (fieldSnapshot.getName().toLowerCase().contains(term)) {
                             return true;
                         }
                     }
@@ -2364,21 +2343,18 @@ public class ClassRoutes {
                         className.contains(".Application$") ||
                         className.endsWith("App") ||
                         className.contains(".bootstrap.")) {
-                        // Check if this class is likely the main entry (has main method)
-                        jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                        if (classNode != null) {
-                            for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                                if (mth.getMethodInfo().getName().equals("main") && 
-                                    mth.getAccessFlags().isStatic() &&
-                                    mth.getAccessFlags().isPublic()) {
-                                    Map<String, Object> entry = new HashMap<>();
-                                    entry.put("type", "application_class");
-                                    entry.put("class", className);
-                                    entry.put("source", "naming_pattern");
-                                    entry.put("priority", 2);
-                                    entryPoints.add(entry);
-                                    break;
-                                }
+                        for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                            if (methodSnapshot.getName().equals("main")
+                                && methodSnapshot.getAccessFlags() != null
+                                && methodSnapshot.getAccessFlags().isStatic()
+                                && methodSnapshot.getAccessFlags().isPublic()) {
+                                Map<String, Object> entry = new HashMap<>();
+                                entry.put("type", "application_class");
+                                entry.put("class", className);
+                                entry.put("source", "naming_pattern");
+                                entry.put("priority", 2);
+                                entryPoints.add(entry);
+                                break;
                             }
                         }
                     }
@@ -2392,19 +2368,16 @@ public class ClassRoutes {
             for (JavaClass cls : allClasses) {
                 if (mainMethodCount >= 10) break; // Limit to first 10
                 try {
-                    jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                    if (classNode == null) continue;
-                    
-                    for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                        jadx.core.dex.info.MethodInfo mthInfo = mth.getMethodInfo();
+                    for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
                         // Check for main method signature
-                        if (mthInfo.getName().equals("main") && 
-                            mth.getAccessFlags().isStatic() &&
-                            mth.getAccessFlags().isPublic()) {
+                        if (methodSnapshot.getName().equals("main")
+                            && methodSnapshot.getAccessFlags() != null
+                            && methodSnapshot.getAccessFlags().isStatic()
+                            && methodSnapshot.getAccessFlags().isPublic()) {
                             // Check return type is void
-                            if (mthInfo.getReturnType().toString().equals("void")) {
+                            if ("void".equals(String.valueOf(methodSnapshot.getReturnType()))) {
                                 // Check parameter is String[]
-                                List<jadx.core.dex.instructions.args.ArgType> args = mthInfo.getArgumentsTypes();
+                                List<jadx.core.dex.instructions.args.ArgType> args = methodSnapshot.getArgumentTypes();
                                 if (args.size() == 1 && args.get(0).toString().contains("String[]")) {
                                     Map<String, Object> entry = new HashMap<>();
                                     entry.put("type", "main_method");
@@ -2601,9 +2574,10 @@ public class ClassRoutes {
             result.put("class_name", className);
             result.put("file_type", fileType.getPrimaryType().getName());
             
-            // Get the class node for bytecode access
-            jadx.core.dex.nodes.ClassNode classNode = targetClass.getClassNode();
-            if (classNode == null) {
+            AccessInfo classAccessFlags = JadxApiAdapter.getAccessFlags(targetClass);
+            List<JadxApiAdapter.FieldInfoSnapshot> fieldSnapshots = JadxApiAdapter.getDeclaredFieldInfos(targetClass);
+            List<JadxApiAdapter.MethodInfoSnapshot> methodSnapshots = JadxApiAdapter.getDeclaredMethodInfos(targetClass);
+            if (classAccessFlags == null) {
                 result.put("error", "Cannot access bytecode - class node not available");
                 ctx.json(result);
                 return;
@@ -2617,20 +2591,22 @@ public class ClassRoutes {
             bytecode.append("// File type: ").append(fileType.getPrimaryType().getName().toUpperCase()).append("\n\n");
             
             // Access flags
-            bytecode.append("// Access: ").append(classNode.getAccessFlags().rawValue())
-                    .append(" (").append(classNode.getAccessFlags().toString()).append(")\n");
+            bytecode.append("// Access: ").append(classAccessFlags.rawValue())
+                    .append(" (").append(classAccessFlags.toString()).append(")\n");
             
             // Super class
-            if (classNode.getSuperClass() != null) {
-                bytecode.append("// Extends: ").append(classNode.getSuperClass().toString()).append("\n");
+            String superClass = JadxApiAdapter.getSuperClass(targetClass);
+            if (superClass != null) {
+                bytecode.append("// Extends: ").append(superClass).append("\n");
             }
             
             // Interfaces
-            if (!classNode.getInterfaces().isEmpty()) {
+            List<String> interfaces = JadxApiAdapter.getInterfaces(targetClass);
+            if (!interfaces.isEmpty()) {
                 bytecode.append("// Implements: ");
-                for (int i = 0; i < classNode.getInterfaces().size(); i++) {
+                for (int i = 0; i < interfaces.size(); i++) {
                     if (i > 0) bytecode.append(", ");
-                    bytecode.append(classNode.getInterfaces().get(i).toString());
+                    bytecode.append(interfaces.get(i));
                 }
                 bytecode.append("\n");
             }
@@ -2638,23 +2614,23 @@ public class ClassRoutes {
             
             // Fields
             bytecode.append("// Fields:\n");
-            for (jadx.core.dex.nodes.FieldNode field : classNode.getFields()) {
-                bytecode.append("  ").append(field.getAccessFlags().toString())
-                        .append(" ").append(field.getType().toString())
-                        .append(" ").append(field.getName()).append("\n");
+            for (JadxApiAdapter.FieldInfoSnapshot fieldSnapshot : fieldSnapshots) {
+                bytecode.append("  ").append(fieldSnapshot.getAccessFlags().toString())
+                        .append(" ").append(fieldSnapshot.getType())
+                        .append(" ").append(fieldSnapshot.getName()).append("\n");
             }
             bytecode.append("\n");
             
             // Methods with signature
             bytecode.append("// Methods:\n");
-            for (jadx.core.dex.nodes.MethodNode method : classNode.getMethods()) {
-                bytecode.append("  ").append(method.getAccessFlags().toString())
-                        .append(" ").append(method.getMethodInfo().getReturnType())
-                        .append(" ").append(method.getName())
+            for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : methodSnapshots) {
+                bytecode.append("  ").append(methodSnapshot.getAccessFlags().toString())
+                        .append(" ").append(methodSnapshot.getReturnType())
+                        .append(" ").append(methodSnapshot.getName())
                         .append("(");
                 
                 // Parameters
-                var args = method.getMethodInfo().getArgumentsTypes();
+                var args = methodSnapshot.getArgumentTypes();
                 for (int i = 0; i < args.size(); i++) {
                     if (i > 0) bytecode.append(", ");
                     bytecode.append(args.get(i).toString());
@@ -2662,14 +2638,14 @@ public class ClassRoutes {
                 bytecode.append(")\n");
                 
                 // Try to get instructions count
-                if (method.getBasicBlocks() != null) {
-                    bytecode.append("    // Basic blocks: ").append(method.getBasicBlocks().size()).append("\n");
+                if (methodSnapshot.getBasicBlockCount() != null) {
+                    bytecode.append("    // Basic blocks: ").append(methodSnapshot.getBasicBlockCount()).append("\n");
                 }
             }
             
             result.put("bytecode", bytecode.toString());
-            result.put("field_count", classNode.getFields().size());
-            result.put("method_count", classNode.getMethods().size());
+            result.put("field_count", fieldSnapshots.size());
+            result.put("method_count", methodSnapshots.size());
             result.put("status", "success");
             
             // Add note about smali availability

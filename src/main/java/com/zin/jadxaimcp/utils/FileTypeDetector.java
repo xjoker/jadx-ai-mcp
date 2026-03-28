@@ -2,7 +2,6 @@ package com.zin.jadxaimcp.utils;
 
 import jadx.api.JadxArgs;
 import jadx.api.ResourceFile;
-import jadx.core.utils.android.AndroidManifestParser;
 import jadx.gui.JadxWrapper;
 
 import org.slf4j.Logger;
@@ -28,6 +27,7 @@ import java.util.zip.ZipInputStream;
  */
 public class FileTypeDetector {
     private static final Logger logger = LoggerFactory.getLogger(FileTypeDetector.class);
+    private static final ManifestInfoService manifestInfoService = ManifestInfoService.getInstance();
 
     /**
      * File types supported by JADX
@@ -151,7 +151,7 @@ public class FileTypeDetector {
                 // Fallback: check if resources exist (indicates APK/AAR)
                 List<ResourceFile> resources = wrapper.getResources();
                 if (resources != null && !resources.isEmpty()) {
-                    ResourceFile manifest = AndroidManifestParser.getAndroidManifest(resources);
+                    ResourceFile manifest = manifestInfoService.getManifestFile(wrapper);
                     if (manifest != null) {
                         types.add(FileType.APK);
                         paths.add("(detected from manifest)");

@@ -1,5 +1,7 @@
 """Tests for ACL-aware JADX request routing."""
 
+import json
+
 import pytest
 import respx
 from httpx import Response
@@ -82,3 +84,25 @@ class TestGetFromJadxAcl:
 
         assert result["file_name"] == "shared.apk"
         assert route.called is True
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_post_request_uses_json_body(self):
+        route = respx.post("http://127.0.0.1:8650/rename-class").mock(
+            return_value=Response(200, json={"result": "ok"})
+        )
+
+        result = await get_from_jadx(
+            "rename-class",
+            method="POST",
+            json_body={"class_name": "a.b.C", "new_name": "RenamedC"},
+        )
+
+        assert result["result"] == "ok"
+        assert route.called is True
+        request = route.calls.last.request
+        assert request.method == "POST"
+        assert json.loads(request.content.decode()) == {
+            "class_name": "a.b.C",
+            "new_name": "RenamedC",
+        }

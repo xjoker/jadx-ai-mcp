@@ -11,10 +11,8 @@
 .vscode
 *.iml
 
-# Build artifacts (we use jadx plugins --install instead)
-# For local dev builds, we need .jar files from target/
-target/*
-!target/*.jar
+# Build artifacts
+target/
 
 # Documentation (not needed in image)
 *.md
@@ -31,4 +29,3 @@ AGENTS.md
 # Temp files
 *.log
 *.tmp
-

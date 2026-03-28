@@ -163,6 +163,8 @@ async def get_from_jadx(
     params: Optional[Dict[str, Any]] = None,
     instance_id: Optional[str] = None,
     timeout: Optional[int] = None,
+    method: str = "GET",
+    json_body: Optional[Dict[str, Any]] = None,
     username: Optional[str] = None,
     is_admin: bool = False,
 ) -> Union[str, Dict[str, Any]]:
@@ -174,6 +176,8 @@ async def get_from_jadx(
         params: Query parameters dictionary for the request
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
         timeout: Optional per-request timeout in seconds. Overrides the client default.
+        method: HTTP method to use. Currently supports GET and POST.
+        json_body: Optional JSON body for POST requests.
         username: Optional current username for ACL-aware instance resolution.
         is_admin: Whether the current user has admin access.
 
@@ -190,6 +194,14 @@ async def get_from_jadx(
         Uses connection pooling for better performance.
     """
     params = params or {}
+    method_upper = method.upper()
+
+    if method_upper not in {"GET", "POST"}:
+        return make_error(
+            ErrorCode.INVALID_INPUT,
+            f"Unsupported HTTP method: {method_upper}",
+            suggestion="Use GET for read-only requests or POST for mutating requests.",
+        )
 
     # Determine the base URL based on instance_id
     base_url = JADX_HTTP_BASE
@@ -347,7 +359,7 @@ async def get_from_jadx(
 
     # Check cache for cacheable endpoints
     cache_key = None
-    if ep_stripped in CACHEABLE_ENDPOINTS:
+    if method_upper == "GET" and ep_stripped in CACHEABLE_ENDPOINTS:
         cache_key = _make_cache_key(
             instance_obj.name if instance_obj else instance_id,
             ep_stripped,
@@ -357,13 +369,26 @@ async def get_from_jadx(
         if cached is not None:
             return cached
 
-    logger.debug(f"JADX request: GET {url} (params={list(params.keys()) if params else 'none'})")
+    logger.debug(
+        "JADX request: %s %s (params=%s, json=%s)",
+        method_upper,
+        url,
+        list(params.keys()) if params else "none",
+        list(json_body.keys()) if json_body else "none",
+    )
 
     try:
         client = await HttpClientManager.get_client()
         effective_timeout = timeout if timeout is not None else _infer_timeout(endpoint)
         req_timeout = httpx.Timeout(effective_timeout)
-        resp = await client.get(url, params=params, headers=headers, timeout=req_timeout)
+        resp = await client.request(
+            method_upper,
+            url,
+            params=params or None,
+            json=json_body if json_body is not None else None,
+            headers=headers,
+            timeout=req_timeout,
+        )
         resp.raise_for_status()
 
         logger.debug(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")

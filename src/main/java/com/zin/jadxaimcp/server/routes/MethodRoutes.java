@@ -4,6 +4,13 @@ import io.javalin.http.Context;
 
 import jadx.api.JavaClass;
 import jadx.api.JavaMethod;
+import jadx.api.plugins.input.data.IMethodRef;
+import jadx.core.dex.info.MethodInfo;
+import jadx.core.dex.instructions.BaseInvokeNode;
+import jadx.core.dex.instructions.args.InsnArg;
+import jadx.core.dex.instructions.args.InsnWrapArg;
+import jadx.core.dex.nodes.InsnNode;
+import jadx.core.dex.nodes.MethodNode;
 import jadx.gui.JadxWrapper;
 import jadx.gui.ui.MainWindow;
 
@@ -11,6 +18,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,10 +33,17 @@ import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.JadxApiAdapter;
 import com.zin.jadxaimcp.utils.SmartChunker;
 
 public class MethodRoutes {
     private static final Logger logger = LoggerFactory.getLogger(MethodRoutes.class);
+    private static final java.lang.reflect.Method JAVA_METHOD_GET_USED = findOptionalMethod(JavaMethod.class, "getUsed");
+    private static final java.lang.reflect.Method JAVA_METHOD_GET_UNRESOLVED_USED =
+        findOptionalMethod(JavaMethod.class, "getUnresolvedUsed");
+    private static final java.lang.reflect.Method METHOD_NODE_GET_USED = findOptionalMethod(MethodNode.class, "getUsed");
+    private static final java.lang.reflect.Method METHOD_NODE_GET_UNRESOLVED_USED =
+        findOptionalMethod(MethodNode.class, "getUnresolvedUsed");
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
 
@@ -68,14 +86,11 @@ public class MethodRoutes {
             }
             try {
                 // Case 1: Search in all classes if no class name provided
-                // Use ClassNode for fast method name lookup without triggering decompilation
+                // Use adapter-backed metadata lookup to avoid triggering decompilation.
                 if (className == null || className.isEmpty()) {
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                        jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                        if (classNode == null) continue;
-
-                        for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                            if (mth.getMethodInfo().getName().equalsIgnoreCase(methodName)) {
+                        for (JadxApiAdapter.MethodInfoSnapshot methodInfo : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                            if (methodInfo != null && methodInfo.getName().equalsIgnoreCase(methodName)) {
                                 // Found! Now get the JavaMethod (this triggers decompilation for this class only)
                                 for (JavaMethod method : cls.getMethods()) {
                                     if (method.getName().equalsIgnoreCase(methodName)) {
@@ -348,15 +363,8 @@ public class MethodRoutes {
                     }
                 }
 
-                // Use ClassNode.getMethods() to avoid triggering decompilation.
-                jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                if (classNode == null) {
-                    classesProcessed++;
-                    continue;
-                }
-
-                for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
-                    String mthName = mth.getMethodInfo().getName();
+                for (JadxApiAdapter.MethodInfoSnapshot methodInfo : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                    String mthName = methodInfo.getName();
 
                     if (mthName.toLowerCase().contains(searchTerm)) {
                         totalMatches++;
@@ -370,7 +378,7 @@ public class MethodRoutes {
                             Map<String, String> match = new HashMap<>();
                             match.put("class_name", cls.getFullName());
                             match.put("method_name", mthName);
-                            match.put("is_constructor", String.valueOf(mth.getMethodInfo().isConstructor()));
+                            match.put("is_constructor", String.valueOf(methodInfo.isConstructor()));
                             results.add(match);
                             collected++;
                         }
@@ -492,12 +500,12 @@ public class MethodRoutes {
                             sig.put("access_flags", method.getAccessFlags().toString());
                             sig.put("is_constructor", method.isConstructor());
                             
-                            // Parameters - iterate through argument types from MethodNode
+                            // Parameters - JavaMethod exposes argument types via the public API in JADX 1.5.5.
                             List<Map<String, String>> params = new ArrayList<>();
                             List<jadx.core.dex.instructions.args.ArgType> argTypes = new ArrayList<>();
                             
                             try {
-                                argTypes = method.getMethodNode().getMethodInfo().getArgumentsTypes();
+                                argTypes = new ArrayList<>(method.getArguments());
                                 int idx = 0;
                                 for (jadx.core.dex.instructions.args.ArgType argType : argTypes) {
                                     Map<String, String> param = new HashMap<>();
@@ -555,13 +563,11 @@ public class MethodRoutes {
      * This method handles the /method-callees MCP tool call.
      * Returns a list of methods called by the specified method.
      * 
-     * Uses code text parsing to identify method calls (pattern matching approach).
-     * 
      * Request parameters:
      * - class_name (required): Fully qualified class name
      * - method_name (required): Method name to analyze
      * 
-     * Returns JSON with list of potential callees (class.method patterns found in code).
+     * Returns JSON with semantic callee data split into resolved and unresolved groups.
      */
     public void handleMethodCallees(Context ctx) {
         String className = ctx.queryParam("class_name");
@@ -592,42 +598,19 @@ public class MethodRoutes {
                 try {
                     for (JavaMethod method : cls.getMethods()) {
                         if (method.getName().equalsIgnoreCase(methodName)) {
-                            String code = method.getCodeStr();
-                            
-                            // Parse method calls from code
-                            // Pattern: identifier.methodName( or ClassName.staticMethod(
-                            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
-                                "([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\.\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
-                            );
-                            java.util.regex.Matcher matcher = pattern.matcher(code);
-                            
-                            Set<String> calleesSet = new java.util.LinkedHashSet<>();
-                            while (matcher.find()) {
-                                String receiver = matcher.group(1);
-                                String calledMethod = matcher.group(2);
-                                // Filter out common false positives
-                                if (!receiver.equals("this") && !receiver.equals("super")) {
-                                    calleesSet.add(receiver + "." + calledMethod);
-                                }
-                            }
-                            
-                            // Also find new ClassName() constructor calls
-                            java.util.regex.Pattern ctorPattern = java.util.regex.Pattern.compile(
-                                "new\\s+([a-zA-Z_][a-zA-Z0-9_.]+)\\s*\\("
-                            );
-                            java.util.regex.Matcher ctorMatcher = ctorPattern.matcher(code);
-                            while (ctorMatcher.find()) {
-                                calleesSet.add(ctorMatcher.group(1) + ".<init>");
-                            }
-                            
-                            List<String> callees = new ArrayList<>(calleesSet);
+                            CalleeAnalysisResult analysis = analyzeMethodCallees(method);
                             
                             Map<String, Object> response = new HashMap<>();
                             response.put("class_name", className);
                             response.put("method_name", methodName);
-                            response.put("callees_count", callees.size());
-                            response.put("callees", callees);
-                            response.put("note", "Pattern-based analysis; may include false positives from strings/comments");
+                            response.put("callees_count", analysis.getAllCallees().size());
+                            response.put("callees", analysis.getAllCallees());
+                            response.put("resolved_callees_count", analysis.getResolvedCallees().size());
+                            response.put("resolved_callees", analysis.getResolvedCallees());
+                            response.put("unresolved_callees_count", analysis.getUnresolvedCallees().size());
+                            response.put("unresolved_callees", analysis.getUnresolvedCallees());
+                            response.put("analysis_mode", analysis.getAnalysisMode());
+                            response.put("note", analysis.getNote());
                             ctx.json(response);
                             return;
                         }
@@ -648,11 +631,272 @@ public class MethodRoutes {
         }
     }
 
+    private CalleeAnalysisResult analyzeMethodCallees(JavaMethod method) {
+        CalleeAnalysisResult publicApiResult = analyzeMethodCalleesWithJavaMethodApi(method);
+        if (publicApiResult != null) {
+            return publicApiResult;
+        }
+
+        CalleeAnalysisResult internalApiResult = analyzeMethodCalleesWithMethodNodeApi(method);
+        if (internalApiResult != null) {
+            return internalApiResult;
+        }
+
+        // TODO: Replace this fallback with the upstream semantic usage API directly once the
+        // JADX runtime we compile against exposes JavaMethod#getUsed/getUnresolvedUsed.
+        return analyzeMethodCalleesFromInstructions(method);
+    }
+
+    private CalleeAnalysisResult analyzeMethodCalleesWithJavaMethodApi(JavaMethod method) {
+        if (JAVA_METHOD_GET_USED == null || JAVA_METHOD_GET_UNRESOLVED_USED == null) {
+            return null;
+        }
+        try {
+            CalleeAnalysisResult result = new CalleeAnalysisResult(
+                "semantic-public-api",
+                "Collected callees via JavaMethod.getUsed()/getUnresolvedUsed()."
+            );
+            addResolvedCallees(result, invokeNodeCollection(JAVA_METHOD_GET_USED, method));
+            addUnresolvedCallees(result, invokeMethodRefCollection(JAVA_METHOD_GET_UNRESOLVED_USED, method));
+            return result;
+        } catch (ReflectiveOperationException e) {
+            logger.warn("Failed to use JavaMethod semantic callee API, falling back: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private CalleeAnalysisResult analyzeMethodCalleesWithMethodNodeApi(JavaMethod method) {
+        if (METHOD_NODE_GET_USED == null || METHOD_NODE_GET_UNRESOLVED_USED == null) {
+            return null;
+        }
+        MethodNode methodNode = JadxApiAdapter.getInternalMethodNode(method);
+        if (methodNode == null) {
+            return null;
+        }
+        try {
+            CalleeAnalysisResult result = new CalleeAnalysisResult(
+                "semantic-internal-api",
+                "Collected callees via internal MethodNode usage API."
+            );
+            addResolvedCallees(result, invokeNodeCollection(METHOD_NODE_GET_USED, methodNode));
+            addUnresolvedCallees(result, invokeMethodRefCollection(METHOD_NODE_GET_UNRESOLVED_USED, methodNode));
+            return result;
+        } catch (ReflectiveOperationException e) {
+            logger.warn("Failed to use MethodNode semantic callee API, falling back: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private CalleeAnalysisResult analyzeMethodCalleesFromInstructions(JavaMethod method) {
+        CalleeAnalysisResult result = new CalleeAnalysisResult(
+            "semantic-instruction-fallback",
+            "JavaMethod.getUsed()/getUnresolvedUsed() are unavailable in jadx-all 1.5.5; "
+                + "using MethodNode instruction analysis without source regex."
+        );
+
+        MethodNode methodNode = JadxApiAdapter.getInternalMethodNode(method);
+        if (methodNode == null) {
+            return result;
+        }
+
+        InsnNode[] instructions = methodNode.getInstructions();
+        if (instructions == null) {
+            return result;
+        }
+
+        for (InsnNode instruction : instructions) {
+            collectInvokeCallees(methodNode, instruction, result);
+        }
+        return result;
+    }
+
+    private void collectInvokeCallees(MethodNode callerMethod, InsnNode instruction, CalleeAnalysisResult result) {
+        if (instruction == null) {
+            return;
+        }
+
+        if (instruction instanceof BaseInvokeNode) {
+            MethodInfo calledMethod = ((BaseInvokeNode) instruction).getCallMth();
+            if (calledMethod != null) {
+                MethodNode resolvedMethod = callerMethod.root().resolveMethod(calledMethod);
+                if (resolvedMethod != null) {
+                    result.addResolved(buildResolvedCalleeInfo(resolvedMethod));
+                } else {
+                    result.addUnresolved(buildUnresolvedCalleeInfo(calledMethod));
+                }
+            }
+        }
+
+        for (InsnArg argument : instruction.getArguments()) {
+            if (argument.isInsnWrap()) {
+                collectInvokeCallees(callerMethod, ((InsnWrapArg) argument).getWrapInsn(), result);
+            }
+        }
+    }
+
+    private void addResolvedCallees(CalleeAnalysisResult result, Collection<?> usedNodes) {
+        for (Object usedNode : usedNodes) {
+            if (usedNode instanceof JavaMethod) {
+                result.addResolved(buildResolvedCalleeInfo((JavaMethod) usedNode));
+            } else if (usedNode instanceof MethodNode) {
+                result.addResolved(buildResolvedCalleeInfo((MethodNode) usedNode));
+            }
+        }
+    }
+
+    private void addUnresolvedCallees(CalleeAnalysisResult result, Collection<IMethodRef> unresolvedRefs) {
+        for (IMethodRef unresolvedRef : unresolvedRefs) {
+            result.addUnresolved(buildUnresolvedCalleeInfo(unresolvedRef));
+        }
+    }
+
+    private Collection<?> invokeNodeCollection(java.lang.reflect.Method apiMethod, Object target)
+            throws ReflectiveOperationException {
+        Object value = apiMethod.invoke(target);
+        if (value instanceof Collection<?>) {
+            return (Collection<?>) value;
+        }
+        return Collections.emptyList();
+    }
+
+    private Collection<IMethodRef> invokeMethodRefCollection(java.lang.reflect.Method apiMethod, Object target)
+            throws ReflectiveOperationException {
+        Object value = apiMethod.invoke(target);
+        if (!(value instanceof Collection<?>)) {
+            return Collections.emptyList();
+        }
+
+        List<IMethodRef> methodRefs = new ArrayList<>();
+        for (Object item : (Collection<?>) value) {
+            if (item instanceof IMethodRef) {
+                methodRefs.add((IMethodRef) item);
+            }
+        }
+        return methodRefs;
+    }
+
+    private Map<String, Object> buildResolvedCalleeInfo(JavaMethod calleeMethod) {
+        return buildResolvedCalleeInfo(JadxApiAdapter.getMethodInfo(calleeMethod));
+    }
+
+    private Map<String, Object> buildResolvedCalleeInfo(MethodNode calleeMethod) {
+        return buildResolvedCalleeInfo(JadxApiAdapter.getMethodInfo(calleeMethod));
+    }
+
+    private Map<String, Object> buildResolvedCalleeInfo(JadxApiAdapter.MethodInfoSnapshot calleeMethodInfo) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        if (calleeMethodInfo == null) {
+            info.put("class_name", "");
+            info.put("method_name", "");
+            info.put("full_name", "");
+            info.put("short_id", "");
+            info.put("display_name", "");
+            return info;
+        }
+        String fullName = calleeMethodInfo.getFullName();
+        String className = calleeMethodInfo.getDeclaringClassName();
+        info.put("class_name", className);
+        info.put("method_name", calleeMethodInfo.getName());
+        info.put("full_name", fullName);
+        info.put("short_id", calleeMethodInfo.getShortId());
+        info.put("display_name", fullName);
+        return info;
+    }
+
+    private Map<String, Object> buildUnresolvedCalleeInfo(MethodInfo unresolvedMethod) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("class_name", unresolvedMethod.getDeclClass().getFullName());
+        info.put("method_name", unresolvedMethod.getName());
+        info.put("full_name", unresolvedMethod.getFullName());
+        info.put("short_id", unresolvedMethod.getShortId());
+        info.put("display_name", unresolvedMethod.getFullName());
+        return info;
+    }
+
+    private Map<String, Object> buildUnresolvedCalleeInfo(IMethodRef unresolvedMethod) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        String className = normalizeTypeName(unresolvedMethod.getParentClassType());
+        info.put("class_name", className);
+        info.put("method_name", unresolvedMethod.getName());
+        info.put("full_name", className + "." + unresolvedMethod.getName());
+        info.put("arg_types", new ArrayList<>(unresolvedMethod.getArgTypes()));
+        info.put("return_type", unresolvedMethod.getReturnType());
+        info.put("display_name", className + "." + unresolvedMethod.getName());
+        return info;
+    }
+
+    private static java.lang.reflect.Method findOptionalMethod(Class<?> type, String methodName) {
+        try {
+            return type.getMethod(methodName);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    private String normalizeTypeName(String typeName) {
+        if (typeName == null || typeName.isEmpty()) {
+            return "";
+        }
+        if (typeName.startsWith("L") && typeName.endsWith(";")) {
+            return typeName.substring(1, typeName.length() - 1).replace('/', '.');
+        }
+        return typeName.replace('/', '.');
+    }
+
+    private static final class CalleeAnalysisResult {
+        private final LinkedHashMap<String, Map<String, Object>> resolved = new LinkedHashMap<>();
+        private final LinkedHashMap<String, Map<String, Object>> unresolved = new LinkedHashMap<>();
+        private final String analysisMode;
+        private final String note;
+
+        private CalleeAnalysisResult(String analysisMode, String note) {
+            this.analysisMode = analysisMode;
+            this.note = note;
+        }
+
+        private void addResolved(Map<String, Object> callee) {
+            resolved.putIfAbsent(String.valueOf(callee.get("full_name")) + "#" + String.valueOf(callee.get("short_id")), callee);
+        }
+
+        private void addUnresolved(Map<String, Object> callee) {
+            String unresolvedKey = String.valueOf(callee.get("full_name")) + "#"
+                + String.valueOf(callee.getOrDefault("short_id", callee.getOrDefault("arg_types", "")));
+            unresolved.putIfAbsent(unresolvedKey, callee);
+        }
+
+        private List<String> getAllCallees() {
+            Set<String> combined = new LinkedHashSet<>();
+            for (Map<String, Object> callee : resolved.values()) {
+                combined.add(String.valueOf(callee.get("display_name")));
+            }
+            for (Map<String, Object> callee : unresolved.values()) {
+                combined.add(String.valueOf(callee.get("display_name")));
+            }
+            return new ArrayList<>(combined);
+        }
+
+        private List<Map<String, Object>> getResolvedCallees() {
+            return new ArrayList<>(resolved.values());
+        }
+
+        private List<Map<String, Object>> getUnresolvedCallees() {
+            return new ArrayList<>(unresolved.values());
+        }
+
+        private String getAnalysisMode() {
+            return analysisMode;
+        }
+
+        private String getNote() {
+            return note;
+        }
+    }
+
     /**
      * Search for all native methods across the APK.
      * 
      * This is a metadata-only operation that does NOT trigger decompilation.
-     * Uses ClassNode.getAccessFlags().isNative() which reads from DEX metadata directly.
+     * Uses adapter-backed metadata access which reads from DEX metadata directly.
      * 
      * Query params:
      * - package: Optional package filter (e.g., "com.xingin")
@@ -711,12 +955,8 @@ public class MethodRoutes {
                     }
                 }
 
-                jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
-                if (classNode == null) continue;
-
-                // Check each method's access flags (metadata only, no decompilation)
-                for (jadx.core.dex.nodes.MethodNode method : classNode.getMethods()) {
-                    if (method.getAccessFlags().isNative()) {
+                for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                    if (methodSnapshot.getAccessFlags() != null && methodSnapshot.getAccessFlags().isNative()) {
                         totalFound++;
 
                         // Apply pagination
@@ -729,19 +969,19 @@ public class MethodRoutes {
                             continue; // Keep counting total but don't add more
                         }
 
-                        Map<String, Object> methodInfo = new HashMap<>();
-                        methodInfo.put("class_name", className);
-                        methodInfo.put("method_name", method.getMethodInfo().getName());
-                        methodInfo.put("short_id", method.getMethodInfo().getShortId());
+                        Map<String, Object> nativeMethodInfo = new HashMap<>();
+                        nativeMethodInfo.put("class_name", className);
+                        nativeMethodInfo.put("method_name", methodSnapshot.getName());
+                        nativeMethodInfo.put("short_id", methodSnapshot.getShortId());
 
                         // Get parameter types for Frida overload
                         List<String> paramTypes = new ArrayList<>();
-                        for (jadx.core.dex.instructions.args.ArgType argType : method.getMethodInfo().getArgumentsTypes()) {
+                        for (jadx.core.dex.instructions.args.ArgType argType : methodSnapshot.getArgumentTypes()) {
                             paramTypes.add(com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(argType));
                         }
-                        methodInfo.put("param_types_frida", paramTypes);
+                        nativeMethodInfo.put("param_types_frida", paramTypes);
 
-                        nativeMethods.add(methodInfo);
+                        nativeMethods.add(nativeMethodInfo);
                     }
                 }
             }
@@ -777,4 +1017,5 @@ public class MethodRoutes {
         ctx.status(503).json(busyResponse);
         return false;
     }
+
 }

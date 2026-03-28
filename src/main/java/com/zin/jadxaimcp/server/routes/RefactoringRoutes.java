@@ -1,5 +1,8 @@
 package com.zin.jadxaimcp.server.routes;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import io.javalin.http.Context;
 
 import jadx.api.JavaClass;
@@ -23,6 +26,7 @@ import com.zin.jadxaimcp.utils.ClassCacheManager;
 
 public class RefactoringRoutes {
     private static final Logger logger = LoggerFactory.getLogger(RefactoringRoutes.class);
+    private static final Gson GSON = new Gson();
     private final MainWindow mainWindow;
     
     public RefactoringRoutes(MainWindow mainWindow) {
@@ -39,8 +43,11 @@ public class RefactoringRoutes {
      * Then it sends these events using MainWindows's send() method.
      */
     public void handleRenameClass(Context ctx) {
-        String className = ctx.queryParam("class_name");
-        String newName = ctx.queryParam("new_name");
+        JsonObject requestBody = parseJsonBody(ctx);
+        if (requestBody == null) return;
+
+        String className = getBodyString(requestBody, "class_name");
+        String newName = getBodyString(requestBody, "new_name");
 
         if (validateParams(ctx, className, newName)) return;
 
@@ -59,7 +66,7 @@ public class RefactoringRoutes {
             if (cls != null) {
                 ICodeNodeRef nodeRef = cls.getCodeNodeRef();
                 NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, cls.getName(), newName);
-                event.setRenameNode(cls.getClassNode());
+                event.setRenameNode(nodeRef);
                 event.setResetName(newName.isEmpty());
                 mainWindow.events().send(event);
 
@@ -88,8 +95,12 @@ public class RefactoringRoutes {
      * 
      */
     public void handleRenameMethod(Context ctx) {
-        String methodName = ctx.queryParam("method_name");
-        String newName = ctx.queryParam("new_name");
+        JsonObject requestBody = parseJsonBody(ctx);
+        if (requestBody == null) return;
+
+        String methodName = getBodyString(requestBody, "method_name");
+        String newName = getBodyString(requestBody, "new_name");
+        String className = getBodyString(requestBody, "class_name");
 
         if (validateParams(ctx, methodName, newName)) return;
 
@@ -107,21 +118,20 @@ public class RefactoringRoutes {
             }
             
             // Extract class name from method_name (format: com.example.Class:methodName or com.example.Class.methodName)
-            String className = null;
             String simpleMethodName = methodName;
             
-            if (methodName.contains(":")) {
+            if ((className == null || className.isEmpty()) && methodName.contains(":")) {
                 int colonIdx = methodName.lastIndexOf(':');
                 className = methodName.substring(0, colonIdx);
                 simpleMethodName = methodName.substring(colonIdx + 1);
-            } else if (methodName.contains(".")) {
+            } else if ((className == null || className.isEmpty()) && methodName.contains(".")) {
                 int lastDot = methodName.lastIndexOf('.');
                 className = methodName.substring(0, lastDot);
                 simpleMethodName = methodName.substring(lastDot + 1);
             }
             
-            if (className == null) {
-                JadxAIMCPPluginError.handleError(ctx, 400, "Invalid method_name format. Expected: class.method or class:method", logger);
+            if (className == null || className.isEmpty()) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'class_name'", logger);
                 return;
             }
             
@@ -134,7 +144,7 @@ public class RefactoringRoutes {
                     if (method.getName().equalsIgnoreCase(simpleMethodName)) {
                         ICodeNodeRef nodeRef = method.getCodeNodeRef();
                         NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, method.getName(), newName);
-                        event.setRenameNode(method.getMethodNode());
+                        event.setRenameNode(nodeRef);
                         event.setResetName(newName.isEmpty());
                         mainWindow.events().send(event);
 
@@ -167,9 +177,12 @@ public class RefactoringRoutes {
      * Then it sends these events using MainWindows's send() method.
      */
     public void handleRenameField(Context ctx) {
-        String className = ctx.queryParam("class_name");
-        String oldFieldName = ctx.queryParam("field_name");
-        String newFieldName = ctx.queryParam("new_field_name");
+        JsonObject requestBody = parseJsonBody(ctx);
+        if (requestBody == null) return;
+
+        String className = getBodyString(requestBody, "class_name");
+        String oldFieldName = getBodyString(requestBody, "field_name");
+        String newFieldName = getBodyString(requestBody, "new_field_name");
 
         if (validateParams(ctx, className, oldFieldName, newFieldName)) return;
 
@@ -190,7 +203,7 @@ public class RefactoringRoutes {
                     if (field.getName().equals(oldFieldName)) {
                         ICodeNodeRef nodeRef = field.getCodeNodeRef();
                         NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, field.getName(), newFieldName);
-                        event.setRenameNode(field.getFieldNode());
+                        event.setRenameNode(nodeRef);
                         event.setResetName(newFieldName.isEmpty());
                         mainWindow.events().send(event);
 
@@ -222,8 +235,11 @@ public class RefactoringRoutes {
      * Then it sends these events using MainWindows's send() method.
      */
     public void handleRenamePackage(Context ctx) {
-        String oldPackage = ctx.queryParam("old_package_name");
-        String newPackage = ctx.queryParam("new_package_name");
+        JsonObject requestBody = parseJsonBody(ctx);
+        if (requestBody == null) return;
+
+        String oldPackage = getBodyString(requestBody, "old_package_name");
+        String newPackage = getBodyString(requestBody, "new_package_name");
 
         if (validateParams(ctx, oldPackage, newPackage)) return;
 
@@ -242,7 +258,7 @@ public class RefactoringRoutes {
                         String newFullName = newPackage + relativePath;
 
                         NodeRenamedByUser event = new NodeRenamedByUser(cls.getCodeNodeRef(), cls.getName(), newFullName);
-                        event.setRenameNode(cls.getClassNode());
+                        event.setRenameNode(cls.getCodeNodeRef());
                         event.setResetName(false);
                         mainWindow.events().send(event);
                         count++;
@@ -268,6 +284,34 @@ public class RefactoringRoutes {
     }
 
     // Helper methods
+
+    private JsonObject parseJsonBody(Context ctx) {
+        try {
+            String rawBody = ctx.body();
+            if (rawBody == null || rawBody.isBlank()) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Missing JSON request body", logger);
+                return null;
+            }
+
+            JsonObject body = GSON.fromJson(rawBody, JsonObject.class);
+            if (body == null) {
+                JadxAIMCPPluginError.handleError(ctx, 400, "Missing JSON request body", logger);
+                return null;
+            }
+            return body;
+        } catch (JsonParseException e) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Invalid JSON request body", logger);
+            return null;
+        }
+    }
+
+    private String getBodyString(JsonObject body, String key) {
+        if (!body.has(key) || body.get(key).isJsonNull() || !body.get(key).isJsonPrimitive()) {
+            return null;
+        }
+        String value = body.get(key).getAsString();
+        return value == null ? null : value.trim();
+    }
 
     /**
      * @param Context, String, String

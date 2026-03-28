@@ -24,6 +24,7 @@ import java.util.prefs.Preferences;
 
 // Importing custom banner string
 import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
+import com.zin.jadxaimcp.utils.ManifestInfoService;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.ui.PluginMenu;
 import com.zin.jadxaimcp.server.PluginServer;
@@ -54,6 +55,7 @@ public class JadxAIMCP implements JadxPlugin {
     private MainWindow mainWindow;
     private PluginServer pluginServer;
     private PluginMenu pluginMenu;
+    private final ManifestInfoService manifestInfoService = ManifestInfoService.getInstance();
     
     // Static singleton protection to prevent multiple server instances
     private static volatile PluginServer sharedServer = null;
@@ -68,7 +70,7 @@ public class JadxAIMCP implements JadxPlugin {
                 .name("JADX-AI-MCP Plugin")
                 .description("Integrates MCP Server support for JADX")
                 .homepage("https://github.com/xjoker/jadx-ai-mcp")
-                .requiredJadxVersion("1.5.1, r2333")
+                .requiredJadxVersion("1.5.5")
                 .build();
     }
 
@@ -473,18 +475,12 @@ public class JadxAIMCP implements JadxPlugin {
             
             java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
             if (resources == null || resources.isEmpty()) return null;
-            
-            jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
-            if (manifestFile == null) return null;
-            
-            jadx.core.xmlgen.ResContainer container = manifestFile.loadContent();
-            String manifestXml = container.getText().getCodeStr();
-            
-            String pkgName = extractManifestAttribute(manifestXml, "package");
+
+            String pkgName = manifestInfoService.getPackageName(wrapper);
             if (pkgName != null) {
                 StringBuilder sb = new StringBuilder(pkgName);
-                String versionName = extractManifestAttribute(manifestXml, "android:versionName");
-                String versionCodeStr = extractManifestAttribute(manifestXml, "android:versionCode");
+                String versionName = manifestInfoService.getVersionName(wrapper);
+                String versionCodeStr = manifestInfoService.getVersionCode(wrapper);
                 if (versionName != null || versionCodeStr != null) {
                     sb.append(" (");
                     if (versionName != null) {
@@ -536,22 +532,16 @@ public class JadxAIMCP implements JadxPlugin {
             // For APK/AAR/DEX: Use Android manifest-based naming
             java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
             if (resources != null && !resources.isEmpty()) {
-                jadx.api.ResourceFile manifestFile = jadx.core.utils.android.AndroidManifestParser.getAndroidManifest(resources);
-                if (manifestFile != null) {
-                    jadx.core.xmlgen.ResContainer container = manifestFile.loadContent();
-                    String manifestXml = container.getText().getCodeStr();
-                    
-                    String pkgName = extractManifestAttribute(manifestXml, "package");
-                    if (pkgName != null) {
-                        // Use last part of package name + version code
-                        String[] parts = pkgName.split("\\.");
-                        String shortName = parts[parts.length - 1];
-                        String versionCodeStr = extractManifestAttribute(manifestXml, "android:versionCode");
-                        if (versionCodeStr != null) {
-                            return shortName + "-v" + versionCodeStr;
-                        }
-                        return shortName;
+                String pkgName = manifestInfoService.getPackageName(wrapper);
+                if (pkgName != null) {
+                    // Use last part of package name + version code
+                    String[] parts = pkgName.split("\\.");
+                    String shortName = parts[parts.length - 1];
+                    String versionCodeStr = manifestInfoService.getVersionCode(wrapper);
+                    if (versionCodeStr != null) {
+                        return shortName + "-v" + versionCodeStr;
                     }
+                    return shortName;
                 }
             }
         } catch (Exception e) {
@@ -632,26 +622,4 @@ public class JadxAIMCP implements JadxPlugin {
                    .replaceAll("^-|-$", ""); // Remove leading/trailing hyphens
     }
     
-    /**
-     * Helper method to extract attribute from manifest XML
-     */
-    private String extractManifestAttribute(String manifestXml, String attrName) {
-        try {
-            int start = manifestXml.indexOf(attrName + "=\"");
-            if (start == -1) {
-                start = manifestXml.indexOf(attrName + "='");
-            }
-            if (start != -1) {
-                start += attrName.length() + 2;
-                char quote = manifestXml.charAt(start - 1);
-                int end = manifestXml.indexOf(quote, start);
-                if (end != -1) {
-                    return manifestXml.substring(start, end);
-                }
-            }
-        } catch (Exception e) {
-            logger.debug("Failed to extract attribute " + attrName);
-        }
-        return null;
-    }
 }

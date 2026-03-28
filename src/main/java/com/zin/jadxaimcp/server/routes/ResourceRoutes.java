@@ -4,10 +4,6 @@ import io.javalin.http.Context;
 
 import jadx.api.JavaClass;
 import jadx.api.ResourceFile;
-import jadx.api.security.IJadxSecurity;
-import jadx.core.utils.android.AndroidManifestParser;
-import jadx.core.utils.android.AppAttribute;
-import jadx.core.utils.android.ApplicationParams;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.xmlgen.ResContainer;
 import jadx.gui.JadxWrapper;
@@ -41,6 +37,7 @@ import java.awt.Container;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
+import com.zin.jadxaimcp.utils.ManifestInfoService;
 import com.zin.jadxaimcp.utils.ResourceCacheManager;
 
 
@@ -48,6 +45,7 @@ public class ResourceRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ResourceRoutes.class);
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
+    private final ManifestInfoService manifestInfoService = ManifestInfoService.getInstance();
     
     // Dedicated single-thread executor for resource loading
     // Daemon thread to not prevent JVM shutdown
@@ -112,8 +110,11 @@ public class ResourceRoutes {
                 JadxAIMCPPluginError.handleError(ctx, 404, "AndroidManifest.xml not found.", logger);
                 return;
             }
-            ResContainer container = manifest.loadContent();
-            String content = container.getText().getCodeStr();
+            String content = manifestInfoService.getManifestContent(manifest);
+            if (content == null) {
+                JadxAIMCPPluginError.handleError(ctx, 404, "AndroidManifest.xml not found.", logger);
+                return;
+            }
             
             // Use SmartChunker for large manifests
             Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
@@ -819,10 +820,10 @@ public class ResourceRoutes {
      * @param
      * @return ResourceFile
      * 
-     * This helper method is used to get the android manifest file using jadx's AndroidManifestParser class.
+     * This helper method is used to get the Android manifest file via ManifestInfoService.
      */
     private ResourceFile getManifestFile() {
-        return AndroidManifestParser.getAndroidManifest(mainWindow.getWrapper().getResources());
+        return manifestInfoService.getManifestFile(mainWindow.getWrapper());
     }
     
     /**

@@ -140,6 +140,6 @@ class TestEndpointSets:
             assert "smali" not in ep
             assert "search" not in ep
 
-    def test_mutating_endpoints_are_renames(self):
+    def test_mutating_endpoints_are_write_operations(self):
         for ep in _MUTATING_ENDPOINTS:
-            assert "rename" in ep
+            assert "rename" in ep or ep == "cache/clear"

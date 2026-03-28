@@ -2,12 +2,12 @@ package com.zin.jadxaimcp.server.routes;
 
 import io.javalin.http.Context;
 
+import jadx.api.ICodeInfo;
 import jadx.api.JavaClass;
 import jadx.api.JavaField;
 import jadx.api.JavaMethod;
-import jadx.core.dex.nodes.ClassNode;
-import jadx.core.dex.nodes.FieldNode;
-import jadx.core.dex.nodes.MethodNode;
+import jadx.api.JavaNode;
+import jadx.api.utils.CodeUtils;
 import jadx.gui.JadxWrapper;
 import jadx.gui.ui.MainWindow;
 
@@ -21,11 +21,13 @@ import java.util.ArrayList;
 import java.util.Set;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.JadxApiAdapter;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
 
 public class XrefsRoutes {
@@ -70,63 +72,31 @@ public class XrefsRoutes {
             JavaClass targetJavaClass = findClassByName(ctx, className);
             if (targetJavaClass == null) return;
 
-            ClassNode targetClassNode = targetJavaClass.getClassNode();
-            List<ClassNode> classReferences = targetClassNode.getUseIn();
-            List<MethodNode> methodReferences = new ArrayList<>(targetClassNode.getUseInMth());
+            List<JavaClass> classReferences = new ArrayList<>(extractClasses(targetJavaClass.getUseIn()));
+            List<JavaMethod> methodReferences = new ArrayList<>(JadxApiAdapter.getClassUseInMethods(targetJavaClass));
 
             // Include constructor references
             for (JavaMethod javaMethod : targetJavaClass.getMethods()) {
                 if (javaMethod.isConstructor()) {
-                    methodReferences.addAll(javaMethod.getMethodNode().getUseIn());
-                }
-            }
-
-            // Build className -> method names map
-            Map<String, Set<String>> classToMethodsMap = new HashMap<>();
-            for (MethodNode mth : methodReferences) {
-                ClassNode parentClass = mth.getParentClass();
-                if (parentClass != null) {
-                    classToMethodsMap.computeIfAbsent(parentClass.getFullName(), k -> new HashSet<>()).add(mth.getName());
+                    methodReferences.addAll(extractMethods(javaMethod.getUseIn()));
                 }
             }
 
             // Add classes that call constructors
             Set<String> existingClassNames = new HashSet<>();
-            for (ClassNode cls : classReferences) {
+            for (JavaClass cls : classReferences) {
                 existingClassNames.add(cls.getFullName());
             }
-            for (MethodNode mth : methodReferences) {
-                ClassNode parentClass = mth.getParentClass();
+            for (JavaMethod mth : methodReferences) {
+                JavaClass parentClass = mth.getDeclaringClass();
                 if (parentClass != null && !existingClassNames.contains(parentClass.getFullName())) {
                     classReferences.add(parentClass);
                     existingClassNames.add(parentClass.getFullName());
                 }
             }
 
-            // Build final list
-            List<Map<String, String>> referenceList = new ArrayList<>();
-            Set<String> seenReferences = new HashSet<>();
-
-            // Process Class References
-            for (ClassNode refClassNode : classReferences) {
-                String refClassName = refClassNode.getFullName();
-
-                // Method-level references
-                if (classToMethodsMap.containsKey(refClassName)) {
-                    for (MethodNode mth : methodReferences) {
-                        if (mth.getParentClass() != null && mth.getParentClass().getFullName().equals(refClassName)) {
-                            Map<String, String> refInfo = extractMethodNodeReferenceInfo(mth);
-                            addIfUnique(referenceList, seenReferences, refInfo);
-                        }
-                    }
-                } else {
-                    // Class-level reference
-                    Map<String, String> refInfo = new HashMap<>();
-                    refInfo.put("class", refClassName);
-                    refInfo.put("method", "");
-                    addIfUnique(referenceList, seenReferences, refInfo);
-                }
-            }
+            List<Map<String, Object>> referenceList =
+                collectPreciseReferences(targetJavaClass, classReferences, methodReferences);
             sendXrefsResponse(ctx, referenceList);
         } catch (PaginationException e) {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToClass(): " + e.getMessage(), logger);
@@ -181,12 +151,15 @@ public class XrefsRoutes {
                 }
             }
 
-            List<MethodNode> allMethodReferences = new ArrayList<>();
+            List<Map<String, Object>> referenceList = new ArrayList<>();
+            Set<String> seenReferences = new HashSet<>();
             for (JavaMethod relatedMethod : relatedMethods) {
-                allMethodReferences.addAll(relatedMethod.getMethodNode().getUseIn());
+                mergeReferences(
+                    referenceList,
+                    seenReferences,
+                    collectMethodReferences(relatedMethod, extractMethods(relatedMethod.getUseIn()))
+                );
             }
-
-            List<Map<String, String>> referenceList = collectMethodNodeReferences(allMethodReferences);
             sendXrefsResponse(ctx, referenceList);
         } catch (PaginationException e) {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToMethod(): " + e.getMessage(), logger);
@@ -226,9 +199,8 @@ public class XrefsRoutes {
             JavaField targetField = findFieldByName(ctx, containingClass, fieldName);
             if (targetField == null) return;
 
-            FieldNode fieldNode = targetField.getFieldNode();
-            List<MethodNode> fieldReferences = fieldNode.getUseIn();
-            List<Map<String, String>> referenceList = collectMethodNodeReferences(fieldReferences);
+            List<JavaMethod> fieldReferences = extractMethods(targetField.getUseIn());
+            List<Map<String, Object>> referenceList = collectMethodReferences(targetField, fieldReferences);
             sendXrefsResponse(ctx, referenceList);
         } catch (PaginationException e) {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToField(): " + e.getMessage(), logger);
@@ -334,23 +306,39 @@ public class XrefsRoutes {
         return null;
     }
 
-    /**
-     * @return List<Map<String, String>> 
-     * @param List<MethodNode>
-     * 
-     * This helper method returns list of referenced to metod node. For each method node in given 
-     * MethodNodes, get its reference info to Map<String, String>, verify if it is unique using addIfUnique() method.
-     * if it is unique then add it to list else skip.
-     * Return the collected list.
-     */
-    private List<Map<String, String>> collectMethodNodeReferences(List<MethodNode> methodNodes) {
-        Set<String> seenReferences = new HashSet<>();
-        List<Map<String, String>> referenceList = new ArrayList<>();
-        for (MethodNode refMethodNode : methodNodes) {
-            Map<String, String> refInfo = extractMethodNodeReferenceInfo(refMethodNode);
-            addIfUnique(referenceList, seenReferences, refInfo);
+    private List<JavaMethod> extractMethods(List<JavaNode> nodes) {
+        List<JavaMethod> methods = new ArrayList<>();
+        if (nodes == null || nodes.isEmpty()) {
+            return methods;
         }
-        return referenceList;
+
+        for (JavaNode node : nodes) {
+            if (node instanceof JavaMethod) {
+                methods.add((JavaMethod) node);
+            }
+        }
+        return methods;
+    }
+
+    private List<JavaClass> extractClasses(List<JavaNode> nodes) {
+        List<JavaClass> classes = new ArrayList<>();
+        if (nodes == null || nodes.isEmpty()) {
+            return classes;
+        }
+
+        for (JavaNode node : nodes) {
+            if (node instanceof JavaClass) {
+                classes.add((JavaClass) node);
+            }
+        }
+        return classes;
+    }
+
+    /**
+     * Collect references for method-level use sites represented as public JavaMethod objects.
+     */
+    private List<Map<String, Object>> collectMethodReferences(JavaNode targetNode, List<JavaMethod> methodNodes) {
+        return collectPreciseReferences(targetNode, Collections.emptyList(), methodNodes);
     }
 
     /**
@@ -362,9 +350,11 @@ public class XrefsRoutes {
      * of the method. if seen(known list of methods) does not contain it then adds this to it else
      * skips it.
      */
-    private void addIfUnique(List<Map<String, String>> list, Set<String> seen, Map<String, String> item) {
+    private void addIfUnique(List<Map<String, Object>> list, Set<String> seen, Map<String, Object> item) {
         if (item != null) {
-            String key = item.get("class") + "#" + item.get("method");
+            String key = item.get("class") + "#" + item.get("method") + "#"
+                + String.valueOf(item.getOrDefault("source_line", "")) + "#"
+                + String.valueOf(item.getOrDefault("code_snippet", ""));
             if (!seen.contains(key)) {
                 seen.add(key);
                 list.add(item);
@@ -372,32 +362,34 @@ public class XrefsRoutes {
         }
     }
 
+    private void mergeReferences(
+            List<Map<String, Object>> target,
+            Set<String> seen,
+            List<Map<String, Object>> additions) {
+        for (Map<String, Object> addition : additions) {
+            addIfUnique(target, seen, addition);
+        }
+    }
+
     /**
-     * @return Map<String, String> 
-     * @param MethodNode
-     * 
-     * This helper method extracts method node reference info from MethodNode. 
-     * First it get's the parent class of method node using getParanetClass() method MethodNode and
-     * stores it in ClassNode's object named 'parent'. if parent is not null then put it in reference list.
-     * Then it gets the JavaMethod of method node using getJavaNode(). if it is not null then get that
-     * method name else get the method node name. 
-     * 
-     * If this 'name' equals '<clinit>' then empty it. Put the 'name' if reference info list. 
-     * Return info list.
+     * Extract a stable reference payload from a public JavaMethod use site.
      */
-    private Map<String, String> extractMethodNodeReferenceInfo(MethodNode methodNode) {
-        if (methodNode == null) return null;
+    private Map<String, Object> extractMethodReferenceInfo(JavaMethod method) {
+        if (method == null) return null;
         try {
-            Map<String, String> refInfo = new HashMap<>();
-            ClassNode parent = methodNode.getParentClass();
+            Map<String, Object> refInfo = new HashMap<>();
+            JavaClass parent = method.getDeclaringClass();
+            JavaClass parentJavaClass = null;
             if (parent != null) {
                 refInfo.put("class", parent.getFullName());
-                ensureClassDecompiled(parent);
+                parentJavaClass = ensureClassDecompiled(parent);
             }
-            JavaMethod javaMethod = methodNode.getJavaNode();
-            String name = (javaMethod != null) ? javaMethod.getName() : methodNode.getName();
+            String name = method.isClassInit() ? "" : method.getName();
             if ("<clinit>".equals(name)) name = "";
             refInfo.put("method", name);
+            JadxApiAdapter.MethodInfoSnapshot methodInfo = JadxApiAdapter.getMethodInfo(method);
+            refInfo.put("from_method", methodInfo != null ? methodInfo.getFullId() : method.getFullName());
+            refInfo.put("source_line", resolveDefinitionSourceLine(parentJavaClass, method.getDefPos()));
             return refInfo;
         } catch (Exception e) {
             logger.warn("Failed to extract reference info: " + e.getMessage());
@@ -406,23 +398,72 @@ public class XrefsRoutes {
     }
 
     /**
-     * @return void
-     * @param ClassNode
-     * 
-     * This helper method checks if the class is decomplied or not. 
-     * if classNode is not null and classNode's processing state is not complete then
-     *  - try to check classNode's JavaNode is not null 
-     *     - if it not null then decompile it. 
-     *  - If any exception then handle it.
+     * Ensure code metadata is ready before resolving precise source positions.
      */
-    private void ensureClassDecompiled(ClassNode classNode) {
-        if (classNode != null && !classNode.getState().isProcessComplete()) {
+    private JavaClass ensureClassDecompiled(JavaClass javaClass) {
+        if (javaClass == null) {
+            return null;
+        }
+        if (!JadxApiAdapter.isProcessComplete(javaClass)) {
             try {
-                if (classNode.getJavaNode() != null) classNode.getJavaNode().decompile();
+                javaClass.decompile();
             } catch (Exception e) {
-                logger.warn("Failed to decompile class {}: {}", classNode.getFullName(), e.getMessage());
+                logger.warn("Failed to decompile class {}: {}", javaClass.getFullName(), e.getMessage());
             }
         }
+        return javaClass;
+    }
+
+    private List<Map<String, Object>> collectPreciseReferences(
+            JavaNode targetNode,
+            List<JavaClass> classNodes,
+            List<JavaMethod> methodNodes) {
+        LinkedHashMap<String, JavaClass> topUseClasses = new LinkedHashMap<>();
+        for (JavaClass classNode : classNodes) {
+            JavaClass javaClass = ensureClassDecompiled(classNode);
+            if (javaClass != null) {
+                topUseClasses.put(javaClass.getFullName(), javaClass);
+            }
+        }
+        for (JavaMethod methodNode : methodNodes) {
+            JavaClass parentClass = methodNode.getDeclaringClass();
+            if (parentClass == null) {
+                continue;
+            }
+            JavaClass javaClass = ensureClassDecompiled(parentClass);
+            if (javaClass != null) {
+                topUseClasses.put(javaClass.getFullName(), javaClass);
+            }
+        }
+
+        List<Map<String, Object>> referenceList = new ArrayList<>();
+        Set<String> seenReferences = new HashSet<>();
+
+        for (JavaClass topUseClass : topUseClasses.values()) {
+            boolean preciseAdded = collectUsePlacesForClass(targetNode, topUseClass, referenceList, seenReferences);
+            if (preciseAdded) {
+                continue;
+            }
+
+            boolean hasMethodReferenceInClass = false;
+            for (JavaMethod methodNode : methodNodes) {
+                if (methodNode.getDeclaringClass() != null
+                        && topUseClass.getFullName().equals(methodNode.getDeclaringClass().getFullName())) {
+                    hasMethodReferenceInClass = true;
+                    addIfUnique(referenceList, seenReferences, extractMethodReferenceInfo(methodNode));
+                }
+            }
+
+            if (!hasMethodReferenceInClass) {
+                Map<String, Object> classRefInfo = new HashMap<>();
+                classRefInfo.put("class", topUseClass.getFullName());
+                classRefInfo.put("method", "");
+                classRefInfo.put("from_method", "");
+                classRefInfo.put("source_line", resolveDefinitionSourceLine(topUseClass, topUseClass.getDefPos()));
+                addIfUnique(referenceList, seenReferences, classRefInfo);
+            }
+        }
+        return referenceList;
     }
     
     /**
@@ -447,7 +488,97 @@ public class XrefsRoutes {
      * This helper method sends the response to MCP tool calls for this category. 
      * First it creates a map of result with pagination and returns it as a json response.
      */
-    private void sendXrefsResponse(Context ctx, List<Map<String, String>> referenceList) throws PaginationException {
+    private boolean collectUsePlacesForClass(
+            JavaNode targetNode,
+            JavaClass topUseClass,
+            List<Map<String, Object>> referenceList,
+            Set<String> seenReferences) {
+        try {
+            ICodeInfo codeInfo = topUseClass.getCodeInfo();
+            if (codeInfo == null || !codeInfo.hasMetadata()) {
+                return false;
+            }
+
+            List<Integer> usePositions = topUseClass.getUsePlacesFor(codeInfo, targetNode);
+            if (usePositions.isEmpty()) {
+                return false;
+            }
+
+            String code = codeInfo.getCodeStr();
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            boolean added = false;
+
+            for (int pos : usePositions) {
+                String line = CodeUtils.getLineForPos(code, pos).trim();
+                if (line.startsWith("import ")) {
+                    continue;
+                }
+                JavaNode enclosingNode = wrapper.getEnclosingNode(codeInfo, pos);
+                Map<String, Object> refInfo = buildPreciseReferenceInfo(topUseClass, enclosingNode, line, code, pos);
+                addIfUnique(referenceList, seenReferences, refInfo);
+                added = true;
+            }
+            return added;
+        } catch (Exception e) {
+            logger.debug("Precise xref collection failed for {} in {}: {}",
+                targetNode.getFullName(), topUseClass.getFullName(), e.getMessage());
+            return false;
+        }
+    }
+
+    private Map<String, Object> buildPreciseReferenceInfo(
+            JavaClass topUseClass,
+            JavaNode enclosingNode,
+            String line,
+            String code,
+            int position) {
+        Map<String, Object> refInfo = new HashMap<>();
+        refInfo.put("class", topUseClass.getFullName());
+        refInfo.put("code_snippet", line);
+
+        int decompiledLine = CodeUtils.getLineNumForPos(
+            code,
+            position,
+            mainWindow.getWrapper().getArgs().getCodeNewLineStr()
+        );
+        refInfo.put("decompiled_line", decompiledLine);
+        refInfo.put("source_line", topUseClass.getSourceLine(decompiledLine));
+
+        if (enclosingNode instanceof JavaMethod) {
+            JavaMethod fromMethod = (JavaMethod) enclosingNode;
+            String legacyMethodName = fromMethod.isClassInit() ? "" : fromMethod.getName();
+            refInfo.put("method", legacyMethodName);
+            JadxApiAdapter.MethodInfoSnapshot methodInfo = JadxApiAdapter.getMethodInfo(fromMethod);
+            refInfo.put("from_method", methodInfo != null ? methodInfo.getFullId() : fromMethod.getFullName());
+        } else {
+            refInfo.put("method", "");
+            refInfo.put("from_method", "");
+        }
+        return refInfo;
+    }
+
+    private Integer resolveDefinitionSourceLine(JavaClass javaClass, int definitionPosition) {
+        if (javaClass == null || definitionPosition <= 0) {
+            return null;
+        }
+        try {
+            ICodeInfo codeInfo = javaClass.getCodeInfo();
+            if (codeInfo == null) {
+                return null;
+            }
+            int decompiledLine = CodeUtils.getLineNumForPos(
+                codeInfo.getCodeStr(),
+                definitionPosition,
+                mainWindow.getWrapper().getArgs().getCodeNewLineStr()
+            );
+            return javaClass.getSourceLine(decompiledLine);
+        } catch (Exception e) {
+            logger.debug("Failed to resolve definition source line for {}: {}", javaClass.getFullName(), e.getMessage());
+            return null;
+        }
+    }
+
+    private void sendXrefsResponse(Context ctx, List<Map<String, Object>> referenceList) throws PaginationException {
         Map<String, Object> result = paginationUtils.handlePagination(ctx, referenceList, "xrefs", "references", ref -> ref);
         ctx.json(result);
     }
@@ -546,19 +677,24 @@ public class XrefsRoutes {
                     continue;
                 }
 
-                List<Map<String, String>> xrefs = new ArrayList<>();
-                Set<String> seen = new HashSet<>();
+                List<Map<String, Object>> xrefs = new ArrayList<>();
                 boolean matched = false;
 
                 try {
                     switch (type) {
                         case "class":
                             matched = true;
-                            ClassNode classNode = targetClass.getClassNode();
-                            for (MethodNode mth : classNode.getUseInMth()) {
-                                Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
-                                addIfUnique(xrefs, seen, ref);
+                            List<JavaMethod> methodRefs = new ArrayList<>(JadxApiAdapter.getClassUseInMethods(targetClass));
+                            for (JavaMethod javaMethod : targetClass.getMethods()) {
+                                if (javaMethod.isConstructor()) {
+                                    methodRefs.addAll(extractMethods(javaMethod.getUseIn()));
+                                }
                             }
+                            xrefs = collectPreciseReferences(
+                                targetClass,
+                                new ArrayList<>(extractClasses(targetClass.getUseIn())),
+                                methodRefs
+                            );
                             break;
                             
                         case "method":
@@ -569,13 +705,15 @@ public class XrefsRoutes {
                                 continue;
                             }
                             String methodName = parts[2];
+                            Set<String> seenMethodRefs = new HashSet<>();
                             for (JavaMethod method : targetClass.getMethods()) {
                                 if (method.getName().equals(methodName)) {
                                     matched = true;
-                                    for (MethodNode mth : method.getMethodNode().getUseIn()) {
-                                        Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
-                                        addIfUnique(xrefs, seen, ref);
-                                    }
+                                    mergeReferences(
+                                        xrefs,
+                                        seenMethodRefs,
+                                        collectMethodReferences(method, extractMethods(method.getUseIn()))
+                                    );
                                 }
                             }
                             if (!matched) {
@@ -594,13 +732,15 @@ public class XrefsRoutes {
                                 continue;
                             }
                             String fieldName = parts[2];
+                            Set<String> seenFieldRefs = new HashSet<>();
                             for (JavaField field : targetClass.getFields()) {
                                 if (field.getName().equals(fieldName)) {
                                     matched = true;
-                                    for (MethodNode mth : field.getFieldNode().getUseIn()) {
-                                        Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
-                                        addIfUnique(xrefs, seen, ref);
-                                    }
+                                    mergeReferences(
+                                        xrefs,
+                                        seenFieldRefs,
+                                        collectMethodReferences(field, extractMethods(field.getUseIn()))
+                                    );
                                 }
                             }
                             if (!matched) {

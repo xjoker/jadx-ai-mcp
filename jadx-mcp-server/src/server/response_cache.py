@@ -26,6 +26,7 @@ CACHEABLE_ENDPOINTS = frozenset({
 
 # Endpoints that mutate class structure — any hit should invalidate cache
 _MUTATING_ENDPOINTS = frozenset({
+    "cache/clear",
     "rename-class",
     "rename-method",
     "rename-field",

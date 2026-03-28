@@ -10,6 +10,11 @@ dependencies = [
     "tomli==2.4.0; python_version < '3.11'",
 ]
 
+[project.optional-dependencies]
+compression = [
+    "brotli==1.1.0",
+]
+
 [build-system]
 requires = ["setuptools==80.9.0", "wheel==0.46.3"]
 build-backend = "setuptools.build_meta"

@@ -22,6 +22,8 @@ async def get_from_jadx_for_current_user(
     params: Optional[dict[str, Any]] = None,
     instance_id: Optional[str] = None,
     timeout: Optional[int] = None,
+    method: str = "GET",
+    json_body: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any] | str:
     """Proxy JADX calls with the current user's ACL context when available."""
     return await get_from_jadx(
@@ -29,5 +31,7 @@ async def get_from_jadx_for_current_user(
         params or {},
         instance_id=instance_id,
         timeout=timeout,
+        method=method,
+        json_body=json_body,
         **get_current_user_request_kwargs(),
     )

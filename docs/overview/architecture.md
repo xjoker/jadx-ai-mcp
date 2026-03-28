@@ -123,7 +123,7 @@ flowchart TB
 **Model Context Protocol (MCP)**: A standard protocol proposed by Anthropic for AI-to-external-tool communication.
 
 **Core Concepts**:
-- **Tools**: Functions callable by AI (this project provides 45 tools)
+- **Tools**: Functions callable by AI (this project provides 39 tools)
 - **Resources**: Data sources AI can read (e.g., files, databases)
 - **Prompts**: Predefined prompt templates
 

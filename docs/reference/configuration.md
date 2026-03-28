@@ -8,7 +8,7 @@
 
 | Deployment | Location |
 |:-----------|:---------|
-| Docker | `/app/data/config/jadx-config.toml` |
+| Docker | `/opt/jadx/jadx-mcp-server/data/config/jadx-config.toml` |
 | Local | `./data/config/jadx-config.toml` |
 
 ### Complete Example
