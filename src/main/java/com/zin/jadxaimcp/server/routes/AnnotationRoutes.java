@@ -22,22 +22,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * AnnotationRoutes - 协作工作区 Phase 1
+ * AnnotationRoutes - Collaborative Workspace Phase 1
  *
- * 提供注释、书签、标签的 SQLite 持久化存储端点。
- * 数据库位置：~/.jadx-ai-mcp/annotations.db
+ * Provides SQLite-backed persistence endpoints for annotations, bookmarks, and tags.
+ * Database location: ~/.jadx-ai-mcp/annotations.db
  *
- * 端点列表：
- *   POST   /annotations          - 添加注释
- *   GET    /annotations          - 查询注释
- *   DELETE /annotations/{id}     - 删除注释
- *   POST   /bookmarks            - 添加书签
- *   GET    /bookmarks            - 查询书签
- *   DELETE /bookmarks/{id}       - 删除书签
- *   POST   /tags                 - 添加标签
- *   GET    /tags                 - 查询标签
- *   DELETE /tags/{id}            - 删除标签
- *   GET    /analysis-notes       - 汇总当前 APK 所有笔记
+ * Endpoints:
+ *   POST   /annotations          - Add an annotation
+ *   GET    /annotations          - Query annotations
+ *   DELETE /annotations/{id}     - Delete an annotation
+ *   POST   /bookmarks            - Add a bookmark
+ *   GET    /bookmarks            - Query bookmarks
+ *   DELETE /bookmarks/{id}       - Delete a bookmark
+ *   POST   /tags                 - Add a tag
+ *   GET    /tags                 - Query tags
+ *   DELETE /tags/{id}            - Delete a tag
+ *   GET    /analysis-notes       - Summarize all notes for the current APK
  */
 public class AnnotationRoutes {
     private static final Logger logger = LoggerFactory.getLogger(AnnotationRoutes.class);
@@ -52,7 +52,7 @@ public class AnnotationRoutes {
         initDatabase();
     }
 
-    // ==================== 数据库初始化 ====================
+    // ==================== Database initialization ====================
 
     private void initDatabase() {
         File dbFile = new File(dbPath);
@@ -115,18 +115,18 @@ public class AnnotationRoutes {
         return DriverManager.getConnection("jdbc:sqlite:" + dbPath);
     }
 
-    // ==================== APK Hash 获取 ====================
+    // ==================== APK hash retrieval ====================
 
     /**
-     * 从当前打开的文件获取 apk_hash（包名+版本，或文件路径的 hashCode）。
-     * 不引入额外依赖，使用简单字符串哈希即可满足隔离需求。
+     * Derives apk_hash from the currently opened file (package name + version, or hashCode of the file path).
+     * Uses a simple string hash to avoid extra dependencies while still providing per-APK isolation.
      */
     private String getCurrentApkHash() {
         try {
             jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
             if (wrapper == null) return "unknown";
 
-            // 优先使用打开文件的路径作为哈希源
+            // Prefer the opened file's path as the hash source
             java.util.List<jadx.api.ResourceFile> resources = wrapper.getResources();
             if (!resources.isEmpty()) {
                 String path = resources.get(0).getOriginalName();
@@ -140,7 +140,7 @@ public class AnnotationRoutes {
         return "unknown";
     }
 
-    // ==================== JSON 解析工具 ====================
+    // ==================== JSON parsing utilities ====================
 
     private JsonObject parseJsonBody(Context ctx) {
         try {
@@ -168,7 +168,7 @@ public class AnnotationRoutes {
         return (value != null && !value.isBlank()) ? value : defaultValue;
     }
 
-    // ==================== 注释端点 ====================
+    // ==================== Annotation endpoints ====================
 
     /**
      * POST /annotations
@@ -238,7 +238,7 @@ public class AnnotationRoutes {
         String targetName = ctx.queryParam("target_name");
         String apkHash = ctx.queryParam("apk_hash");
 
-        // 若未指定 apk_hash，默认使用当前打开的 APK
+        // Fall back to the currently opened APK if apk_hash is not specified
         if (apkHash == null || apkHash.isBlank()) {
             apkHash = getCurrentApkHash();
         }
@@ -322,7 +322,7 @@ public class AnnotationRoutes {
         }
     }
 
-    // ==================== 书签端点 ====================
+    // ==================== Bookmark endpoints ====================
 
     /**
      * POST /bookmarks
@@ -478,7 +478,7 @@ public class AnnotationRoutes {
         }
     }
 
-    // ==================== 标签端点 ====================
+    // ==================== Tag endpoints ====================
 
     /**
      * POST /tags
@@ -631,12 +631,12 @@ public class AnnotationRoutes {
         }
     }
 
-    // ==================== 汇总端点 ====================
+    // ==================== Summary endpoint ====================
 
     /**
      * GET /analysis-notes
      * Query params: apk_hash?
-     * 汇总当前 APK 的所有注释、书签、标签。
+     * Returns a summary of all annotations, bookmarks, and tags for the current APK.
      */
     public void handleGetAnalysisNotes(Context ctx) {
         String apkHash = ctx.queryParam("apk_hash");
@@ -649,7 +649,7 @@ public class AnnotationRoutes {
 
         try (Connection conn = getConnection()) {
 
-            // 注释
+            // Annotations
             try (PreparedStatement ps = conn.prepareStatement(
                     "SELECT id, target_type, target_name, content, author, created_at, updated_at " +
                     "FROM annotations WHERE apk_hash = ? ORDER BY created_at DESC")) {
@@ -672,7 +672,7 @@ public class AnnotationRoutes {
                 response.put("annotations_count", annotations.size());
             }
 
-            // 书签
+            // Bookmarks
             try (PreparedStatement ps = conn.prepareStatement(
                     "SELECT id, target_type, target_name, label, note, author, created_at " +
                     "FROM bookmarks WHERE apk_hash = ? ORDER BY created_at DESC")) {
@@ -695,7 +695,7 @@ public class AnnotationRoutes {
                 response.put("bookmarks_count", bookmarks.size());
             }
 
-            // 标签
+            // Tags
             try (PreparedStatement ps = conn.prepareStatement(
                     "SELECT id, target_type, target_name, tag, author, created_at " +
                     "FROM tags WHERE apk_hash = ? ORDER BY created_at DESC")) {

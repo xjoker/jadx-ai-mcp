@@ -1,10 +1,10 @@
 """
-MCP Server Configuration - 全局服务器配置
-存储 MCP Server 的 URL 信息供 Transfer API 使用
+MCP Server Configuration - global server configuration.
+Stores MCP Server URL information for use by the Transfer API.
 
-配置优先级:
-1. 环境变量 MCP_SERVER_URL
-2. 配置文件 [server] mcp_url
+Configuration priority:
+1. Environment variable MCP_SERVER_URL
+2. Config file [server] mcp_url
 """
 
 import os
@@ -14,16 +14,16 @@ from .logging_config import get_logger
 
 logger = get_logger("mcp_server_config")
 
-# 全局配置的 MCP Server URL
+# Globally configured MCP Server URL
 _MCP_SERVER_URL_FROM_CONFIG: Optional[str] = None
 
 
 def set_mcp_server_url_from_config(url: str):
     """
-    从配置文件设置 MCP Server URL
-    
+    Set the MCP Server URL from the configuration file.
+
     Args:
-        url: MCP Server 的外部访问地址（如 http://192.168.1.100:8651）
+        url: External access address of the MCP Server (e.g. http://192.168.1.100:8651)
     """
     global _MCP_SERVER_URL_FROM_CONFIG
     _MCP_SERVER_URL_FROM_CONFIG = url
@@ -33,35 +33,35 @@ def set_mcp_server_url_from_config(url: str):
 
 def get_mcp_server_url() -> str:
     """
-    获取 MCP Server 的完整 URL
-    
+    Get the full MCP Server URL.
+
     Returns:
-        完整的 MCP Server URL (如 http://192.168.1.100:8651)
-    
-    优先级:
-        1. 环境变量 MCP_SERVER_URL（最高）
-        2. 配置文件 [server] mcp_url
-        3. 默认值 http://localhost:8651
+        Full MCP Server URL (e.g. http://192.168.1.100:8651)
+
+    Priority:
+        1. Environment variable MCP_SERVER_URL (highest)
+        2. Config file [server] mcp_url
+        3. Default value http://localhost:8651
     """
-    # 1. 最高优先级：环境变量
+    # 1. Highest priority: environment variable
     env_url = os.getenv("MCP_SERVER_URL")
     if env_url:
         return env_url.rstrip("/")
-    
-    # 2. 次优先级：配置文件
+
+    # 2. Second priority: config file
     if _MCP_SERVER_URL_FROM_CONFIG:
         return _MCP_SERVER_URL_FROM_CONFIG.rstrip("/")
-    
-    # 3. 默认值
+
+    # 3. Default value
     logger.warning("MCP Server URL not configured, using default http://localhost:8651")
     return "http://localhost:8651"
 
 
 def get_transfer_base_url() -> str:
     """
-    获取 Transfer API 的基础 URL
-    
+    Get the base URL for the Transfer API.
+
     Returns:
-        Transfer API 基础 URL (如 http://192.168.1.100:8651/transfer)
+        Transfer API base URL (e.g. http://192.168.1.100:8651/transfer)
     """
     return f"{get_mcp_server_url()}/transfer"

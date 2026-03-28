@@ -289,8 +289,8 @@ public class RefactoringRoutes {
     /**
      * GET /export-rename-mappings
      *
-     * 遍历所有已重命名的类/方法/字段，收集 raw name vs alias 差异，
-     * 输出 JSON 数组：[{type, original_name, new_name, class_context}]
+     * Iterates over all renamed classes/methods/fields, collects raw name vs alias differences,
+     * and returns a JSON array: [{type, original_name, new_name, class_context}]
      */
     public void handleExportRenameMappings(Context ctx) {
         try {
@@ -306,7 +306,7 @@ public class RefactoringRoutes {
                 String rawName = cls.getRawName();
                 String aliasName = cls.getFullName();
 
-                // 类被重命名：rawName 与 aliasName 不同
+                // Class was renamed: rawName differs from aliasName
                 if (rawName != null && aliasName != null && !rawName.equals(aliasName)) {
                     Map<String, String> entry = new HashMap<>();
                     entry.put("type", "class");
@@ -316,7 +316,7 @@ public class RefactoringRoutes {
                     mappings.add(entry);
                 }
 
-                // 字段重命名
+                // Field renames
                 for (JavaField field : cls.getFields()) {
                     String rawFieldName = field.getRawName();
                     String aliasFieldName = field.getName();
@@ -330,7 +330,7 @@ public class RefactoringRoutes {
                     }
                 }
 
-                // 方法重命名
+                // Method renames
                 for (JavaMethod method : cls.getMethods()) {
                     String rawMethodName = JadxApiAdapter.getMethodRawName(method);
                     String aliasMethodName = JadxApiAdapter.getMethodAliasName(method);
@@ -358,8 +358,8 @@ public class RefactoringRoutes {
     /**
      * POST /import-rename-mappings
      *
-     * 接受 JSON body：{"mappings": [{type, original_name, new_name, class_context}]}
-     * 逐个应用重命名，返回成功/失败统计。
+     * Accepts a JSON body: {"mappings": [{type, original_name, new_name, class_context}]}
+     * Applies each rename in order and returns success/failure counts.
      */
     public void handleImportRenameMappings(Context ctx) {
         JsonObject requestBody = parseJsonBody(ctx);

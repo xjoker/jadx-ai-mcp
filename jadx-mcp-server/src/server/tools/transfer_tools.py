@@ -1,6 +1,6 @@
 """
-Transfer Tools - MCP 工具封装
-提供创建、查询、撤销传输令牌的 MCP 工具
+Transfer Tools - MCP tool wrappers.
+Provides MCP tools for creating, querying, and revoking transfer tokens.
 """
 
 from typing import Optional
@@ -29,52 +29,53 @@ async def create_transfer_token(
     instance_id: Optional[str] = None
 ) -> dict:
     """
-    创建大文件传输令牌
-    
-    绕过 MCP 消息大小限制（约 16KB），通过独立 HTTP 端点下载大批量数据。
-    
+    Create a large file transfer token.
+
+    Bypasses MCP message size limits (~16KB) by enabling data download
+    via a dedicated HTTP endpoint.
+
     Args:
-        operation: "download" (目前仅支持下载)
+        operation: "download" (only download is currently supported)
         resource_type: "batch_classes" | "batch_methods" | "project_export"
-        timeout_seconds: 令牌有效期（秒），默认 120
-        params: 可选的请求参数
-        instance_id: JADX 实例 ID
-    
+        timeout_seconds: Token validity period in seconds (default: 120)
+        params: Optional request parameters
+        instance_id: JADX instance ID
+
     Returns:
         {
             "success": true,
-            "token": "令牌字符串",
+            "token": "<token string>",
             "transfer_url": "http://localhost:8765/transfer",
             "expires_in": 120,
             "expires_at": "2024-01-20T10:00:00Z",
             "resource_type": "batch_classes",
-            "usage_hint": "使用提示"
+            "usage_hint": "<usage hint>"
         }
-    
-    使用流程:
+
+    Workflow:
         1. token_result = create_transfer_token("download", "batch_classes")
-        2. 使用 HTTP 客户端直接下载:
+        2. Download directly using an HTTP client:
            GET {transfer_url}/download/batch-classes?classes=A,B,C&token={token}
-        3. revoke_transfer_token(token)  # 可选，令牌会自动过期
-    
-    支持的 format 参数 (URL 查询参数):
-        - json: 返回 JSON 数据（默认）
-        - zip: 返回 ZIP 压缩包，每个类一个 .java 文件
-    
-    支持的 compression 参数 (URL 查询参数):
-        - auto: 自动根据 Accept-Encoding 选择（默认）
-        - br: Brotli 压缩（最佳压缩率）
-        - gzip: GZIP 压缩
-        - none: 不压缩
-    
-    示例:
-        # JSON 格式 + Brotli 压缩
+        3. revoke_transfer_token(token)  # optional; token auto-expires
+
+    Supported 'format' query parameter:
+        - json: Returns JSON data (default)
+        - zip: Returns a ZIP archive with one .java file per class
+
+    Supported 'compression' query parameter:
+        - auto: Automatically selected based on Accept-Encoding (default)
+        - br: Brotli compression (best ratio)
+        - gzip: GZIP compression
+        - none: No compression
+
+    Examples:
+        # JSON format + Brotli compression
         GET /transfer/download/batch-classes?classes=com.A,com.B&token=xxx&format=json
-        
-        # ZIP 格式
+
+        # ZIP format
         GET /transfer/download/batch-classes?classes=com.A,com.B&token=xxx&format=zip
     """
-    # 速率限制检查（使用 instance_id 或 "default" 作为客户端标识）
+    # Rate limit check (use instance_id or "default" as client identifier)
     client_id = instance_id or "default"
     rate_limiter = get_token_limiter()
     
@@ -101,12 +102,12 @@ async def create_transfer_token(
         logger.warning(f"Transfer token creation rejected: {e}")
         return make_error(ErrorCode.RATE_LIMITED, str(e))
     
-    # 从配置获取 MCP Server URL
+    # Get MCP Server URL from configuration
     transfer_base_url = get_mcp_server_url()
-    
+
     expires_at = datetime.fromtimestamp(token.expires_at, tz=timezone.utc).isoformat()
-    
-    # 生成使用提示
+
+    # Generate usage hint
     endpoint_map = {
         ResourceType.BATCH_CLASSES: "batch-classes",
         ResourceType.BATCH_METHODS: "batch-methods",
@@ -137,16 +138,16 @@ async def create_transfer_token(
 
 async def get_transfer_token_status(token: str) -> dict:
     """
-    检查令牌状态
-    
+    Check the status of a transfer token.
+
     Args:
-        token: 令牌字符串
-    
+        token: Token string
+
     Returns:
         {
             "exists": true/false,
             "used": true/false,
-            "expires_in": 剩余秒数,
+            "expires_in": <remaining seconds>,
             "resource_type": "batch_classes",
             "operation": "download"
         }
@@ -164,17 +165,18 @@ async def get_transfer_token_status(token: str) -> dict:
 
 async def revoke_transfer_token(token: str) -> dict:
     """
-    立即撤销令牌，释放资源
-    
-    建议在下载完成后调用此函数，虽然令牌会自动过期。
-    
+    Immediately revoke a token to free resources.
+
+    It is recommended to call this after download completes,
+    although tokens will expire automatically.
+
     Args:
-        token: 令牌字符串
-    
+        token: Token string
+
     Returns:
         {
             "success": true/false,
-            "message": "描述信息"
+            "message": "<description>"
         }
     """
     store = get_token_store()

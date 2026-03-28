@@ -93,14 +93,14 @@ async def search_method_by_name(
 
 
 async def _execute_batch_method_request(methods: list[str], chunk: int, instance_id: Optional[str]) -> dict:
-    """执行实际的批量方法请求"""
+    """Execute the actual batch method request"""
     params = {"methods": ",".join(methods)}
     if chunk > 0:
         params["chunk"] = str(chunk)
 
     result = await get_from_jadx("batch-method-by-name", params, instance_id=instance_id)
 
-    # 如果有chunking元数据，添加AI友好提示
+    # If chunking metadata is present, add AI-friendly instruction
     if "_chunking" in result and result["_chunking"].get("has_more"):
         chunk_info = result["_chunking"]
         result["_ai_instruction"] = (
@@ -118,13 +118,13 @@ async def batch_get_method_by_name(
     instance_id: Optional[str] = None
 ) -> dict:
     """
-    智能批量获取方法源码（支持自动分块和大小预警）
+    Smart batch retrieval of method source code (with automatic chunking and size warnings)
 
-    分层策略：
-    1. 续传请求（chunk>0）→ 直接执行
-    2. 超大请求（预估>50KB）→ 预检失败，返回优化建议
-    3. 大请求（预估20-50KB）→ 执行 + 警告
-    4. 正常请求（<20KB）→ 直接执行
+    Tiered strategy:
+    1. Continuation requests (chunk>0) -> Execute directly
+    2. Very large requests (estimated >50KB) -> Pre-flight check fails, return optimization suggestions
+    3. Large requests (estimated 20-50KB) -> Execute + warning
+    4. Normal requests (<20KB) -> Execute directly
 
     Args:
         methods: List of "class_name:method_name" pairs (e.g., ["com.example.A:methodA", "com.example.B:methodB"])
@@ -141,14 +141,14 @@ async def batch_get_method_by_name(
     """
     logger.info(f"batch_get_method_by_name: methods={methods}, chunk={chunk}, force={force}")
 
-    # 续传请求：直接执行
+    # Continuation request: execute directly
     if chunk > 0:
         return await _execute_batch_method_request(methods, chunk, instance_id)
 
-    # 预估响应大小（每个方法约3KB）
+    # Estimate response size (approximately 3KB per method)
     estimated_size = len(methods) * 3000
 
-    # 策略1：超大请求（>50KB）
+    # Strategy 1: Very large request (>50KB)
     if estimated_size > 50000 and not force:
         return {
             "error": "BATCH_TOO_LARGE",
@@ -162,10 +162,10 @@ async def batch_get_method_by_name(
             }
         }
 
-    # 策略2 & 3：执行请求
+    # Strategy 2 & 3: Execute request
     result = await _execute_batch_method_request(methods, chunk, instance_id)
 
-    # 大请求添加性能警告
+    # Add performance warning for large requests
     if estimated_size > 20000:
         result["_performance_warning"] = {
             "estimated_size_kb": round(estimated_size / 1024, 1),

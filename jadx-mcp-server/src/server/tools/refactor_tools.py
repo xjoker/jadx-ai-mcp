@@ -103,7 +103,7 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
 
 async def export_rename_mappings(instance_id: Optional[str] = None) -> dict:
     """
-    导出所有已重命名的类/方法/字段映射。
+    Export all renamed class/method/field mappings.
 
     Args:
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
@@ -122,14 +122,14 @@ async def export_rename_mappings(instance_id: Optional[str] = None) -> dict:
 
 async def import_rename_mappings(mappings: list, instance_id: Optional[str] = None) -> dict:
     """
-    批量导入重命名映射并应用到当前 JADX 项目。
+    Batch-import rename mappings and apply them to the current JADX project.
 
     Args:
-        mappings: 映射数组，每项格式为:
+        mappings: Array of mapping entries, each in the format:
                   {type: "class"|"method"|"field",
                    original_name: str,
                    new_name: str,
-                   class_context: str}  # method/field 必填
+                   class_context: str}  # required for method/field
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:

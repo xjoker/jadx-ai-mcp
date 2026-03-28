@@ -58,7 +58,7 @@ public class FileTypeDetector {
         public boolean isSmaliAvailable() { return smaliAvailable; }
     }
 
-    /** 复合包格式（XAPK/APKM/APKS）的详细信息 */
+    /** Detailed info for composite package formats (XAPK/APKM/APKS) */
     public static class CompositePackageInfo {
         private final FileType format;
         private final List<String> subApks;
@@ -206,7 +206,7 @@ public class FileTypeDetector {
                 FileType detectedType = detectFileType(file);
                 types.add(detectedType);
 
-                // 如果是复合包格式，收集子 APK 信息（以第一个复合包为准）
+                // If composite package format, collect sub-APK info (first composite package wins)
                 if (compositeInfo == null) {
                     compositeInfo = detectCompositePackage(file, detectedType);
                 }
@@ -250,11 +250,11 @@ public class FileTypeDetector {
     }
 
     /**
-     * 检测复合包格式（XAPK/APKM/APKS）是否包含多个 APK 子包，
-     * 并收集子 APK 名称和总大小。
+     * Checks whether a composite package (XAPK/APKM/APKS) contains multiple APK sub-packages,
+     * and collects the sub-APK names and total size.
      *
-     * @param file ZIP 格式的复合包文件
-     * @return CompositePackageInfo，或 null（不是复合包格式）
+     * @param file ZIP-format composite package file
+     * @return CompositePackageInfo, or null if the file is not a composite package format
      */
     public static CompositePackageInfo detectCompositePackage(File file, FileType fileType) {
         if (fileType != FileType.XAPK && fileType != FileType.APKM && fileType != FileType.APKS) {
@@ -273,7 +273,7 @@ public class FileTypeDetector {
             while ((entry = zis.getNextEntry()) != null) {
                 String entryName = entry.getName();
                 String lowerName = entryName.toLowerCase();
-                // 识别子 APK：*.apk 或 splits/*.apk
+                // Identify sub-APKs: *.apk or splits/*.apk
                 if (lowerName.endsWith(".apk") && !entry.isDirectory()) {
                     subApks.add(entryName);
                 }
@@ -348,7 +348,7 @@ public class FileTypeDetector {
         // Check ZIP magic (APK, AAR, JAR, XAPK, APKM, APKS are all ZIP files)
         if (matchesMagic(header, MAGIC_ZIP)) {
             String fileName = file.getName().toLowerCase();
-            // 复合包格式优先通过扩展名识别（ZIP 内包含多个子 APK）
+            // Identify composite package formats by extension first (ZIP containing multiple sub-APKs)
             if (fileName.endsWith(".xapk")) {
                 return FileType.XAPK;
             }

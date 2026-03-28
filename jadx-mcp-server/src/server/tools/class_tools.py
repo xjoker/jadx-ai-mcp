@@ -98,22 +98,22 @@ async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optiona
 
 
 def _estimate_batch_size(class_names: list[str]) -> int:
-    """基于类数量的启发式估算批量请求的响应大小（无需网络请求）
+    """Heuristic estimate of batch request response size based on class count (no network request needed)
 
-    使用固定启发值 5000 字节/类，避免为每个类发送 get_class_info 请求。
+    Uses a fixed heuristic of 5000 bytes per class to avoid sending a get_class_info request for each class.
     """
     return len(class_names) * 5000
 
 
 async def _execute_batch_request(class_names: list[str], chunk: int, instance_id: Optional[str]) -> dict:
-    """执行实际的批量请求"""
+    """Execute the actual batch request"""
     params = {"class_names": ",".join(class_names)}
     if chunk > 0:
         params["chunk"] = str(chunk)
 
     result = await get_from_jadx("batch-class-source", params, instance_id=instance_id)
 
-    # 如果有chunking元数据，添加AI友好提示
+    # If chunking metadata is present, add AI-friendly instruction
     if "_chunking" in result and result["_chunking"].get("has_more"):
         chunk_info = result["_chunking"]
         result["_ai_instruction"] = (
@@ -131,13 +131,13 @@ async def batch_get_class_source(
     instance_id: Optional[str] = None
 ) -> dict:
     """
-    智能批量获取类源码（支持自动分块和大小预警）
+    Smart batch retrieval of class source code (with automatic chunking and size warnings)
 
-    分层策略：
-    1. 续传请求（chunk>0）→ 直接执行
-    2. 超大请求（预估>50KB）→ 预检失败，返回优化建议
-    3. 大请求（预估20-50KB）→ 执行 + 警告
-    4. 正常请求（<20KB）→ 直接执行
+    Tiered strategy:
+    1. Continuation requests (chunk>0) -> Execute directly
+    2. Very large requests (estimated >50KB) -> Pre-flight check fails, return optimization suggestions
+    3. Large requests (estimated 20-50KB) -> Execute + warning
+    4. Normal requests (<20KB) -> Execute directly
 
     Args:
         class_names: List of fully qualified class names (max 20)
@@ -162,14 +162,14 @@ async def batch_get_class_source(
             "maximum": 20
         }
 
-    # 续传请求：直接执行
+    # Continuation request: execute directly
     if chunk > 0:
         return await _execute_batch_request(class_names, chunk, instance_id)
 
-    # 预估响应大小（纯启发式，无网络请求）
+    # Estimate response size (pure heuristic, no network request)
     estimated_size = _estimate_batch_size(class_names)
 
-    # 策略1：超大请求（>50KB）
+    # Strategy 1: Very large request (>50KB)
     if estimated_size > 50000 and not force:
         class_infos = []
         for class_name in class_names:
@@ -193,10 +193,10 @@ async def batch_get_class_source(
             }
         }
 
-    # 策略2 & 3：执行请求
+    # Strategy 2 & 3: Execute request
     result = await _execute_batch_request(class_names, chunk, instance_id)
 
-    # 大请求添加性能警告
+    # Add performance warning for large requests
     if estimated_size > 20000:
         result["_performance_warning"] = {
             "estimated_size_kb": round(estimated_size / 1024, 1),

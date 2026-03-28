@@ -547,7 +547,7 @@ def main():
         return await status_logout_response(request)
 
     if args.http:
-        # 设置 MCP Server URL 供 Transfer API 使用（从配置文件读取）
+        # Set MCP Server URL for Transfer API (read from config file)
         if loaded_config and loaded_config.server.mcp_url:
             set_mcp_server_url_from_config(loaded_config.server.mcp_url)
             print(f"[OK] Transfer API URL: {loaded_config.server.mcp_url}")

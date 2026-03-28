@@ -399,7 +399,7 @@ async def get_from_jadx(
         response_size = len(resp.content)
         logger.debug(f"JADX response: {resp.status_code} OK (size={response_size} bytes)")
 
-        # 大响应警告：超过 10MB 时记录 warning 日志
+        # Large response warning: log a warning when response exceeds 10 MB
         _10MB = 10 * 1024 * 1024
         if response_size > _10MB:
             logger.warning(
@@ -415,7 +415,7 @@ async def get_from_jadx(
         except json.JSONDecodeError:
             result = {"response": resp.text}
 
-        # 注入 response_size_bytes 元数据字段
+        # Inject response_size_bytes metadata field
         if isinstance(result, dict):
             result["response_size_bytes"] = response_size
 

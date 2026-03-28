@@ -1,10 +1,10 @@
 """
 JADX MCP Server - Frida Hook Generation Tools
 
-此模块提供自动生成 Frida hook 脚本的 MCP 工具，支持：
-  - 单方法 / 构造方法 / 全部方法的 hook 脚本
-  - 类级别追踪脚本（可选包含子类）
-  - 枚举类实例、静态方法、字段的枚举脚本
+This module provides MCP tools for automatically generating Frida hook scripts, supporting:
+  - Hook scripts for single methods / constructors / all methods
+  - Class-level tracing scripts (with optional subclass inclusion)
+  - Enumeration scripts for class instances, static methods, and fields
 
 Author: JADX AI MCP
 License: See LICENSE file
@@ -24,31 +24,31 @@ async def generate_frida_hook(
     instance_id: Optional[str] = None,
 ) -> dict:
     """
-    为指定类/方法生成可直接运行的 Frida hook 脚本。
+    Generate a ready-to-run Frida hook script for the specified class/method.
 
-    支持重载方法（自动为每个重载版本生成 .overload() 调用）。
-    使用 FridaTypeConverter 保证参数类型字符串格式正确。
+    Supports overloaded methods (automatically generates .overload() calls for each overload).
+    Uses FridaTypeConverter to ensure parameter type strings are correctly formatted.
 
     Args:
-        class_name: 完全限定类名（如 com.example.MainActivity）
-        method_name: 方法名（可选）。缺省时 hook_type 自动升级为 all_methods。
-        hook_type: hook 类型，可选值：
-            - method_enter  — 仅在方法入口打印参数
-            - method_exit   — 仅在方法返回时打印返回值
-            - both          — 入口 + 返回值（默认）
-            - constructor   — 钩住所有构造方法
-            - all_methods   — 钩住类中所有方法
-        instance_id: 可选，目标 JADX 实例名称。
+        class_name: Fully qualified class name (e.g. com.example.MainActivity)
+        method_name: Method name (optional). If omitted, hook_type is automatically upgraded to all_methods.
+        hook_type: Hook type, available values:
+            - method_enter  — Print arguments at method entry only
+            - method_exit   — Print return value at method return only
+            - both          — Entry + return value (default)
+            - constructor   — Hook all constructors
+            - all_methods   — Hook all methods in the class
+        instance_id: Optional. Target JADX instance name.
 
     Returns:
         dict:
-            - class_name: 目标类名
-            - method_name: 目标方法名（或 "(all)"）
-            - hook_type: 使用的 hook 类型
-            - script: 生成的 Frida JavaScript 脚本
+            - class_name: Target class name
+            - method_name: Target method name (or "(all)")
+            - hook_type: The hook type used
+            - script: Generated Frida JavaScript script
 
     MCP Tool: generate_frida_hook
-    Description: 自动生成可直接运行的 Frida hook 脚本，支持重载方法和正确类型转换
+    Description: Automatically generate ready-to-run Frida hook scripts with overload support and correct type conversion
     """
     params: dict = {"class_name": class_name, "hook_type": hook_type}
     if method_name:
@@ -68,24 +68,24 @@ async def generate_frida_trace(
     instance_id: Optional[str] = None,
 ) -> dict:
     """
-    生成追踪指定类所有方法调用的 Frida 脚本。
+    Generate a Frida script that traces all method calls on the specified class.
 
-    每个方法调用都会打印入口参数和返回值，并附加时间戳标签，
-    便于在 frida-trace / frida CLI 中快速定位调用链。
+    Each method call will print entry arguments and return values with a timestamp label,
+    making it easy to quickly locate call chains in frida-trace / frida CLI.
 
     Args:
-        class_name: 完全限定类名（如 com.example.NetworkManager）
-        include_subclasses: 是否同时追踪同包内的直接子类，默认 False。
-        instance_id: 可选，目标 JADX 实例名称。
+        class_name: Fully qualified class name (e.g. com.example.NetworkManager)
+        include_subclasses: Whether to also trace direct subclasses in the same package. Default: False.
+        instance_id: Optional. Target JADX instance name.
 
     Returns:
         dict:
-            - class_name: 目标类名
-            - include_subclasses: 是否包含子类
-            - script: 生成的 Frida JavaScript 追踪脚本
+            - class_name: Target class name
+            - include_subclasses: Whether subclasses are included
+            - script: Generated Frida JavaScript tracing script
 
     MCP Tool: generate_frida_trace
-    Description: 生成类级别的 Frida 追踪脚本，记录所有方法调用的入参和返回值
+    Description: Generate a class-level Frida tracing script that records entry arguments and return values for all method calls
     """
     params: dict = {
         "class_name": class_name,
@@ -105,25 +105,25 @@ async def generate_frida_enum(
     instance_id: Optional[str] = None,
 ) -> dict:
     """
-    生成枚举类实例、调用静态方法、读取字段的 Frida 脚本。
+    Generate a Frida script for enumerating class instances, calling static methods, and reading fields.
 
-    生成内容：
-    1. 读取所有 static 字段值
-    2. 调用无参 static 方法并打印结果
-    3. 对 enum 类调用 values() 枚举所有常量
-    4. 用 Java.choose() 枚举内存中的活跃实例并读取实例字段
+    Generated content:
+    1. Read all static field values
+    2. Call no-argument static methods and print results
+    3. For enum classes, call values() to enumerate all constants
+    4. Use Java.choose() to enumerate active instances in memory and read instance fields
 
     Args:
-        class_name: 完全限定类名（如 com.example.Config）
-        instance_id: 可选，目标 JADX 实例名称。
+        class_name: Fully qualified class name (e.g. com.example.Config)
+        instance_id: Optional. Target JADX instance name.
 
     Returns:
         dict:
-            - class_name: 目标类名
-            - script: 生成的 Frida JavaScript 枚举脚本
+            - class_name: Target class name
+            - script: Generated Frida JavaScript enumeration script
 
     MCP Tool: generate_frida_enum
-    Description: 生成枚举类实例和静态成员的 Frida 脚本，适用于提取运行时配置和常量
+    Description: Generate a Frida script for enumerating class instances and static members, suitable for extracting runtime configuration and constants
     """
     params: dict = {"class_name": class_name}
 
@@ -135,14 +135,14 @@ async def generate_frida_enum(
     return result
 
 
-# 保存模块级函数引用，防止被 register_frida_tools 内部同名函数遮蔽
+# Save module-level function references to prevent shadowing by same-named functions inside register_frida_tools
 _generate_frida_hook = generate_frida_hook
 _generate_frida_trace = generate_frida_trace
 _generate_frida_enum = generate_frida_enum
 
 
 def register_frida_tools(mcp, with_busy_check):
-    """将 Frida 脚本生成工具注册到 MCP Server"""
+    """Register Frida script generation tools with the MCP Server"""
 
     @mcp.tool()
     @with_busy_check
@@ -152,20 +152,20 @@ def register_frida_tools(mcp, with_busy_check):
         hook_type: str = "both",
         instance_id: Optional[str] = None,
     ) -> dict:
-        """生成可直接运行的 Frida hook 脚本，支持重载方法和正确类型转换。
+        """Generate a ready-to-run Frida hook script with overload support and correct type conversion.
 
-        hook_type 可选值：
-          - method_enter  — 仅记录入口参数
-          - method_exit   — 仅记录返回值
-          - both          — 入口 + 返回值（默认）
-          - constructor   — 钩住所有构造方法
-          - all_methods   — 钩住类中所有方法
+        Available hook_type values:
+          - method_enter  — Record entry arguments only
+          - method_exit   — Record return value only
+          - both          — Entry + return value (default)
+          - constructor   — Hook all constructors
+          - all_methods   — Hook all methods in the class
 
         Args:
-            class_name: 完全限定类名（如 'com.example.MainActivity'）
-            method_name: 方法名，缺省时自动使用 all_methods 模式
-            hook_type: hook 类型（见上方说明），默认 'both'
-            instance_id: 可选，目标 JADX 实例名称
+            class_name: Fully qualified class name (e.g. 'com.example.MainActivity')
+            method_name: Method name; if omitted, all_methods mode is used automatically
+            hook_type: Hook type (see above), default 'both'
+            instance_id: Optional. Target JADX instance name
         """
         return await _generate_frida_hook(
             class_name,
@@ -181,12 +181,12 @@ def register_frida_tools(mcp, with_busy_check):
         include_subclasses: bool = False,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """生成类级别的 Frida 追踪脚本，记录所有方法调用的入参和返回值。
+        """Generate a class-level Frida tracing script that records entry arguments and return values for all method calls.
 
         Args:
-            class_name: 完全限定类名（如 'com.example.NetworkManager'）
-            include_subclasses: 是否同时追踪直接子类，默认 False
-            instance_id: 可选，目标 JADX 实例名称
+            class_name: Fully qualified class name (e.g. 'com.example.NetworkManager')
+            include_subclasses: Whether to also trace direct subclasses. Default: False
+            instance_id: Optional. Target JADX instance name
         """
         return await _generate_frida_trace(
             class_name,
@@ -200,12 +200,12 @@ def register_frida_tools(mcp, with_busy_check):
         class_name: str,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """生成枚举类实例和静态成员的 Frida 脚本，适用于提取运行时配置和常量。
+        """Generate a Frida script for enumerating class instances and static members, suitable for extracting runtime configuration and constants.
 
-        生成内容：静态字段读取、静态方法调用、enum values()、Java.choose() 实例枚举。
+        Generated content: static field reads, static method calls, enum values(), Java.choose() instance enumeration.
 
         Args:
-            class_name: 完全限定类名（如 'com.example.Config'）
-            instance_id: 可选，目标 JADX 实例名称
+            class_name: Fully qualified class name (e.g. 'com.example.Config')
+            instance_id: Optional. Target JADX instance name
         """
         return await _generate_frida_enum(class_name, instance_id=instance_id)

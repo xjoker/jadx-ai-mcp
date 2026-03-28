@@ -1,6 +1,6 @@
 """
-Transfer Server - HTTP 端点实现
-提供绕过 MCP 限制的大文件下载端点
+Transfer Server - HTTP endpoint implementation.
+Provides large file download endpoints that bypass MCP size limits.
 """
 
 import asyncio
@@ -28,7 +28,7 @@ from .param_validator import (
 
 logger = get_logger("transfer_server")
 
-# Brotli 作为可选依赖
+# Brotli as an optional dependency
 try:
     import brotli
     BROTLI_AVAILABLE = True
@@ -42,43 +42,43 @@ import gzip
 
 def select_compression(accept_encoding: str) -> str:
     """
-    根据客户端 Accept-Encoding 头选择最佳压缩算法
-    
+    Select the best compression algorithm based on the client's Accept-Encoding header.
+
     Args:
-        accept_encoding: HTTP Accept-Encoding 头
-    
+        accept_encoding: HTTP Accept-Encoding header value
+
     Returns:
-        压缩算法: 'br', 'gzip', 或 'identity'
+        Compression algorithm: 'br', 'gzip', or 'identity'
     """
     accept_encoding = accept_encoding.lower()
-    
+
     if "br" in accept_encoding and BROTLI_AVAILABLE:
-        return "br"  # Brotli - 最佳压缩率
+        return "br"  # Brotli - best compression ratio
     elif "gzip" in accept_encoding:
-        return "gzip"  # GZIP - 通用支持
-    return "identity"  # 不压缩
+        return "gzip"  # GZIP - broadly supported
+    return "identity"  # No compression
 
 
 def compress_data(data: bytes, encoding: str) -> tuple[bytes, str]:
     """
-    压缩数据
-    
+    Compress data with the specified encoding.
+
     Args:
-        data: 原始数据
-        encoding: 压缩算法
-    
+        data: Raw data bytes
+        encoding: Compression algorithm
+
     Returns:
-        (压缩后数据, 实际使用的编码)
+        (compressed data, actual encoding used)
     """
     if encoding == "br" and BROTLI_AVAILABLE:
         try:
-            compressed = brotli.compress(data, quality=6)  # quality 6 平衡速度和压缩率
+            compressed = brotli.compress(data, quality=6)  # quality 6 balances speed and ratio
             logger.debug(f"Brotli compressed: {len(data)} -> {len(compressed)} bytes")
             return compressed, "br"
         except Exception as e:
             logger.warning(f"Brotli compression failed: {e}, falling back to gzip")
             encoding = "gzip"
-    
+
     if encoding == "gzip":
         try:
             compressed = gzip.compress(data, compresslevel=6)
@@ -86,7 +86,7 @@ def compress_data(data: bytes, encoding: str) -> tuple[bytes, str]:
             return compressed, "gzip"
         except Exception as e:
             logger.warning(f"GZIP compression failed: {e}, using identity")
-    
+
     return data, "identity"
 
 
@@ -130,14 +130,14 @@ def _build_json_response_payload(
 
 async def _fetch_batch_classes(class_names: list, instance_id: Optional[str]) -> list:
     """
-    从 JADX 批量获取类源码（使用 batch-class-source 端点单次请求）
+    Fetch batch class source code from JADX via a single batch-class-source request.
 
     Args:
-        class_names: 类名列表
-        instance_id: JADX 实例 ID
+        class_names: List of class names
+        instance_id: JADX instance ID
 
     Returns:
-        结果列表
+        List of results
     """
     logger.info(f"Fetching {len(class_names)} classes from JADX via batch endpoint")
 
@@ -180,18 +180,18 @@ async def _fetch_batch_classes(class_names: list, instance_id: Optional[str]) ->
 async def download_batch_classes(request: Request):
     """
     GET /transfer/download/batch-classes
-    
+
     Query Parameters:
-        - token: 传输令牌 (必需)
-        - classes: 逗号分隔的类名 (必需)
-        - format: json 或 zip (可选, 默认 json)
-        - compression: br, gzip, none, auto (可选, 默认 auto)
-        - instance_id: JADX 实例 ID (可选)
+        - token: Transfer token (required)
+        - classes: Comma-separated class names (required)
+        - format: json or zip (optional, default json)
+        - compression: br, gzip, none, auto (optional, default auto)
+        - instance_id: JADX instance ID (optional)
     """
-    # 0. 速率限制检查
+    # 0. Rate limit check
     client_ip = request.client.host if request.client else "unknown"
     rate_limiter = get_download_limiter()
-    
+
     if not rate_limiter.check(client_ip):
         remaining_time = rate_limiter.get_reset_time(client_ip)
         logger.warning(f"Rate limit exceeded for {client_ip}")
@@ -204,33 +204,33 @@ async def download_batch_classes(request: Request):
             status_code=429,
             headers={"Retry-After": str(remaining_time)}
         )
-    
-    # 1. 参数验证和清理
+
+    # 1. Parameter validation and sanitization
     try:
-        # 验证令牌
+        # Validate token
         token_param = request.headers.get("X-Transfer-Token") or request.query_params.get("token")
         if not token_param:
             return JSONResponse({"error": "Missing token parameter"}, status_code=400)
-        
+
         token_id = validate_token(token_param)
-        
-        # 验证类名
+
+        # Validate class names
         classes_param = request.query_params.get("classes", "")
         class_names = validate_class_names(classes_param)
-        
-        # 验证格式
+
+        # Validate format
         format_type = validate_format(request.query_params.get("format", "json"))
-        
-        # 验证压缩
+
+        # Validate compression
         compression_param = validate_compression(request.query_params.get("compression", "auto"))
-        
+
     except ValidationError as e:
         logger.warning(f"Validation error from {client_ip}: {e}")
         return JSONResponse({"error": str(e)}, status_code=400)
-    
+
     instance_id = request.query_params.get("instance_id")
-    
-    # 2. 原子消费令牌
+
+    # 2. Atomically consume token
     store = get_token_store()
     token = store.consume(token_id, ResourceType.BATCH_CLASSES)
     
@@ -256,15 +256,14 @@ async def download_batch_classes(request: Request):
     
     logger.info(f"Download request from {client_ip}: {len(class_names)} classes, format={format_type}, compression={compression_param}")
 
-    
-    # 3. 获取数据
+    # 3. Fetch data
     try:
         results = await _fetch_batch_classes(class_names, instance_id)
     except Exception as e:
         logger.error(f"Failed to fetch classes: {e}")
         return JSONResponse({"error": f"Failed to fetch classes: {str(e)}"}, status_code=500)
-    
-    # 4. 构建响应
+
+    # 4. Build response
     if format_type == "zip":
         try:
             payload, index_data = await asyncio.to_thread(_build_zip_response_payload, results)
@@ -284,14 +283,14 @@ async def download_batch_classes(request: Request):
             return JSONResponse({"error": f"Failed to create ZIP: {str(e)}"}, status_code=500)
     
     else:
-        # 选择压缩算法
+        # Select compression algorithm
         if compression_param == "auto":
             accept_encoding = request.headers.get("Accept-Encoding", "")
             compression = select_compression(accept_encoding)
         elif compression_param == "none":
             compression = "identity"
         else:
-            compression = compression_param  # br 或 gzip
+            compression = compression_param  # br or gzip
 
         try:
             compressed_data, response_data, actual_encoding, original_size = await asyncio.to_thread(
@@ -322,7 +321,7 @@ async def download_batch_classes(request: Request):
 
 
 async def download_health(request: Request):
-    """GET /transfer/health - 健康检查端点"""
+    """GET /transfer/health - health check endpoint"""
     return JSONResponse({
         "status": "healthy",
         "brotli_available": BROTLI_AVAILABLE,
@@ -333,7 +332,7 @@ async def download_health(request: Request):
     })
 
 
-# 创建 Starlette 应用（稍后挂载到 FastMCP）
+# Create Starlette application (to be mounted onto FastMCP later)
 transfer_routes = [
     Route("/transfer/download/batch-classes", download_batch_classes, methods=["GET"]),
     Route("/transfer/health", download_health, methods=["GET"]),
