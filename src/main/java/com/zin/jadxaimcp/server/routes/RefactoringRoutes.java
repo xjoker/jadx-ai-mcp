@@ -23,6 +23,7 @@ import java.util.Map;
 
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.JadxApiAdapter;
 
 public class RefactoringRoutes {
     private static final Logger logger = LoggerFactory.getLogger(RefactoringRoutes.class);
@@ -61,7 +62,7 @@ public class RefactoringRoutes {
             
             // Use cache for fast lookup
             Map<String, JavaClass> classMap = ClassCacheManager.getCache();
-            JavaClass cls = classMap.get(className);
+            JavaClass cls = ClassCacheManager.findClass(classMap, className);
             
             if (cls != null) {
                 ICodeNodeRef nodeRef = cls.getCodeNodeRef();
@@ -71,7 +72,7 @@ public class RefactoringRoutes {
                 mainWindow.events().send(event);
 
                 // Invalidate decompiled code cache — renamed class code is stale
-                ClassCacheManager.invalidateCode(className);
+                invalidateCodeForClass(cls, className);
 
                 logger.info("Renaming Class {} to {}", cls.getName(), newName);
                 ctx.json(Map.of("result", "Renamed Class " + cls.getName() + " to " + newName));
@@ -137,11 +138,11 @@ public class RefactoringRoutes {
             
             // Use cache for fast lookup
             Map<String, JavaClass> classMap = ClassCacheManager.getCache();
-            JavaClass cls = classMap.get(className);
+            JavaClass cls = ClassCacheManager.findClass(classMap, className);
             
             if (cls != null) {
                 for (JavaMethod method : cls.getMethods()) {
-                    if (method.getName().equalsIgnoreCase(simpleMethodName)) {
+                    if (JadxApiAdapter.matchesMethodName(method, simpleMethodName)) {
                         ICodeNodeRef nodeRef = method.getCodeNodeRef();
                         NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, method.getName(), newName);
                         event.setRenameNode(nodeRef);
@@ -149,7 +150,7 @@ public class RefactoringRoutes {
                         mainWindow.events().send(event);
 
                         // Invalidate decompiled code cache — class source changed after method rename
-                        ClassCacheManager.invalidateCode(className);
+                        invalidateCodeForClass(cls, className);
 
                         logger.info("Renaming method {} to {}", method.getName(), newName);
                         ctx.json(Map.of("result", "Rename method " + method.getName() + " to " + newName));
@@ -196,11 +197,11 @@ public class RefactoringRoutes {
             
             // Use cache for fast lookup
             Map<String, JavaClass> classMap = ClassCacheManager.getCache();
-            JavaClass cls = classMap.get(className);
+            JavaClass cls = ClassCacheManager.findClass(classMap, className);
             
             if (cls != null) {
                 for (JavaField field : cls.getFields()) {
-                    if (field.getName().equals(oldFieldName)) {
+                    if (JadxApiAdapter.matchesFieldName(field, oldFieldName)) {
                         ICodeNodeRef nodeRef = field.getCodeNodeRef();
                         NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, field.getName(), newFieldName);
                         event.setRenameNode(nodeRef);
@@ -208,7 +209,7 @@ public class RefactoringRoutes {
                         mainWindow.events().send(event);
 
                         // Invalidate decompiled code cache — class source changed after field rename
-                        ClassCacheManager.invalidateCode(className);
+                        invalidateCodeForClass(cls, className);
 
                         logger.info("Renaming field {} to {}", field.getName(), newFieldName);
                         ctx.json(Map.of("result", "Renamed field " + field.getName() + " to " + newFieldName));
@@ -350,6 +351,16 @@ public class RefactoringRoutes {
             return true;
         }
         return false;
+    }
+
+    private void invalidateCodeForClass(JavaClass cls, String requestedClassName) {
+        if (requestedClassName != null && !requestedClassName.isEmpty()) {
+            ClassCacheManager.invalidateCode(requestedClassName);
+        }
+        if (cls != null) {
+            ClassCacheManager.invalidateCode(cls.getFullName());
+            ClassCacheManager.invalidateCode(cls.getRawName());
+        }
     }
 
 }

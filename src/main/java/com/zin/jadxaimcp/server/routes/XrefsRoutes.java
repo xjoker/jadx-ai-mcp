@@ -251,7 +251,7 @@ public class XrefsRoutes {
             
             // Get from cache
             Map<String, JavaClass> classMap = ClassCacheManager.getCache();
-            JavaClass cls = classMap.get(className);
+            JavaClass cls = ClassCacheManager.findClass(classMap, className);
             if (cls != null) {
                 return cls;
             }
@@ -275,10 +275,13 @@ public class XrefsRoutes {
     private List<JavaMethod> findMethodsByName(Context ctx, JavaClass javaClass, String methodName) {
         List<JavaMethod> matchedMethods = new ArrayList<>();
         String simpleClassName = javaClass.getName();
+        String rawSimpleClassName = JadxApiAdapter.getClassRawSimpleName(javaClass);
         for (JavaMethod method : javaClass.getMethods()) {
-            if (!method.isConstructor() && method.getName().equals(methodName)) {
+            if (!method.isConstructor() && JadxApiAdapter.matchesMethodName(method, methodName)) {
                 matchedMethods.add(method);
-            } else if (method.isConstructor() && methodName.equals(simpleClassName)) {
+            } else if (method.isConstructor()
+                    && (methodName.equals(simpleClassName)
+                    || (rawSimpleClassName != null && methodName.equals(rawSimpleClassName)))) {
                 matchedMethods.add(method);
             }
         }
@@ -300,7 +303,7 @@ public class XrefsRoutes {
      */
     private JavaField findFieldByName(Context ctx, JavaClass javaClass, String fieldName) {
         for (JavaField field : javaClass.getFields()) {
-            if (field.getName().equals(fieldName)) return field;
+            if (JadxApiAdapter.matchesFieldName(field, fieldName)) return field;
         }
         JadxAIMCPPluginError.handleError(ctx, 404, "Field " + fieldName + " not found in class " + javaClass.getFullName(), logger);
         return null;
@@ -668,7 +671,7 @@ public class XrefsRoutes {
                 String type = parts[0].toLowerCase();
                 String className = parts[1];
                 
-                JavaClass targetClass = classMap.get(className);
+                JavaClass targetClass = ClassCacheManager.findClass(classMap, className);
                 
                 if (targetClass == null) {
                     result.put("found", false);
@@ -707,7 +710,7 @@ public class XrefsRoutes {
                             String methodName = parts[2];
                             Set<String> seenMethodRefs = new HashSet<>();
                             for (JavaMethod method : targetClass.getMethods()) {
-                                if (method.getName().equals(methodName)) {
+                                if (JadxApiAdapter.matchesMethodName(method, methodName)) {
                                     matched = true;
                                     mergeReferences(
                                         xrefs,
@@ -734,7 +737,7 @@ public class XrefsRoutes {
                             String fieldName = parts[2];
                             Set<String> seenFieldRefs = new HashSet<>();
                             for (JavaField field : targetClass.getFields()) {
-                                if (field.getName().equals(fieldName)) {
+                                if (JadxApiAdapter.matchesFieldName(field, fieldName)) {
                                     matched = true;
                                     mergeReferences(
                                         xrefs,

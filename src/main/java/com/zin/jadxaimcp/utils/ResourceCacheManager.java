@@ -6,6 +6,8 @@ import jadx.gui.JadxWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -45,6 +47,7 @@ public class ResourceCacheManager {
     private static final AtomicReference<CompletableFuture<Void>> loadFuture = new AtomicReference<>(null);
     private static final AtomicLong generationToken = new AtomicLong(0);
     private static final Object cacheLock = new Object();
+    private static final AtomicReference<String> cacheOwnerKey = new AtomicReference<>("");
 
     // Parsed strings.xml cache: keyed by locale path (e.g., "res/values/strings.xml")
     // Populated on first parse per locale, cleared with clearCache()
@@ -109,6 +112,8 @@ public class ResourceCacheManager {
             logger.warn("Cannot init cache: wrapper is null");
             return false;
         }
+
+        rotateCacheOwnerIfNeeded(wrapper);
 
         long generation = generationToken.get();
         
@@ -463,6 +468,7 @@ public class ResourceCacheManager {
             currentPhase.set("idle");
             processedFiles.set(0);
             totalFiles.set(0);
+            cacheOwnerKey.set("");
             logger.info("Resource cache cleared (generation {})", generation);
         }
     }
@@ -503,5 +509,49 @@ public class ResourceCacheManager {
 
     private static boolean isLoadStale(long generation) {
         return Thread.currentThread().isInterrupted() || generationToken.get() != generation;
+    }
+
+    private static void rotateCacheOwnerIfNeeded(JadxWrapper wrapper) {
+        String ownerKey = buildCacheOwnerKey(wrapper);
+        String previousOwner = cacheOwnerKey.get();
+        if (!previousOwner.isEmpty() && !previousOwner.equals(ownerKey)) {
+            synchronized (cacheLock) {
+                if (!previousOwner.equals(cacheOwnerKey.get())) {
+                    cacheOwnerKey.set(ownerKey);
+                    return;
+                }
+                clearCache();
+                cacheOwnerKey.set(ownerKey);
+            }
+            logger.info("Resource cache invalidated due to project switch");
+            return;
+        }
+        cacheOwnerKey.set(ownerKey);
+    }
+
+    private static String buildCacheOwnerKey(JadxWrapper wrapper) {
+        StringBuilder ownerKey = new StringBuilder();
+        ownerKey.append("wrapper@").append(System.identityHashCode(wrapper));
+        try {
+            Object project = wrapper.getProject();
+            ownerKey.append("|project@").append(project != null ? System.identityHashCode(project) : 0);
+            List<Path> filePaths = project != null ? wrapper.getProject().getFilePaths() : null;
+            if (filePaths == null || filePaths.isEmpty()) {
+                ownerKey.append("|no-input");
+            } else {
+                for (Path path : filePaths) {
+                    ownerKey.append('|').append(path.toAbsolutePath());
+                    try {
+                        ownerKey.append(':').append(Files.size(path));
+                        ownerKey.append(':').append(Files.getLastModifiedTime(path).toMillis());
+                    } catch (Exception ignored) {
+                        ownerKey.append(":na:na");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            ownerKey.append("|unknown-project");
+        }
+        return ownerKey.toString();
     }
 }

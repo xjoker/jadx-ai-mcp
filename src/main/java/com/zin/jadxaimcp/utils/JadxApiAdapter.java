@@ -24,6 +24,30 @@ public final class JadxApiAdapter {
     private JadxApiAdapter() {
     }
 
+    public static String getClassAliasName(JavaClass cls) {
+        return cls != null ? cls.getFullName() : null;
+    }
+
+    public static String getClassRawName(JavaClass cls) {
+        return cls != null ? cls.getRawName() : null;
+    }
+
+    public static String getClassAliasSimpleName(JavaClass cls) {
+        return cls != null ? cls.getName() : null;
+    }
+
+    public static String getClassRawSimpleName(JavaClass cls) {
+        ClassNode classNode = getInternalClassNode(cls);
+        return classNode != null && classNode.getClassInfo() != null
+            ? classNode.getClassInfo().getShortName()
+            : null;
+    }
+
+    public static boolean matchesClassName(JavaClass cls, String requestedName) {
+        return matchesValue(requestedName, getClassAliasName(cls), false)
+            || matchesValue(requestedName, getClassRawName(cls), false);
+    }
+
     public static AccessInfo getAccessFlags(JavaClass cls) {
         ClassNode classNode = getInternalClassNode(cls);
         return classNode != null ? classNode.getAccessFlags() : null;
@@ -33,9 +57,62 @@ public final class JadxApiAdapter {
         return buildMethodInfo(getInternalMethodNode(method));
     }
 
+    public static String getMethodAliasName(JavaMethod method) {
+        return method != null ? method.getName() : null;
+    }
+
+    public static String getMethodRawName(JavaMethod method) {
+        MethodNode methodNode = getInternalMethodNode(method);
+        return methodNode != null && methodNode.getMethodInfo() != null
+            ? methodNode.getMethodInfo().getName()
+            : null;
+    }
+
+    public static String getMethodFullId(JavaMethod method) {
+        MethodNode methodNode = getInternalMethodNode(method);
+        return methodNode != null && methodNode.getMethodInfo() != null
+            ? methodNode.getMethodInfo().getFullId()
+            : null;
+    }
+
+    public static String getMethodRawFullId(JavaMethod method) {
+        MethodNode methodNode = getInternalMethodNode(method);
+        return methodNode != null && methodNode.getMethodInfo() != null
+            ? methodNode.getMethodInfo().getRawFullId()
+            : null;
+    }
+
+    public static boolean matchesMethodName(JavaMethod method, String requestedName) {
+        return matchesValue(requestedName, getMethodAliasName(method), true)
+            || matchesValue(requestedName, getMethodRawName(method), true)
+            || matchesValue(requestedName, getMethodFullId(method), true)
+            || matchesValue(requestedName, getMethodRawFullId(method), true);
+    }
+
     public static String getFieldType(JavaField field) {
         FieldNode fieldNode = getInternalFieldNode(field);
         return fieldNode != null && fieldNode.getType() != null ? fieldNode.getType().toString() : null;
+    }
+
+    public static String getFieldAliasName(JavaField field) {
+        return field != null ? field.getName() : null;
+    }
+
+    public static String getFieldRawName(JavaField field) {
+        return field != null ? field.getRawName() : null;
+    }
+
+    public static String getFieldRawFullId(JavaField field) {
+        FieldNode fieldNode = getInternalFieldNode(field);
+        return fieldNode != null && fieldNode.getFieldInfo() != null
+            ? fieldNode.getFieldInfo().getRawFullId()
+            : null;
+    }
+
+    public static boolean matchesFieldName(JavaField field, String requestedName) {
+        return matchesValue(requestedName, getFieldAliasName(field), false)
+            || matchesValue(requestedName, getFieldRawName(field), false)
+            || matchesValue(requestedName, getFieldRawFullId(field), false);
     }
 
     public static String getSuperClass(JavaClass cls) {
@@ -143,10 +220,13 @@ public final class JadxApiAdapter {
             : null;
 
         return new MethodInfoSnapshot(
-            methodNode.getName(),
+            methodNode.getMethodInfo().getName(),
+            methodNode.getAlias(),
             methodNode.getMethodInfo().getDeclClass().getFullName(),
             methodNode.getMethodInfo().getFullName(),
+            methodNode.getMethodInfo().getAliasFullName(),
             methodNode.getMethodInfo().getFullId(),
+            methodNode.getMethodInfo().getRawFullId(),
             methodNode.getMethodInfo().getShortId(),
             methodNode.getMethodInfo().getReturnType(),
             safeArgumentTypes,
@@ -164,7 +244,9 @@ public final class JadxApiAdapter {
         }
 
         return new FieldInfoSnapshot(
-            fieldNode.getName(),
+            fieldNode.getFieldInfo().getName(),
+            fieldNode.getAlias(),
+            fieldNode.getFieldInfo().getRawFullId(),
             fieldNode.getType() != null ? fieldNode.getType().toString() : null,
             fieldNode.getAccessFlags()
         );
@@ -172,9 +254,12 @@ public final class JadxApiAdapter {
 
     public static final class MethodInfoSnapshot {
         private final String name;
+        private final String aliasName;
         private final String declaringClassName;
         private final String fullName;
+        private final String aliasFullName;
         private final String fullId;
+        private final String rawFullId;
         private final String shortId;
         private final ArgType returnType;
         private final List<ArgType> argumentTypes;
@@ -185,9 +270,12 @@ public final class JadxApiAdapter {
 
         private MethodInfoSnapshot(
             String name,
+            String aliasName,
             String declaringClassName,
             String fullName,
+            String aliasFullName,
             String fullId,
+            String rawFullId,
             String shortId,
             ArgType returnType,
             List<ArgType> argumentTypes,
@@ -197,9 +285,12 @@ public final class JadxApiAdapter {
             Integer basicBlockCount
         ) {
             this.name = name;
+            this.aliasName = aliasName;
             this.declaringClassName = declaringClassName;
             this.fullName = fullName;
+            this.aliasFullName = aliasFullName;
             this.fullId = fullId;
+            this.rawFullId = rawFullId;
             this.shortId = shortId;
             this.returnType = returnType;
             this.argumentTypes = Collections.unmodifiableList(argumentTypes);
@@ -213,8 +304,20 @@ public final class JadxApiAdapter {
             return name;
         }
 
+        public String getRawName() {
+            return name;
+        }
+
+        public String getAliasName() {
+            return aliasName;
+        }
+
         public String getFullName() {
             return fullName;
+        }
+
+        public String getAliasFullName() {
+            return aliasFullName;
         }
 
         public String getDeclaringClassName() {
@@ -223,6 +326,10 @@ public final class JadxApiAdapter {
 
         public String getFullId() {
             return fullId;
+        }
+
+        public String getRawFullId() {
+            return rawFullId;
         }
 
         public String getShortId() {
@@ -256,17 +363,33 @@ public final class JadxApiAdapter {
 
     public static final class FieldInfoSnapshot {
         private final String name;
+        private final String aliasName;
+        private final String rawFullId;
         private final String type;
         private final AccessInfo accessFlags;
 
-        private FieldInfoSnapshot(String name, String type, AccessInfo accessFlags) {
+        private FieldInfoSnapshot(String name, String aliasName, String rawFullId, String type, AccessInfo accessFlags) {
             this.name = name;
+            this.aliasName = aliasName;
+            this.rawFullId = rawFullId;
             this.type = type;
             this.accessFlags = accessFlags;
         }
 
         public String getName() {
             return name;
+        }
+
+        public String getRawName() {
+            return name;
+        }
+
+        public String getAliasName() {
+            return aliasName;
+        }
+
+        public String getRawFullId() {
+            return rawFullId;
         }
 
         public String getType() {
@@ -276,5 +399,12 @@ public final class JadxApiAdapter {
         public AccessInfo getAccessFlags() {
             return accessFlags;
         }
+    }
+
+    private static boolean matchesValue(String requestedValue, String candidateValue, boolean ignoreCase) {
+        if (requestedValue == null || requestedValue.isEmpty() || candidateValue == null || candidateValue.isEmpty()) {
+            return false;
+        }
+        return ignoreCase ? candidateValue.equalsIgnoreCase(requestedValue) : candidateValue.equals(requestedValue);
     }
 }

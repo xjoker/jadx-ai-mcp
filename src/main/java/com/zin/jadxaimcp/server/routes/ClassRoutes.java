@@ -261,8 +261,12 @@ public class ClassRoutes {
         }
 
         try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            JavaClass targetClass = findClassByName(wrapper, className);
+            String cacheKey = targetClass != null ? targetClass.getFullName() : className;
+
             // Check decompiled code cache first (no lock needed for cache read)
-            String code = ClassCacheManager.getCachedCode(className);
+            String code = ClassCacheManager.getCachedCode(cacheKey);
             if (code != null) {
                 Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
                     code, chunk, "response");
@@ -284,15 +288,14 @@ public class ClassRoutes {
             }
             try {
                 // Re-check cache after acquiring lock (another thread may have decompiled it)
-                code = ClassCacheManager.getCachedCode(className);
+                code = ClassCacheManager.getCachedCode(cacheKey);
                 if (code == null) {
-                    JadxWrapper wrapper = mainWindow.getWrapper();
-                    for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                        if (cls.getFullName().equals(className)) {
-                            code = cls.getCode();
-                            ClassCacheManager.putCachedCode(className, code);
-                            break;
-                        }
+                    if (targetClass == null) {
+                        targetClass = findClassByName(wrapper, className);
+                    }
+                    if (targetClass != null) {
+                        code = targetClass.getCode();
+                        ClassCacheManager.putCachedCode(targetClass.getFullName(), code);
                     }
                 }
             } finally {
@@ -404,13 +407,20 @@ public class ClassRoutes {
             // Collect classes that need decompilation (cache miss)
             List<String> needDecompile = new ArrayList<>();
             Map<String, String> cachedResults = new HashMap<>();
+            Map<String, JavaClass> resolvedClasses = new HashMap<>();
 
             for (String className : classNames) {
                 String trimmedName = className.trim();
-                String cachedCode = ClassCacheManager.getCachedCode(trimmedName);
+                JavaClass resolvedClass = ClassCacheManager.findClass(classMap, trimmedName);
+                if (resolvedClass != null) {
+                    resolvedClasses.put(trimmedName, resolvedClass);
+                }
+
+                String cacheKey = resolvedClass != null ? resolvedClass.getFullName() : trimmedName;
+                String cachedCode = ClassCacheManager.getCachedCode(cacheKey);
                 if (cachedCode != null) {
                     cachedResults.put(trimmedName, cachedCode);
-                } else if (classMap.containsKey(trimmedName)) {
+                } else if (resolvedClass != null) {
                     needDecompile.add(trimmedName);
                 }
             }
@@ -433,11 +443,11 @@ public class ClassRoutes {
                             decompiledResults.put(name, code);
                             continue;
                         }
-                        JavaClass cls = classMap.get(name);
+                        JavaClass cls = resolvedClasses.get(name);
                         if (cls != null) {
                             try {
                                 code = cls.getCode();
-                                ClassCacheManager.putCachedCode(name, code);
+                                ClassCacheManager.putCachedCode(cls.getFullName(), code);
                                 decompiledResults.put(name, code);
                             } catch (Exception e) {
                                 logger.error("Decompilation failed for {}: {}", name, e.getMessage());
@@ -470,7 +480,7 @@ public class ClassRoutes {
                         classResult.put("found", true);
                         classResult.put("error", "Decompilation failed (see server log)");
                     }
-                } else if (!classMap.containsKey(trimmedName)) {
+                } else if (!resolvedClasses.containsKey(trimmedName)) {
                     classResult.put("found", false);
                     classResult.put("error", "Class not found");
                 } else {
@@ -533,66 +543,69 @@ public class ClassRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    // First pass: count overloads for each method name
-                    Map<String, Integer> overloadCounts = new HashMap<>();
-                    for (JavaMethod method : cls.getMethods()) {
-                        String name = method.getName();
-                        overloadCounts.put(name, overloadCounts.getOrDefault(name, 0) + 1);
-                    }
-                    
-                    // Second pass: build method info list
-                    List<Map<String, Object>> methodsList = new ArrayList<>();
-                    for (JavaMethod method : cls.getMethods()) {
-                        Map<String, Object> methodInfo = new HashMap<>();
-                        methodInfo.put("name", method.getName());
-                        
-                        AccessInfo accessFlags = method.getAccessFlags();
-                        if (accessFlags != null) {
-                            methodInfo.put("is_static", accessFlags.isStatic());
-                            methodInfo.put("is_native", accessFlags.isNative());
-                            methodInfo.put("is_abstract", accessFlags.isAbstract());
-                            methodInfo.put("is_synchronized", accessFlags.isSynchronized());
-                            
-                            // Access modifiers list
-                            List<String> modifiers = new ArrayList<>();
-                            if (accessFlags.isPublic()) modifiers.add("public");
-                            if (accessFlags.isPrivate()) modifiers.add("private");
-                            if (accessFlags.isProtected()) modifiers.add("protected");
-                            if (accessFlags.isStatic()) modifiers.add("static");
-                            if (accessFlags.isNative()) modifiers.add("native");
-                            if (accessFlags.isAbstract()) modifiers.add("abstract");
-                            if (accessFlags.isSynchronized()) modifiers.add("synchronized");
-                            if (accessFlags.isFinal()) modifiers.add("final");
-                            methodInfo.put("modifiers", modifiers);
-                        } else {
-                            methodInfo.put("is_static", false);
-                            methodInfo.put("is_native", false);
-                            methodInfo.put("is_abstract", false);
-                            methodInfo.put("is_synchronized", false);
-                            methodInfo.put("modifiers", new ArrayList<>());
-                        }
-                        
-                        methodInfo.put("is_constructor", method.isConstructor());
-                        methodInfo.put("overload_count", overloadCounts.get(method.getName()));
-                        
-                        // Return type
-                        String returnType = method.getReturnType() != null ? 
-                            method.getReturnType().toString() : "void";
-                        methodInfo.put("return_type", returnType);
-                        
-                        methodsList.add(methodInfo);
-                    }
-                    
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("class_name", className);
-                    response.put("methods", methodsList);
-                    response.put("count", methodsList.size());
-                    
-                    ctx.json(response);
-                    return;
+            JavaClass cls = findClassByName(wrapper, className);
+            if (cls != null) {
+                // First pass: count overloads for each method name
+                Map<String, Integer> overloadCounts = new HashMap<>();
+                for (JavaMethod method : cls.getMethods()) {
+                    String name = method.getName();
+                    overloadCounts.put(name, overloadCounts.getOrDefault(name, 0) + 1);
                 }
+
+                // Second pass: build method info list
+                List<Map<String, Object>> methodsList = new ArrayList<>();
+                for (JavaMethod method : cls.getMethods()) {
+                    Map<String, Object> methodInfo = new HashMap<>();
+                    methodInfo.put("name", method.getName());
+                    methodInfo.put("raw_name", JadxApiAdapter.getMethodRawName(method));
+                    methodInfo.put("full_id", JadxApiAdapter.getMethodFullId(method));
+                    methodInfo.put("raw_full_id", JadxApiAdapter.getMethodRawFullId(method));
+
+                    AccessInfo accessFlags = method.getAccessFlags();
+                    if (accessFlags != null) {
+                        methodInfo.put("is_static", accessFlags.isStatic());
+                        methodInfo.put("is_native", accessFlags.isNative());
+                        methodInfo.put("is_abstract", accessFlags.isAbstract());
+                        methodInfo.put("is_synchronized", accessFlags.isSynchronized());
+
+                        // Access modifiers list
+                        List<String> modifiers = new ArrayList<>();
+                        if (accessFlags.isPublic()) modifiers.add("public");
+                        if (accessFlags.isPrivate()) modifiers.add("private");
+                        if (accessFlags.isProtected()) modifiers.add("protected");
+                        if (accessFlags.isStatic()) modifiers.add("static");
+                        if (accessFlags.isNative()) modifiers.add("native");
+                        if (accessFlags.isAbstract()) modifiers.add("abstract");
+                        if (accessFlags.isSynchronized()) modifiers.add("synchronized");
+                        if (accessFlags.isFinal()) modifiers.add("final");
+                        methodInfo.put("modifiers", modifiers);
+                    } else {
+                        methodInfo.put("is_static", false);
+                        methodInfo.put("is_native", false);
+                        methodInfo.put("is_abstract", false);
+                        methodInfo.put("is_synchronized", false);
+                        methodInfo.put("modifiers", new ArrayList<>());
+                    }
+
+                    methodInfo.put("is_constructor", method.isConstructor());
+                    methodInfo.put("overload_count", overloadCounts.get(method.getName()));
+
+                    // Return type
+                    String returnType = method.getReturnType() != null ?
+                        method.getReturnType().toString() : "void";
+                    methodInfo.put("return_type", returnType);
+
+                    methodsList.add(methodInfo);
+                }
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("class_name", cls.getFullName());
+                response.put("raw_class_name", cls.getRawName());
+                response.put("methods", methodsList);
+                response.put("count", methodsList.size());
+
+                ctx.json(response);
+                return;
             }
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
@@ -621,52 +634,54 @@ public class ClassRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    List<Map<String, Object>> fieldsList = new ArrayList<>();
-                    
-                    for (JavaField field : cls.getFields()) {
-                        Map<String, Object> fieldInfo = new HashMap<>();
-                        fieldInfo.put("name", field.getName());
-                        
-                        // Type information
-                        String typeStr = field.getType() != null ? field.getType().toString() : "unknown";
-                        fieldInfo.put("type", typeStr);
-                        
-                        // Frida-compatible type
-                        if (field.getType() != null) {
-                            fieldInfo.put("type_frida", 
-                                com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(field.getType()));
-                        } else {
-                            fieldInfo.put("type_frida", typeStr);
-                        }
-                        
-                        // Access modifiers
-                        AccessInfo accessFlags = field.getAccessFlags();
-                        List<String> modifiers = new ArrayList<>();
-                        if (accessFlags.isPublic()) modifiers.add("public");
-                        if (accessFlags.isPrivate()) modifiers.add("private");
-                        if (accessFlags.isProtected()) modifiers.add("protected");
-                        if (accessFlags.isStatic()) modifiers.add("static");
-                        if (accessFlags.isFinal()) modifiers.add("final");
-                        if (accessFlags.isVolatile()) modifiers.add("volatile");
-                        if (accessFlags.isTransient()) modifiers.add("transient");
-                        
-                        fieldInfo.put("modifiers", modifiers);
-                        fieldInfo.put("is_static", accessFlags.isStatic());
-                        fieldInfo.put("is_final", accessFlags.isFinal());
-                        
-                        fieldsList.add(fieldInfo);
+            JavaClass cls = findClassByName(wrapper, className);
+            if (cls != null) {
+                List<Map<String, Object>> fieldsList = new ArrayList<>();
+
+                for (JavaField field : cls.getFields()) {
+                    Map<String, Object> fieldInfo = new HashMap<>();
+                    fieldInfo.put("name", field.getName());
+                    fieldInfo.put("raw_name", field.getRawName());
+                    fieldInfo.put("raw_full_id", JadxApiAdapter.getFieldRawFullId(field));
+
+                    // Type information
+                    String typeStr = field.getType() != null ? field.getType().toString() : "unknown";
+                    fieldInfo.put("type", typeStr);
+
+                    // Frida-compatible type
+                    if (field.getType() != null) {
+                        fieldInfo.put("type_frida",
+                            com.zin.jadxaimcp.utils.FridaTypeConverter.toFridaType(field.getType()));
+                    } else {
+                        fieldInfo.put("type_frida", typeStr);
                     }
-                    
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("class_name", className);
-                    response.put("fields", fieldsList);
-                    response.put("count", fieldsList.size());
-                    
-                    ctx.json(response);
-                    return;
+
+                    // Access modifiers
+                    AccessInfo accessFlags = field.getAccessFlags();
+                    List<String> modifiers = new ArrayList<>();
+                    if (accessFlags.isPublic()) modifiers.add("public");
+                    if (accessFlags.isPrivate()) modifiers.add("private");
+                    if (accessFlags.isProtected()) modifiers.add("protected");
+                    if (accessFlags.isStatic()) modifiers.add("static");
+                    if (accessFlags.isFinal()) modifiers.add("final");
+                    if (accessFlags.isVolatile()) modifiers.add("volatile");
+                    if (accessFlags.isTransient()) modifiers.add("transient");
+
+                    fieldInfo.put("modifiers", modifiers);
+                    fieldInfo.put("is_static", accessFlags.isStatic());
+                    fieldInfo.put("is_final", accessFlags.isFinal());
+
+                    fieldsList.add(fieldInfo);
                 }
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("class_name", cls.getFullName());
+                response.put("raw_class_name", cls.getRawName());
+                response.put("fields", fieldsList);
+                response.put("count", fieldsList.size());
+
+                ctx.json(response);
+                return;
             }
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
@@ -729,30 +744,29 @@ public class ClassRoutes {
             }
             lockAcquired = true;
             
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    String smali = cls.getSmali();
-                    if (smali == null || smali.isEmpty()) {
-                        // Smali generation failed even though file type says it should work
-                        JadxAIMCPPluginError.handleError(ctx, 404, 
-                            "Smali generation returned empty for class " + className + 
-                            ". This may indicate the class was loaded from a non-DEX source.", logger);
-                        return;
-                    }
-                    
-                    // Use SmartChunker for automatic chunking of large Smali responses
-                    Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
-                        smali, chunk, "response");
-                    
-                    // Check for chunking errors
-                    if (result.containsKey("error")) {
-                        JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
-                        return;
-                    }
-                    
-                    ctx.json(result);
+            JavaClass cls = findClassByName(wrapper, className);
+            if (cls != null) {
+                String smali = cls.getSmali();
+                if (smali == null || smali.isEmpty()) {
+                    // Smali generation failed even though file type says it should work
+                    JadxAIMCPPluginError.handleError(ctx, 404,
+                        "Smali generation returned empty for class " + className +
+                        ". This may indicate the class was loaded from a non-DEX source.", logger);
                     return;
                 }
+
+                // Use SmartChunker for automatic chunking of large Smali responses
+                Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
+                    smali, chunk, "response");
+
+                // Check for chunking errors
+                if (result.containsKey("error")) {
+                    JadxAIMCPPluginError.handleError(ctx, 400, (String) result.get("error"), logger);
+                    return;
+                }
+
+                ctx.json(result);
+                return;
             }
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
@@ -783,101 +797,112 @@ public class ClassRoutes {
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    Map<String, Object> info = new HashMap<>();
-                    info.put("class_name", cls.getFullName());
-                    info.put("simple_name", cls.getName());
-                    info.put("package", cls.getPackage());
+            JavaClass cls = findClassByName(wrapper, className);
+            if (cls != null) {
+                Map<String, Object> info = new HashMap<>();
+                info.put("class_name", cls.getFullName());
+                info.put("raw_class_name", cls.getRawName());
+                info.put("simple_name", cls.getName());
+                info.put("raw_simple_name", JadxApiAdapter.getClassRawSimpleName(cls));
+                info.put("package", cls.getPackage());
                     
-                    // Access modifiers - metadata-only lookup via the adapter.
-                    try {
-                        jadx.core.dex.info.AccessInfo accessInfo = JadxApiAdapter.getAccessFlags(cls);
-                        if (accessInfo != null) {
-                            info.put("access_flags", accessInfo.toString());
-                            info.put("is_interface", accessInfo.isInterface());
-                            info.put("is_enum", accessInfo.isEnum());
-                            info.put("is_abstract", accessInfo.isAbstract());
-                            info.put("is_final", accessInfo.isFinal());
-                        } else {
-                            info.put("access_flags", "unknown");
-                            info.put("is_interface", false);
-                            info.put("is_enum", false);
-                            info.put("is_abstract", false);
-                            info.put("is_final", false);
-                        }
-                    } catch (Exception e) {
+                // Access modifiers - metadata-only lookup via the adapter.
+                try {
+                    jadx.core.dex.info.AccessInfo accessInfo = JadxApiAdapter.getAccessFlags(cls);
+                    if (accessInfo != null) {
+                        info.put("access_flags", accessInfo.toString());
+                        info.put("is_interface", accessInfo.isInterface());
+                        info.put("is_enum", accessInfo.isEnum());
+                        info.put("is_abstract", accessInfo.isAbstract());
+                        info.put("is_final", accessInfo.isFinal());
+                    } else {
                         info.put("access_flags", "unknown");
                         info.put("is_interface", false);
                         info.put("is_enum", false);
                         info.put("is_abstract", false);
                         info.put("is_final", false);
                     }
-                    info.put("is_inner", cls.isInner());
+                } catch (Exception e) {
+                    info.put("access_flags", "unknown");
+                    info.put("is_interface", false);
+                    info.put("is_enum", false);
+                    info.put("is_abstract", false);
+                    info.put("is_final", false);
+                }
+                info.put("is_inner", cls.isInner());
                     
-                    // Super class - metadata-only lookup via the adapter.
-                    try {
-                        String superClass = JadxApiAdapter.getSuperClass(cls);
-                        if (superClass != null) {
-                            info.put("super_class", superClass);
-                        } else {
-                            info.put("super_class", "java.lang.Object");
-                        }
-                    } catch (Exception e) {
+                // Super class - metadata-only lookup via the adapter.
+                try {
+                    String superClass = JadxApiAdapter.getSuperClass(cls);
+                    if (superClass != null) {
+                        info.put("super_class", superClass);
+                    } else {
                         info.put("super_class", "java.lang.Object");
                     }
-                    
-                    // Interfaces
-                    List<String> interfaces = new ArrayList<>();
-                    try {
-                        interfaces.addAll(JadxApiAdapter.getInterfaces(cls));
-                    } catch (Exception e) {
-                        logger.warn("Failed to get interfaces for {}: {}", className, e.getMessage());
-                    }
-                    info.put("interfaces", interfaces);
-                    
-                    // Inner classes
-                    List<String> innerClasses = new ArrayList<>();
-                    try {
-                        for (JavaClass inner : cls.getInnerClasses()) {
-                            innerClasses.add(inner.getFullName());
-                        }
-                    } catch (Exception e) {
-                        logger.warn("Failed to get inner classes for {}: {}", className, e.getMessage());
-                    }
-                    info.put("inner_classes", innerClasses);
-                    
-                    List<JadxApiAdapter.MethodInfoSnapshot> declaredMethods =
-                        JadxApiAdapter.getDeclaredMethodInfos(cls);
-                    List<JadxApiAdapter.FieldInfoSnapshot> declaredFields =
-                        JadxApiAdapter.getDeclaredFieldInfos(cls);
-
-                    info.put("methods_count", declaredMethods.size());
-                    info.put("fields_count", declaredFields.size());
-
-                    List<String> methodNames = new ArrayList<>();
-                    List<String> nativeMethodNames = new ArrayList<>();
-                    for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : declaredMethods) {
-                        String name = methodSnapshot.getName();
-                        methodNames.add(name);
-                        if (methodSnapshot.getAccessFlags() != null && methodSnapshot.getAccessFlags().isNative()) {
-                            nativeMethodNames.add(name);
-                        }
-                    }
-                    info.put("method_names", methodNames);
-                    info.put("native_method_names", nativeMethodNames);
-                    info.put("native_count", nativeMethodNames.size());
-
-                    List<String> fieldNames = new ArrayList<>();
-                    for (JadxApiAdapter.FieldInfoSnapshot fieldSnapshot : declaredFields) {
-                        fieldNames.add(fieldSnapshot.getName());
-                    }
-                    info.put("field_names", fieldNames);
-
-                    
-                    ctx.json(info);
-                    return;
+                } catch (Exception e) {
+                    info.put("super_class", "java.lang.Object");
                 }
+
+                // Interfaces
+                List<String> interfaces = new ArrayList<>();
+                try {
+                    interfaces.addAll(JadxApiAdapter.getInterfaces(cls));
+                } catch (Exception e) {
+                    logger.warn("Failed to get interfaces for {}: {}", className, e.getMessage());
+                }
+                info.put("interfaces", interfaces);
+
+                // Inner classes
+                List<String> innerClasses = new ArrayList<>();
+                try {
+                    for (JavaClass inner : cls.getInnerClasses()) {
+                        innerClasses.add(inner.getFullName());
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to get inner classes for {}: {}", className, e.getMessage());
+                }
+                info.put("inner_classes", innerClasses);
+
+                List<JadxApiAdapter.MethodInfoSnapshot> declaredMethods =
+                    JadxApiAdapter.getDeclaredMethodInfos(cls);
+                List<JadxApiAdapter.FieldInfoSnapshot> declaredFields =
+                    JadxApiAdapter.getDeclaredFieldInfos(cls);
+
+                info.put("methods_count", declaredMethods.size());
+                info.put("fields_count", declaredFields.size());
+
+                List<String> methodNames = new ArrayList<>();
+                List<String> rawMethodNames = new ArrayList<>();
+                List<String> nativeMethodNames = new ArrayList<>();
+                for (JadxApiAdapter.MethodInfoSnapshot methodSnapshot : declaredMethods) {
+                    String rawName = methodSnapshot.getRawName();
+                    String aliasName = methodSnapshot.getAliasName() != null
+                        ? methodSnapshot.getAliasName()
+                        : rawName;
+                    methodNames.add(aliasName);
+                    rawMethodNames.add(rawName);
+                    if (methodSnapshot.getAccessFlags() != null && methodSnapshot.getAccessFlags().isNative()) {
+                        nativeMethodNames.add(rawName);
+                    }
+                }
+                info.put("method_names", methodNames);
+                info.put("raw_method_names", rawMethodNames);
+                info.put("native_method_names", nativeMethodNames);
+                info.put("native_count", nativeMethodNames.size());
+
+                List<String> fieldNames = new ArrayList<>();
+                List<String> rawFieldNames = new ArrayList<>();
+                for (JadxApiAdapter.FieldInfoSnapshot fieldSnapshot : declaredFields) {
+                    fieldNames.add(fieldSnapshot.getAliasName() != null
+                        ? fieldSnapshot.getAliasName()
+                        : fieldSnapshot.getRawName());
+                    rawFieldNames.add(fieldSnapshot.getRawName());
+                }
+                info.put("field_names", fieldNames);
+                info.put("raw_field_names", rawFieldNames);
+
+                ctx.json(info);
+                return;
             }
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
@@ -2143,6 +2168,35 @@ public class ClassRoutes {
         return className;
     }
 
+    private JavaClass findClassByName(JadxWrapper wrapper, String className) {
+        if (wrapper == null || className == null || className.isEmpty()) {
+            return null;
+        }
+
+        try {
+            ClassCacheManager.CacheStatus status = ClassCacheManager.getStatus();
+            if (status == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+                status = ClassCacheManager.getStatus();
+            }
+            if (status == ClassCacheManager.CacheStatus.READY) {
+                JavaClass cachedClass = ClassCacheManager.findClass(ClassCacheManager.getCache(), className);
+                if (cachedClass != null) {
+                    return cachedClass;
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to resolve class '{}' from cache: {}", className, e.getMessage());
+        }
+
+        for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+            if (JadxApiAdapter.matchesClassName(cls, className)) {
+                return cls;
+            }
+        }
+        return null;
+    }
+
     /**
      * @param
      * @return String
@@ -2553,13 +2607,7 @@ public class ClassRoutes {
                 com.zin.jadxaimcp.utils.FileTypeDetector.detect(wrapper);
             
             // Find the class
-            JavaClass targetClass = null;
-            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
-                    targetClass = cls;
-                    break;
-                }
-            }
+            JavaClass targetClass = findClassByName(wrapper, className);
             
             if (targetClass == null) {
                 ctx.status(404).json(Map.of(
@@ -2571,7 +2619,8 @@ public class ClassRoutes {
             
             Map<String, Object> result = new HashMap<>();
             result.put("type", "bytecode");
-            result.put("class_name", className);
+            result.put("class_name", targetClass.getFullName());
+            result.put("raw_class_name", targetClass.getRawName());
             result.put("file_type", fileType.getPrimaryType().getName());
             
             AccessInfo classAccessFlags = JadxApiAdapter.getAccessFlags(targetClass);
@@ -2587,7 +2636,7 @@ public class ClassRoutes {
             StringBuilder bytecode = new StringBuilder();
             
             // Class header
-            bytecode.append("// Class: ").append(className).append("\n");
+            bytecode.append("// Class: ").append(targetClass.getFullName()).append("\n");
             bytecode.append("// File type: ").append(fileType.getPrimaryType().getName().toUpperCase()).append("\n\n");
             
             // Access flags

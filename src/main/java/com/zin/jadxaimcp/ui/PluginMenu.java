@@ -1,6 +1,7 @@
 package com.zin.jadxaimcp.ui;
 
 import com.zin.jadxaimcp.JadxAIMCP;
+import jadx.api.plugins.gui.JadxGuiContext;
 import jadx.gui.ui.MainWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,10 +18,15 @@ import javax.swing.*;
  */
 public class PluginMenu {
     private static final Logger logger = LoggerFactory.getLogger(PluginMenu.class);
-    private MainWindow mainWindow;
+    private static final String SETTINGS_MENU_TITLE = "JADX AI MCP Server: Settings...";
+    private static final String STATUS_MENU_TITLE = "JADX AI MCP Server: Server Status";
+
+    private final JadxGuiContext guiContext;
+    private final MainWindow mainWindow;
     private final JadxAIMCP plugin;
 
-    public PluginMenu(MainWindow mainWindow, JadxAIMCP plugin) {
+    public PluginMenu(JadxGuiContext guiContext, MainWindow mainWindow, JadxAIMCP plugin) {
+        this.guiContext = guiContext;
         this.mainWindow = mainWindow;
         this.plugin = plugin;
     }
@@ -29,71 +35,13 @@ public class PluginMenu {
      * Add plugin menu items to JADX menu bar
      */
     public void addMenuItems() {
-        SwingUtilities.invokeLater(() -> {
-            try {
-                JMenuBar menuBar = mainWindow.getJMenuBar();
-                if (menuBar == null) {
-                    logger.warn("JADX-AI-MCP Plugin: Menu bar not found");
-                    return;
-                }
-
-                JMenu pluginsMenu = findOrCreatePluginsMenu(menuBar);
-
-                // Remove stale menu from previous classloader
-                for (int i = pluginsMenu.getItemCount() - 1; i >= 0; i--) {
-                    java.awt.Component item = pluginsMenu.getMenuComponent(i);
-                    if (item instanceof JMenu && "JADX AI MCP Server".equals(((JMenu) item).getText())) {
-                        pluginsMenu.remove(i);
-                        logger.debug("JADX-AI-MCP Plugin: Removed stale menu from previous classloader");
-                    }
-                }
-
-                JMenu mcpMenu = new JMenu("JADX AI MCP Server");
-
-                // Settings entry
-                JMenuItem settingsItem = new JMenuItem("Settings...");
-                settingsItem.addActionListener(e -> {
-                    SettingsDialog dialog = new SettingsDialog(mainWindow, plugin);
-                    dialog.setVisible(true);
-                });
-                mcpMenu.add(settingsItem);
-
-                // Quick status display
-                JMenuItem statusItem = new JMenuItem("Server Status");
-                statusItem.addActionListener(e -> showQuickStatus());
-                mcpMenu.add(statusItem);
-
-                pluginsMenu.add(mcpMenu);
-                
-                logger.debug("JADX-AI-MCP Plugin: Menu items added");
-            } catch (Exception e) {
-                logger.error("JADX-AI-MCP Plugin: Failed to add menu items", e);
-            }
-        });
-    }
-    
-    /**
-     * Find or create Plugins menu
-     */
-    private JMenu findOrCreatePluginsMenu(JMenuBar menuBar) {
-        // Look for existing "Plugins" menu
-        for (int i = 0; i < menuBar.getMenuCount(); i++) {
-            JMenu menu = menuBar.getMenu(i);
-            if (menu != null && ("Plugins".equals(menu.getText()) || "Plugin".equals(menu.getText()))) {
-                return menu;
-            }
+        try {
+            guiContext.addMenuAction(SETTINGS_MENU_TITLE, this::openSettingsDialog);
+            guiContext.addMenuAction(STATUS_MENU_TITLE, this::showQuickStatus);
+            logger.debug("JADX-AI-MCP Plugin: Menu items registered via JadxGuiContext");
+        } catch (Exception e) {
+            logger.error("JADX-AI-MCP Plugin: Failed to register menu items", e);
         }
-
-        // Create new if not found, inserting before "Help" if possible
-        JMenu pluginsMenu = new JMenu("Plugins");
-        for (int i = 0; i < menuBar.getMenuCount(); i++) {
-            if ("Help".equals(menuBar.getMenu(i).getText())) {
-                menuBar.add(pluginsMenu, i);
-                return pluginsMenu;
-            }
-        }
-        menuBar.add(pluginsMenu);
-        return pluginsMenu;
     }
 
     /**
@@ -119,7 +67,14 @@ public class PluginMenu {
         msg.append("Instance: ").append(instanceName != null ? instanceName : "Not set").append("\n");
         msg.append("APK: ").append(apkInfo != null ? apkInfo : "Not loaded");
 
-        JOptionPane.showMessageDialog(mainWindow, msg.toString(),
-            "MCP Server Status", JOptionPane.INFORMATION_MESSAGE);
+        guiContext.uiRun(() -> JOptionPane.showMessageDialog(mainWindow, msg.toString(),
+            "MCP Server Status", JOptionPane.INFORMATION_MESSAGE));
+    }
+
+    private void openSettingsDialog() {
+        guiContext.uiRun(() -> {
+            SettingsDialog dialog = new SettingsDialog(mainWindow, plugin);
+            dialog.setVisible(true);
+        });
     }
 }

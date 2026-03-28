@@ -9,6 +9,7 @@ import jadx.api.plugins.JadxPlugin;
 import jadx.api.plugins.JadxPluginContext;
 import jadx.api.plugins.JadxPluginInfo;
 import jadx.api.plugins.JadxPluginInfoBuilder;
+import jadx.api.plugins.gui.JadxGuiContext;
 import jadx.gui.JadxWrapper;
 import jadx.gui.ui.MainWindow;
 
@@ -76,15 +77,16 @@ public class JadxAIMCP implements JadxPlugin {
 
     @Override
     public void init(JadxPluginContext context) {
-        if (context.getGuiContext() == null) {
+        JadxGuiContext guiContext = context.getGuiContext();
+        if (guiContext == null) {
             logger.info("JADX-AI-MCP Plugin: Running in non-GUI mode, plugin features disabled.");
             return;
         }
 
         try {
-            this.mainWindow = (MainWindow) context.getGuiContext().getMainFrame();
+            this.mainWindow = extractMainWindow(guiContext);
             if (this.mainWindow == null) {
-                logger.error("JADX-AI-MCP Plugin: Main Window is null.");
+                logger.error("JADX-AI-MCP Plugin: Main Window is unavailable.");
                 return;
             }
 
@@ -98,7 +100,7 @@ public class JadxAIMCP implements JadxPlugin {
             applyEnvironmentOverrides();
 
             // 2. Initialize UI
-            this.pluginMenu = new PluginMenu(mainWindow, this);
+            this.pluginMenu = new PluginMenu(guiContext, mainWindow, this);
             this.pluginMenu.addMenuItems();
 
             // 3. Start Server Lifecycle
@@ -107,6 +109,23 @@ public class JadxAIMCP implements JadxPlugin {
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin: Initialization error: " + e.getMessage(), e);
         }
+    }
+
+    private MainWindow extractMainWindow(JadxGuiContext guiContext) {
+        if (guiContext == null) {
+            return null;
+        }
+
+        // Keep the MainWindow downcast only for APIs that JadxGuiContext still doesn't expose,
+        // such as access to JadxWrapper for server-side MCP handlers.
+        java.awt.Frame frame = guiContext.getMainFrame();
+        if (frame instanceof MainWindow) {
+            return (MainWindow) frame;
+        }
+
+        logger.warn("JADX-AI-MCP Plugin: Unexpected main frame type: {}",
+            frame != null ? frame.getClass().getName() : "null");
+        return null;
     }
     
     /**
@@ -231,21 +250,6 @@ public class JadxAIMCP implements JadxPlugin {
                 // Stop any existing local server
                 if (pluginServer != null) {
                     pluginServer.stop();
-                }
-                
-                // === Disable JADX auto-rename for accurate Hook development ===
-                // This ensures field/method names match the actual runtime names
-                try {
-                    jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
-                    if (wrapper != null && wrapper.getDecompiler() != null) {
-                        jadx.api.JadxArgs args = wrapper.getDecompiler().getArgs();
-                        if (args != null && args.getRenameFlags() != null) {
-                            args.getRenameFlags().clear();
-                            logger.info("JADX-AI-MCP Plugin: Disabled auto-rename for accurate field/method names");
-                        }
-                    }
-                } catch (Exception e) {
-                    logger.warn("JADX-AI-MCP Plugin: Could not disable auto-rename: " + e.getMessage());
                 }
                 
                 // Create and start new server

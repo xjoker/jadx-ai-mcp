@@ -90,13 +90,11 @@ public class MethodRoutes {
                 if (className == null || className.isEmpty()) {
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                         for (JadxApiAdapter.MethodInfoSnapshot methodInfo : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
-                            if (methodInfo != null && methodInfo.getName().equalsIgnoreCase(methodName)) {
-                                // Found! Now get the JavaMethod (this triggers decompilation for this class only)
-                                for (JavaMethod method : cls.getMethods()) {
-                                    if (method.getName().equalsIgnoreCase(methodName)) {
-                                        returnMethodResult(ctx, cls, method);
-                                        return;
-                                    }
+                            if (matchesMethodName(methodInfo, methodName)) {
+                                JavaMethod method = findMethodByName(cls, methodName);
+                                if (method != null) {
+                                    returnMethodResult(ctx, cls, method);
+                                    return;
                                 }
                             }
                         }
@@ -105,12 +103,11 @@ public class MethodRoutes {
                 // Case 2: Search in specific class
                 else {
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                        if (cls.getFullName().equals(className)) {
-                            for (JavaMethod method : cls.getMethods()) {
-                                if (method.getName().equalsIgnoreCase(methodName)) {
-                                    returnMethodResult(ctx, cls, method);
-                                    return;
-                                }
+                        if (JadxApiAdapter.matchesClassName(cls, className)) {
+                            JavaMethod method = findMethodByName(cls, methodName);
+                            if (method != null) {
+                                returnMethodResult(ctx, cls, method);
+                                return;
                             }
                         }
                     }
@@ -237,7 +234,7 @@ public class MethodRoutes {
                     methodResult.put("class_name", className);
                     methodResult.put("method_name", methodName);
 
-                    JavaClass cls = classMap.get(className);
+                    JavaClass cls = ClassCacheManager.findClass(classMap, className);
                     if (cls == null) {
                         methodResult.put("found", false);
                         methodResult.put("error", "Class not found");
@@ -247,19 +244,23 @@ public class MethodRoutes {
 
                     // Find method in class
                     boolean methodFound = false;
-                    for (JavaMethod method : cls.getMethods()) {
-                        if (method.getName().equalsIgnoreCase(methodName)) {
-                            try {
-                                methodResult.put("found", true);
-                                methodResult.put("decl", String.valueOf(method.getCodeNodeRef()));
-                                methodResult.put("code", method.getCodeStr());
-                                foundCount++;
-                                methodFound = true;
-                            } catch (Exception e) {
-                                methodResult.put("found", true);
-                                methodResult.put("error", "Failed to get code: " + e.getMessage());
-                            }
-                            break;
+                    JavaMethod method = findMethodByName(cls, methodName);
+                    if (method != null) {
+                        try {
+                            methodResult.put("class_name", cls.getFullName());
+                            methodResult.put("raw_class_name", cls.getRawName());
+                            methodResult.put("method_name", method.getName());
+                            methodResult.put("raw_method_name", JadxApiAdapter.getMethodRawName(method));
+                            methodResult.put("raw_method_full_id", JadxApiAdapter.getMethodRawFullId(method));
+                            methodResult.put("found", true);
+                            methodResult.put("decl", String.valueOf(method.getCodeNodeRef()));
+                            methodResult.put("code", method.getCodeStr());
+                            foundCount++;
+                            methodFound = true;
+                        } catch (Exception e) {
+                            methodResult.put("found", true);
+                            methodResult.put("error", "Failed to get code: " + e.getMessage());
+                            methodFound = true;
                         }
                     }
 
@@ -437,6 +438,25 @@ public class MethodRoutes {
         return methodName;
     }
 
+    private JavaMethod findMethodByName(JavaClass cls, String methodName) {
+        for (JavaMethod method : cls.getMethods()) {
+            if (JadxApiAdapter.matchesMethodName(method, methodName)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesMethodName(JadxApiAdapter.MethodInfoSnapshot methodInfo, String methodName) {
+        if (methodInfo == null || methodName == null || methodName.isEmpty()) {
+            return false;
+        }
+        return methodName.equalsIgnoreCase(methodInfo.getRawName())
+            || (methodInfo.getAliasName() != null && methodName.equalsIgnoreCase(methodInfo.getAliasName()))
+            || (methodInfo.getFullId() != null && methodName.equalsIgnoreCase(methodInfo.getFullId()))
+            || (methodInfo.getRawFullId() != null && methodName.equalsIgnoreCase(methodInfo.getRawFullId()));
+    }
+
     /**
      * @return void
      * @param Context, JavaClass, JavaMethod
@@ -457,7 +477,11 @@ public class MethodRoutes {
 
         Map<String, String> result = new HashMap<>();
         result.put("class_name", cls.getFullName());
+        result.put("raw_class_name", cls.getRawName());
         result.put("method_name", method.getName());
+        result.put("raw_method_name", JadxApiAdapter.getMethodRawName(method));
+        result.put("method_full_id", JadxApiAdapter.getMethodFullId(method));
+        result.put("raw_method_full_id", JadxApiAdapter.getMethodRawFullId(method));
         result.put("decl", String.valueOf(method.getCodeNodeRef()));
         result.put("code", codeStr);
         ctx.json(result);
@@ -488,13 +512,14 @@ public class MethodRoutes {
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                if (cls.getFullName().equals(className)) {
+                if (JadxApiAdapter.matchesClassName(cls, className)) {
                     List<Map<String, Object>> signatures = new ArrayList<>();
                     
                     for (JavaMethod method : cls.getMethods()) {
-                        if (method.getName().equalsIgnoreCase(methodName)) {
+                        if (JadxApiAdapter.matchesMethodName(method, methodName)) {
                             Map<String, Object> sig = new HashMap<>();
                             sig.put("method_name", method.getName());
+                            sig.put("raw_method_name", JadxApiAdapter.getMethodRawName(method));
                             sig.put("return_type", method.getReturnType() != null ? 
                                 method.getReturnType().toString() : "void");
                             sig.put("access_flags", method.getAccessFlags().toString());
@@ -541,7 +566,8 @@ public class MethodRoutes {
                     }
                     
                     Map<String, Object> response = new HashMap<>();
-                    response.put("class_name", className);
+                    response.put("class_name", cls.getFullName());
+                    response.put("raw_class_name", cls.getRawName());
                     response.put("method_name", methodName);
                     response.put("overloads", signatures.size());
                     response.put("signatures", signatures);
@@ -589,31 +615,32 @@ public class MethodRoutes {
             
             // Get from cache
             Map<String, JavaClass> classMap = ClassCacheManager.getCache();
-            JavaClass cls = classMap.get(className);
+            JavaClass cls = ClassCacheManager.findClass(classMap, className);
             
             if (cls != null) {
                 if (!tryAcquireDecompileLock(ctx)) {
                     return;
                 }
                 try {
-                    for (JavaMethod method : cls.getMethods()) {
-                        if (method.getName().equalsIgnoreCase(methodName)) {
-                            CalleeAnalysisResult analysis = analyzeMethodCallees(method);
-                            
-                            Map<String, Object> response = new HashMap<>();
-                            response.put("class_name", className);
-                            response.put("method_name", methodName);
-                            response.put("callees_count", analysis.getAllCallees().size());
-                            response.put("callees", analysis.getAllCallees());
-                            response.put("resolved_callees_count", analysis.getResolvedCallees().size());
-                            response.put("resolved_callees", analysis.getResolvedCallees());
-                            response.put("unresolved_callees_count", analysis.getUnresolvedCallees().size());
-                            response.put("unresolved_callees", analysis.getUnresolvedCallees());
-                            response.put("analysis_mode", analysis.getAnalysisMode());
-                            response.put("note", analysis.getNote());
-                            ctx.json(response);
-                            return;
-                        }
+                    JavaMethod method = findMethodByName(cls, methodName);
+                    if (method != null) {
+                        CalleeAnalysisResult analysis = analyzeMethodCallees(method);
+
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("class_name", cls.getFullName());
+                        response.put("raw_class_name", cls.getRawName());
+                        response.put("method_name", method.getName());
+                        response.put("raw_method_name", JadxApiAdapter.getMethodRawName(method));
+                        response.put("callees_count", analysis.getAllCallees().size());
+                        response.put("callees", analysis.getAllCallees());
+                        response.put("resolved_callees_count", analysis.getResolvedCallees().size());
+                        response.put("resolved_callees", analysis.getResolvedCallees());
+                        response.put("unresolved_callees_count", analysis.getUnresolvedCallees().size());
+                        response.put("unresolved_callees", analysis.getUnresolvedCallees());
+                        response.put("analysis_mode", analysis.getAnalysisMode());
+                        response.put("note", analysis.getNote());
+                        ctx.json(response);
+                        return;
                     }
                 } finally {
                     JadxSearchLock.release();
@@ -788,18 +815,26 @@ public class MethodRoutes {
         if (calleeMethodInfo == null) {
             info.put("class_name", "");
             info.put("method_name", "");
+            info.put("raw_method_name", "");
             info.put("full_name", "");
+            info.put("raw_full_id", "");
             info.put("short_id", "");
             info.put("display_name", "");
             return info;
         }
         String fullName = calleeMethodInfo.getFullName();
+        String aliasFullName = calleeMethodInfo.getAliasFullName();
         String className = calleeMethodInfo.getDeclaringClassName();
         info.put("class_name", className);
-        info.put("method_name", calleeMethodInfo.getName());
+        info.put("method_name", calleeMethodInfo.getAliasName() != null
+            ? calleeMethodInfo.getAliasName()
+            : calleeMethodInfo.getRawName());
+        info.put("raw_method_name", calleeMethodInfo.getRawName());
         info.put("full_name", fullName);
+        info.put("alias_full_name", aliasFullName);
+        info.put("raw_full_id", calleeMethodInfo.getRawFullId());
         info.put("short_id", calleeMethodInfo.getShortId());
-        info.put("display_name", fullName);
+        info.put("display_name", aliasFullName != null ? aliasFullName : fullName);
         return info;
     }
 
@@ -807,7 +842,9 @@ public class MethodRoutes {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("class_name", unresolvedMethod.getDeclClass().getFullName());
         info.put("method_name", unresolvedMethod.getName());
+        info.put("raw_method_name", unresolvedMethod.getName());
         info.put("full_name", unresolvedMethod.getFullName());
+        info.put("raw_full_id", unresolvedMethod.getRawFullId());
         info.put("short_id", unresolvedMethod.getShortId());
         info.put("display_name", unresolvedMethod.getFullName());
         return info;

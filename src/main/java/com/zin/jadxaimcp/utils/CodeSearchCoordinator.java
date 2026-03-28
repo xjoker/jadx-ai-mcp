@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.concurrent.CancellationException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,16 +51,16 @@ public final class CodeSearchCoordinator {
         String exclude,
         String searchIn
     ) {
+        String fileSignature = buildFileSignature(wrapper);
+        rotateFileSignature(fileSignature);
         SearchKey key = new SearchKey(
             generation.get(),
-            buildFileSignature(wrapper),
+            fileSignature,
             normalize(searchTerm),
             normalize(packageFilter),
             normalize(exclude),
             normalizeSearchIn(searchIn)
         );
-
-        rotateFileSignature(key.fileSignature);
 
         synchronized (CACHE_LOCK) {
             pruneExpiredLocked();
@@ -88,6 +89,10 @@ public final class CodeSearchCoordinator {
         SearchResult result,
         long elapsedMs
     ) {
+        if (future.isDone() || key.generation != generation.get()) {
+            IN_FLIGHT.remove(key, future);
+            return;
+        }
         lastSearchMs.set(Math.max(0L, elapsedMs));
         synchronized (CACHE_LOCK) {
             pruneExpiredLocked();
@@ -103,12 +108,23 @@ public final class CodeSearchCoordinator {
         Throwable error
     ) {
         IN_FLIGHT.remove(key, future);
-        future.completeExceptionally(error);
+        if (!future.isDone()) {
+            future.completeExceptionally(error);
+        }
     }
 
     public static void clearCache() {
+        List<CompletableFuture<SearchResult>> cancelled;
         synchronized (CACHE_LOCK) {
             CACHE.clear();
+            cancelled = new ArrayList<>(IN_FLIGHT.values());
+        }
+        IN_FLIGHT.clear();
+        for (CompletableFuture<SearchResult> future : cancelled) {
+            future.completeExceptionally(new CancellationException("Search cache invalidated"));
+        }
+        synchronized (CACHE_LOCK) {
+            lastCacheHit.set("false");
         }
         generation.incrementAndGet();
         lastFileSignature.set("");
@@ -173,14 +189,18 @@ public final class CodeSearchCoordinator {
     }
 
     private static String buildFileSignature(JadxWrapper wrapper) {
+        StringBuilder signature = new StringBuilder();
+        signature.append("wrapper@").append(System.identityHashCode(wrapper));
         try {
-            List<Path> filePaths = wrapper.getProject().getFilePaths();
+            Object project = wrapper.getProject();
+            signature.append("|project@").append(project != null ? System.identityHashCode(project) : 0);
+            List<Path> filePaths = project != null ? wrapper.getProject().getFilePaths() : null;
             if (filePaths == null || filePaths.isEmpty()) {
-                return "no-input";
+                signature.append("|no-input");
+                return signature.toString();
             }
-            StringBuilder signature = new StringBuilder();
             for (Path path : filePaths) {
-                signature.append(path.toAbsolutePath());
+                signature.append('|').append(path.toAbsolutePath());
                 try {
                     signature.append('|').append(Files.size(path));
                     signature.append('|').append(Files.getLastModifiedTime(path).toMillis());
@@ -191,7 +211,8 @@ public final class CodeSearchCoordinator {
             }
             return signature.toString();
         } catch (Exception e) {
-            return "unknown-input";
+            signature.append("|unknown-input");
+            return signature.toString();
         }
     }
 
