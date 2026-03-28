@@ -17,6 +17,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class CodeSearchCoordinator {
     private static final Logger logger = LoggerFactory.getLogger(CodeSearchCoordinator.class);
@@ -40,6 +42,56 @@ public final class CodeSearchCoordinator {
     private static final AtomicLong generation = new AtomicLong();
     private static final AtomicReference<String> lastCacheHit = new AtomicReference<>("false");
     private static final AtomicReference<String> lastFileSignature = new AtomicReference<>("");
+
+    // TODO: Future migration — replace this custom comment matcher with jadx-gui's
+    //   jadx.gui.search.SearchTask / SearchSettings when those classes become
+    //   available on the classpath (currently only in jadx-gui internals, not
+    //   exported by jadx-all:1.5.5). At that point, SearchSettings.searchInComments
+    //   can be set to true and the manual regex below can be removed.
+    //
+    //   Verify availability first:
+    //     Class.forName("jadx.gui.search.SearchTask")  // throws if absent
+    //     Class.forName("jadx.gui.search.SearchSettings")
+
+    /** Single-line comment pattern: captures text after // until end-of-line. */
+    private static final Pattern SINGLE_LINE_COMMENT = Pattern.compile("//([^\r\n]*)");
+
+    /** Multi-line comment pattern: captures the full block delimited by slash-star ... star-slash. */
+    private static final Pattern MULTI_LINE_COMMENT =
+            Pattern.compile("/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/", Pattern.DOTALL);
+
+    /**
+     * Returns {@code true} when {@code term} (already lower-cased) appears inside
+     * at least one comment block in {@code code}.
+     *
+     * <p>Comment content is extracted precisely so that keywords that happen to
+     * appear only in non-comment code do <em>not</em> trigger a false match.
+     *
+     * @param code decompiled source text (original casing)
+     * @param term search keyword in lower-case
+     */
+    public static boolean matchesCommentContent(String code, String term) {
+        if (code == null || term == null || term.isEmpty()) {
+            return false;
+        }
+        // Check single-line comments: // ...
+        Matcher slMatcher = SINGLE_LINE_COMMENT.matcher(code);
+        while (slMatcher.find()) {
+            String commentText = slMatcher.group(1);
+            if (commentText.toLowerCase().contains(term)) {
+                return true;
+            }
+        }
+        // Check multi-line comments: /* ... */
+        Matcher mlMatcher = MULTI_LINE_COMMENT.matcher(code);
+        while (mlMatcher.find()) {
+            String commentBlock = mlMatcher.group();
+            if (commentBlock.toLowerCase().contains(term)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private CodeSearchCoordinator() {
     }

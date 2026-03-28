@@ -3,6 +3,9 @@ Layer 3 Integration Tests - Shared Fixtures
 
 Simple fixtures for JADX container integration testing.
 Note: Container should already have a file loaded (target.jar or target.apk)
+
+Run integration tests explicitly with:
+    pytest tests/integration -m integration
 """
 
 import os
@@ -10,6 +13,9 @@ import os
 import pytest
 import pytest_asyncio
 import httpx
+
+# All integration tests require a running service
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="session")

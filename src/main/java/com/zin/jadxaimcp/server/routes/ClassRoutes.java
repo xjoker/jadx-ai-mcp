@@ -1706,17 +1706,27 @@ public class ClassRoutes {
             if (searchLocations.contains(SearchLocation.CODE) && normalizedCode.contains(term)) {
                 return true;
             }
-            return searchLocations.contains(SearchLocation.COMMENT) && matchesCommentSearch(normalizedCode, term);
+            // Pass original code (not lowercased) so comment regex can work on
+            // unmodified source; matchesCommentSearch/CodeSearchCoordinator handles case-folding.
+            return searchLocations.contains(SearchLocation.COMMENT) && matchesCommentSearch(code, term);
         } catch (Exception e) {
             return false;
         }
     }
 
-    private boolean matchesCommentSearch(String normalizedCode, String term) {
-        return normalizedCode.contains("//" + term)
-            || normalizedCode.contains("/*" + term)
-            || (normalizedCode.contains("//") && normalizedCode.contains(term))
-            || (normalizedCode.contains("/*") && normalizedCode.contains(term));
+    /**
+     * Returns {@code true} when {@code term} appears inside a comment block in {@code code}.
+     *
+     * <p>Delegates to {@link CodeSearchCoordinator#matchesCommentContent} which
+     * precisely extracts {@code // ...} and {@code /* ... *\/} comment text before
+     * matching, eliminating false positives from keywords that appear only in
+     * non-comment code.
+     *
+     * @param code original (non-lowercased) decompiled source
+     * @param term search keyword in lower-case
+     */
+    private boolean matchesCommentSearch(String code, String term) {
+        return CodeSearchCoordinator.matchesCommentContent(code, term);
     }
 
     private boolean requiresContentSearch(Set<SearchLocation> searchLocations) {
@@ -2109,39 +2119,25 @@ public class ClassRoutes {
 
     /**
      * Search classes by comments containing the keyword.
-     * Comments include both single-line (//) and multi-line comments.
+     * Comments include both single-line ({@code //}) and multi-line ({@code /* ... *\/}) blocks.
+     *
+     * <p>Comment extraction is delegated to
+     * {@link CodeSearchCoordinator#matchesCommentContent} to avoid false positives
+     * from keywords that appear only in regular code (not in comments).
      */
     private Set<JavaClass> searchByComment(List<JavaClass> allClasses, String term,
             String packageFilter, boolean applyPackageFilter) {
-        // Pattern to match Java comments: // single line or /* multi line */
-        Pattern singleLineComment = Pattern.compile("//.*?" + Pattern.quote(term) + ".*", Pattern.CASE_INSENSITIVE);
-        Pattern multiLineComment = Pattern.compile("/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/", Pattern.DOTALL);
-
         return allClasses.parallelStream()
                 .filter(cls -> {
                     try {
-                        // Apply package filter if enabled
                         if (applyPackageFilter && !matchesPackageFilter(cls, packageFilter)) {
                             return false;
                         }
                         String code = cls.getCode();
-                        if (code == null)
+                        if (code == null) {
                             return false;
-
-                        // Search for keyword in single-line comments
-                        if (singleLineComment.matcher(code).find()) {
-                            return true;
                         }
-
-                        // Search for keyword in multi-line comments
-                        java.util.regex.Matcher matcher = multiLineComment.matcher(code);
-                        while (matcher.find()) {
-                            String comment = matcher.group();
-                            if (comment.toLowerCase().contains(term)) {
-                                return true;
-                            }
-                        }
-                        return false;
+                        return CodeSearchCoordinator.matchesCommentContent(code, term);
                     } catch (Exception e) {
                         return false;
                     }

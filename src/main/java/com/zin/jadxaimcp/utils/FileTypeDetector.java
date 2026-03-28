@@ -35,6 +35,9 @@ public class FileTypeDetector {
     public enum FileType {
         APK("apk", true, true),
         AAR("aar", true, true),
+        XAPK("xapk", true, true),
+        APKM("apkm", true, true),
+        APKS("apks", true, true),
         DEX("dex", false, true),
         JAR("jar", false, false),
         CLASS("class", false, false),
@@ -55,6 +58,33 @@ public class FileTypeDetector {
         public boolean isSmaliAvailable() { return smaliAvailable; }
     }
 
+    /** 复合包格式（XAPK/APKM/APKS）的详细信息 */
+    public static class CompositePackageInfo {
+        private final FileType format;
+        private final List<String> subApks;
+        private final long totalSizeBytes;
+
+        public CompositePackageInfo(FileType format, List<String> subApks, long totalSizeBytes) {
+            this.format = format;
+            this.subApks = subApks;
+            this.totalSizeBytes = totalSizeBytes;
+        }
+
+        public FileType getFormat() { return format; }
+        public List<String> getSubApks() { return subApks; }
+        public long getTotalSizeBytes() { return totalSizeBytes; }
+
+        public Map<String, Object> toMap() {
+            Map<String, Object> map = new HashMap<>();
+            map.put("format", format.getName());
+            map.put("sub_apks", subApks);
+            map.put("sub_apk_count", subApks.size());
+            map.put("total_size_bytes", totalSizeBytes);
+            map.put("total_size_mb", String.format("%.2f", totalSizeBytes / (1024.0 * 1024.0)));
+            return map;
+        }
+    }
+
     /**
      * Result of file type detection
      */
@@ -63,21 +93,25 @@ public class FileTypeDetector {
         private final List<String> filePaths;
         private final boolean androidFeatures;
         private final boolean smaliAvailable;
+        private CompositePackageInfo compositePackageInfo;
 
         public DetectionResult(List<FileType> fileTypes, List<String> filePaths) {
             this.fileTypes = fileTypes;
             this.filePaths = filePaths;
-            
+
             // Android features available if ANY file supports them
             this.androidFeatures = fileTypes.stream().anyMatch(FileType::hasAndroidFeatures);
             // Smali available if ANY file supports it
             this.smaliAvailable = fileTypes.stream().anyMatch(FileType::isSmaliAvailable);
+            this.compositePackageInfo = null;
         }
 
         public List<FileType> getFileTypes() { return fileTypes; }
         public List<String> getFilePaths() { return filePaths; }
         public boolean hasAndroidFeatures() { return androidFeatures; }
         public boolean isSmaliAvailable() { return smaliAvailable; }
+        public CompositePackageInfo getCompositePackageInfo() { return compositePackageInfo; }
+        public void setCompositePackageInfo(CompositePackageInfo info) { this.compositePackageInfo = info; }
 
         /**
          * Returns primary file type (first detected)
@@ -105,7 +139,11 @@ public class FileTypeDetector {
             
             map.put("android_features", androidFeatures);
             map.put("smali_available", smaliAvailable);
-            
+
+            if (compositePackageInfo != null) {
+                map.put("composite_package", compositePackageInfo.toMap());
+            }
+
             return map;
         }
 
@@ -160,13 +198,25 @@ public class FileTypeDetector {
                 return new DetectionResult(types, paths);
             }
 
+            CompositePackageInfo compositeInfo = null;
             for (File file : inputFiles) {
                 paths.add(file.getAbsolutePath());
 
                 // Use magic number detection for accurate file type identification
                 FileType detectedType = detectFileType(file);
                 types.add(detectedType);
+
+                // 如果是复合包格式，收集子 APK 信息（以第一个复合包为准）
+                if (compositeInfo == null) {
+                    compositeInfo = detectCompositePackage(file, detectedType);
+                }
             }
+
+            DetectionResult detectionResult = new DetectionResult(types, paths);
+            if (compositeInfo != null) {
+                detectionResult.setCompositePackageInfo(compositeInfo);
+            }
+            return detectionResult;
 
         } catch (Exception e) {
             logger.warn("Failed to detect file type: {}", e.getMessage());
@@ -183,6 +233,12 @@ public class FileTypeDetector {
             return FileType.APK;
         } else if (fileName.endsWith(".aar")) {
             return FileType.AAR;
+        } else if (fileName.endsWith(".xapk")) {
+            return FileType.XAPK;
+        } else if (fileName.endsWith(".apkm")) {
+            return FileType.APKM;
+        } else if (fileName.endsWith(".apks")) {
+            return FileType.APKS;
         } else if (fileName.endsWith(".dex")) {
             return FileType.DEX;
         } else if (fileName.endsWith(".jar")) {
@@ -191,6 +247,42 @@ public class FileTypeDetector {
             return FileType.CLASS;
         }
         return FileType.UNKNOWN;
+    }
+
+    /**
+     * 检测复合包格式（XAPK/APKM/APKS）是否包含多个 APK 子包，
+     * 并收集子 APK 名称和总大小。
+     *
+     * @param file ZIP 格式的复合包文件
+     * @return CompositePackageInfo，或 null（不是复合包格式）
+     */
+    public static CompositePackageInfo detectCompositePackage(File file, FileType fileType) {
+        if (fileType != FileType.XAPK && fileType != FileType.APKM && fileType != FileType.APKS) {
+            return null;
+        }
+
+        if (!file.exists() || !file.canRead()) {
+            return null;
+        }
+
+        List<String> subApks = new ArrayList<>();
+        long totalSize = file.length();
+
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(file))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String entryName = entry.getName();
+                String lowerName = entryName.toLowerCase();
+                // 识别子 APK：*.apk 或 splits/*.apk
+                if (lowerName.endsWith(".apk") && !entry.isDirectory()) {
+                    subApks.add(entryName);
+                }
+            }
+        } catch (IOException e) {
+            logger.debug("Failed to read composite package contents for {}: {}", file.getName(), e.getMessage());
+        }
+
+        return new CompositePackageInfo(fileType, subApks, totalSize);
     }
 
     /**
@@ -253,12 +345,22 @@ public class FileTypeDetector {
             return FileType.DEX;
         }
 
-        // Check ZIP magic (APK, AAR, JAR are all ZIP files)
+        // Check ZIP magic (APK, AAR, JAR, XAPK, APKM, APKS are all ZIP files)
         if (matchesMagic(header, MAGIC_ZIP)) {
+            String fileName = file.getName().toLowerCase();
+            // 复合包格式优先通过扩展名识别（ZIP 内包含多个子 APK）
+            if (fileName.endsWith(".xapk")) {
+                return FileType.XAPK;
+            }
+            if (fileName.endsWith(".apkm")) {
+                return FileType.APKM;
+            }
+            if (fileName.endsWith(".apks")) {
+                return FileType.APKS;
+            }
             // Need to check contents to distinguish APK/AAR from JAR
             if (containsDex(file)) {
                 // Has DEX or AndroidManifest, likely APK
-                String fileName = file.getName().toLowerCase();
                 if (fileName.endsWith(".aar")) {
                     return FileType.AAR;
                 }

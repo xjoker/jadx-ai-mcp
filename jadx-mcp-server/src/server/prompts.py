@@ -241,6 +241,261 @@ By pre-loading key classes, subsequent searches and analysis will be faster.
 **Note**: This creates cache entries that persist until JADX restarts. If using Docker with cache volume, they persist across restarts.
 """
 
+    @mcp.prompt("quick-analysis")
+    def quick_analysis_prompt() -> str:
+        """Guide the AI through a quick end-to-end APK analysis workflow.
+
+        Covers: file info → APK info → main class listing → key class source.
+        """
+        return """You want to perform a **quick overview analysis** of the loaded APK/file.
+
+**Step 1: File Info**
+```python
+info = get_file_info()
+```
+Check `file_type`, `file_name`, and `file_size_bytes`. Adjust strategy for large files.
+
+**Step 2: APK Info**
+```python
+apk = get_apk_info()
+```
+Note the `package_name`, `version_name`, `min_sdk_version`, and `target_sdk_version`.
+Large `total_classes` (>20 000) indicates a large APK — use targeted searches.
+
+**Step 3: Main Class Listing**
+```python
+main_classes = get_main_application_classes_names()
+```
+These are the app's own classes (excluding third-party libraries).
+If the list is long, focus on classes matching the APK package name.
+
+**Step 4: Key Class Source**
+Pick 3-5 representative classes from step 3 (e.g., Application, MainActivity, key Managers):
+```python
+result = batch_get_class_source(class_names=["com.example.App", "com.example.MainActivity"])
+```
+
+**Decision Rules**:
+| Condition | Action |
+|-----------|--------|
+| `file_type` = jar | Skip APK-specific steps, go to class listing |
+| `total_classes` > 50 000 | Use `search_classes_by_keyword` with package filter |
+| `response_size_bytes` > 5 MB | Use pagination / reduce batch size |
+
+**Tip**: After this overview, use `suggest_analysis_plan` with a specific goal for deeper analysis.
+"""
+
+    @mcp.prompt("security-audit")
+    def security_audit_prompt() -> str:
+        """Guide the AI through an Android security audit workflow.
+
+        Covers: sensitive API search, permission review, hardcoded secrets detection.
+        """
+        return """You want to perform a **security audit** of the loaded APK.
+
+**Step 1: Check Permissions**
+```python
+manifest = get_android_manifest()
+```
+Look for dangerous permissions: `INTERNET`, `READ_CONTACTS`, `ACCESS_FINE_LOCATION`,
+`CAMERA`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `RECORD_AUDIO`.
+
+**Step 2: Search Sensitive APIs**
+Run these searches (metadata mode — fast, no cache needed):
+```python
+# Crypto / key material
+search_classes_by_keyword(search_term="SecretKey", search_in="class")
+search_classes_by_keyword(search_term="KeyStore", search_in="class")
+search_classes_by_keyword(search_term="Cipher", search_in="class")
+
+# Reflection / dynamic loading
+search_classes_by_keyword(search_term="DexClassLoader", search_in="class")
+search_classes_by_keyword(search_term="loadClass", search_in="method")
+
+# Native / root detection
+search_classes_by_keyword(search_term="Runtime.exec", search_in="method")
+search_native_methods()
+```
+
+**Step 3: Hardcoded Secret Patterns**
+Use code search (requires cache — check status first):
+```python
+status = get_decompile_status()
+if status["cached_percentage"] > 20:
+    search_classes_by_keyword(search_term="password", search_in="code", count=20)
+    search_classes_by_keyword(search_term="secret", search_in="code", count=20)
+    search_classes_by_keyword(search_term="api_key", search_in="code", count=20)
+    search_classes_by_keyword(search_term="Bearer ", search_in="code", count=20)
+```
+
+**Step 4: Network Security**
+```python
+# Check cleartext traffic config in manifest
+# Look for network_security_config attribute in <application>
+
+# Find HTTP (non-HTTPS) usage
+search_classes_by_keyword(search_term="http://", search_in="code", count=20)
+```
+
+**Step 5: Review Findings**
+For each suspicious class found, call:
+```python
+get_class_source(class_name="com.example.SuspiciousClass")
+```
+
+**Risk Indicators**:
+| Finding | Risk |
+|---------|------|
+| `http://` URLs in code | Data in cleartext |
+| Hardcoded `password`/`secret` fields | Credential exposure |
+| `DexClassLoader` usage | Dynamic code loading |
+| `Runtime.exec` calls | Command injection risk |
+| Dangerous permissions without usage | Privacy concern |
+"""
+
+    @mcp.prompt("network-analysis")
+    def network_analysis_prompt() -> str:
+        """Guide the AI to find and analyze all network communication code.
+
+        Covers: HTTP clients, URL patterns, OkHttp/Retrofit, WebSockets.
+        """
+        return """You want to analyze **all network communication** in the loaded APK.
+
+**Step 1: Find Network Libraries**
+```python
+# OkHttp
+search_classes_by_keyword(search_term="OkHttpClient", search_in="class")
+search_classes_by_keyword(search_term="okhttp3", search_in="class")
+
+# Retrofit
+search_classes_by_keyword(search_term="Retrofit", search_in="class")
+search_classes_by_keyword(search_term="@GET", search_in="code")
+search_classes_by_keyword(search_term="@POST", search_in="code")
+
+# Volley / other
+search_classes_by_keyword(search_term="RequestQueue", search_in="class")
+
+# WebSocket
+search_classes_by_keyword(search_term="WebSocket", search_in="class")
+```
+
+**Step 2: Find URL/Endpoint Patterns**
+```python
+# Base URLs and API endpoints (requires cache)
+status = get_decompile_status()
+if status["cached_percentage"] > 20:
+    search_classes_by_keyword(search_term="https://", search_in="code", count=30)
+    search_classes_by_keyword(search_term="BASE_URL", search_in="code", count=20)
+    search_classes_by_keyword(search_term="API_URL", search_in="code", count=20)
+```
+
+**Step 3: Analyze Retrofit Interface Classes**
+Retrofit defines API endpoints as annotated interfaces. Find them:
+```python
+search_classes_by_keyword(search_term="ApiService", search_in="class")
+search_classes_by_keyword(search_term="ApiInterface", search_in="class")
+search_classes_by_keyword(search_term="RetrofitService", search_in="class")
+```
+Then get source for each: `get_class_source(class_name=...)`
+
+**Step 4: Find Request Interceptors / Headers**
+```python
+search_classes_by_keyword(search_term="Interceptor", search_in="class")
+search_classes_by_keyword(search_term="addHeader", search_in="method")
+search_classes_by_keyword(search_term="Authorization", search_in="code", count=20)
+```
+
+**Step 5: Certificate Pinning**
+```python
+search_classes_by_keyword(search_term="CertificatePinner", search_in="class")
+search_classes_by_keyword(search_term="TrustManager", search_in="class")
+search_classes_by_keyword(search_term="checkServerTrusted", search_in="method")
+```
+
+**Analysis Tips**:
+- `response_size_bytes` is injected into each tool response — large results may need pagination.
+- Use `get_xrefs("class", class_name)` to trace where network classes are used.
+- Check `get_android_manifest()` for `android:usesCleartextTraffic` attribute.
+"""
+
+    @mcp.prompt("entry-points")
+    def entry_points_prompt() -> str:
+        """Guide the AI to enumerate all Android app entry points and analyze lifecycle methods.
+
+        Covers: Manifest → Activity/Service/Receiver/Provider → lifecycle methods.
+        """
+        return """You want to enumerate **all Android entry points** and their lifecycle methods.
+
+**Step 1: Parse the Manifest**
+```python
+manifest = get_android_manifest()
+```
+Extract the following component types:
+- `<activity>` — UI screens
+- `<service>` — Background services
+- `<receiver>` — Broadcast receivers
+- `<provider>` — Content providers
+
+Note the `android:name` attribute for each component.
+Use the `package` attribute to resolve relative names (e.g., `.MainActivity` → `com.example.app.MainActivity`).
+
+**Step 2: Analyze Activities**
+For each Activity, retrieve:
+```python
+# Class info (inheritance, interfaces)
+get_class_info(class_name="com.example.MainActivity")
+
+# Full source
+get_class_source(class_name="com.example.MainActivity")
+```
+Focus on lifecycle methods: `onCreate`, `onStart`, `onResume`, `onNewIntent`, `onActivityResult`.
+
+**Step 3: Analyze Services**
+Services often handle background work:
+```python
+get_class_source(class_name="com.example.MyService")
+```
+Focus on: `onStartCommand`, `onBind`, `onHandleIntent` (IntentService).
+
+**Step 4: Analyze Broadcast Receivers**
+```python
+get_class_source(class_name="com.example.MyReceiver")
+```
+Focus on: `onReceive` — check what `Intent` actions are handled.
+
+**Step 5: Find Exported Components**
+Exported components are attack surface. Find them in manifest:
+- `android:exported="true"` (explicit)
+- Components with `<intent-filter>` are implicitly exported (pre-API 31)
+
+**Step 6: Deep-Dive Key Methods**
+```python
+# Get specific lifecycle method
+get_method_by_name(class_name="com.example.MainActivity", method_name="onCreate")
+
+# Find who starts this Activity
+get_xrefs("class", class_name="com.example.MainActivity")
+```
+
+**Efficient Batch Approach**:
+```python
+# Get source for multiple entry points at once
+batch_get_class_source(class_names=[
+    "com.example.MainActivity",
+    "com.example.SplashActivity",
+    "com.example.MyService",
+])
+```
+
+**Risk Checklist**:
+| Component | Check |
+|-----------|-------|
+| Activity | Intent extras validation, deeplink handling |
+| Service | Permission requirements, IPC interface |
+| Receiver | Exported receivers without permissions |
+| Provider | `readPermission` / `writePermission` set |
+"""
+
     @mcp.prompt("batch-operations")
     def batch_operations_prompt() -> str:
         """Guide the AI on best practices for batch operations to reduce overhead."""

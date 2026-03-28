@@ -78,6 +78,8 @@ from src.server.tools import (
     register_refactor_tools,
     register_instance_tools,
     register_transfer_tools,
+    register_frida_tools,
+    register_annotation_tools,
 )
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
@@ -115,6 +117,8 @@ register_xrefs_tools(mcp, with_busy_check)
 register_refactor_tools(mcp, with_busy_check)
 register_instance_tools(mcp)
 register_transfer_tools(mcp)
+register_frida_tools(mcp, with_busy_check)
+register_annotation_tools(mcp, with_busy_check)
 
 
 def main():

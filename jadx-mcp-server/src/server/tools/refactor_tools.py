@@ -101,6 +101,51 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
     )
 
 
+async def export_rename_mappings(instance_id: Optional[str] = None) -> dict:
+    """
+    导出所有已重命名的类/方法/字段映射。
+
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {mappings: [{type, original_name, new_name, class_context}], total: int}
+
+    MCP Tool: export_rename_mappings
+    Description: Exports all user-applied rename mappings for backup or transfer
+    """
+    return await get_from_jadx(
+        "export-rename-mappings",
+        instance_id=instance_id,
+    )
+
+
+async def import_rename_mappings(mappings: list, instance_id: Optional[str] = None) -> dict:
+    """
+    批量导入重命名映射并应用到当前 JADX 项目。
+
+    Args:
+        mappings: 映射数组，每项格式为:
+                  {type: "class"|"method"|"field",
+                   original_name: str,
+                   new_name: str,
+                   class_context: str}  # method/field 必填
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {success: bool, total: int, applied: int, failed: int, errors: list[str]}
+
+    MCP Tool: import_rename_mappings
+    Description: Batch-applies rename mappings exported from another session
+    """
+    return await get_from_jadx(
+        "import-rename-mappings",
+        instance_id=instance_id,
+        method="POST",
+        json_body={"mappings": mappings},
+    )
+
+
 async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a package and all its classes.
@@ -132,6 +177,53 @@ async def rename_package(old_package_name: str, new_package_name: str, instance_
 
 def register_refactor_tools(mcp, with_busy_check):
     """Register refactoring tools to MCP Server"""
+
+    @mcp.tool()
+    @with_busy_check
+    async def export_rename_mappings_tool(
+        instance_id: Optional[str] = None
+    ) -> dict:
+        """Export all user-applied rename mappings from the current JADX session.
+
+        Returns a JSON array of {type, original_name, new_name, class_context} entries
+        covering every class, method, and field that has been renamed.
+        Use this to back up or transfer rename work between sessions.
+
+        Args:
+            instance_id: Target JADX instance name. Uses default if not specified.
+
+        Returns:
+            dict: {mappings: list[dict], total: int}
+        """
+        return await export_rename_mappings(instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def import_rename_mappings_tool(
+        mappings: list,
+        instance_id: Optional[str] = None
+    ) -> dict:
+        """Batch-apply rename mappings to the current JADX session.
+
+        Accepts the same format produced by export_rename_mappings.
+        Each entry must have: type ("class"|"method"|"field"), original_name,
+        new_name, and class_context (required for method/field entries).
+
+        Args:
+            mappings: List of rename mapping dicts.
+            instance_id: Target JADX instance name. Uses default if not specified.
+
+        Returns:
+            dict: {success: bool, total: int, applied: int, failed: int, errors: list[str]}
+
+        Examples:
+            import_rename_mappings_tool([
+                {"type": "class", "original_name": "a.b.c", "new_name": "UserService", "class_context": ""},
+                {"type": "method", "original_name": "a", "new_name": "fetchUser",
+                 "class_context": "UserService"},
+            ])
+        """
+        return await import_rename_mappings(mappings=mappings, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check

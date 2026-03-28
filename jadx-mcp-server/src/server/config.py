@@ -80,7 +80,12 @@ class HttpClientManager:
             if cls._client is None or cls._client.is_closed:
                 cls._client = httpx.AsyncClient(
                     timeout=httpx.Timeout(REQUEST_TIMEOUT),
-                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+                    limits=httpx.Limits(
+                        max_connections=20,
+                        max_keepalive_connections=10,
+                        keepalive_expiry=30,
+                    ),
+                    headers={"Accept-Encoding": "gzip"},
                 )
         return cls._client
     
@@ -391,13 +396,28 @@ async def get_from_jadx(
         )
         resp.raise_for_status()
 
-        logger.debug(f"JADX response: {resp.status_code} OK (size={len(resp.content)} bytes)")
+        response_size = len(resp.content)
+        logger.debug(f"JADX response: {resp.status_code} OK (size={response_size} bytes)")
+
+        # 大响应警告：超过 10MB 时记录 warning 日志
+        _10MB = 10 * 1024 * 1024
+        if response_size > _10MB:
+            logger.warning(
+                "Large JADX response received: %.1f MB for endpoint '%s'. "
+                "Consider using batch pagination or narrowing your query.",
+                response_size / (1024 * 1024),
+                endpoint,
+            )
 
         # Try to parse JSON, fallback to text if not valid JSON
         try:
             result = resp.json()
         except json.JSONDecodeError:
             result = {"response": resp.text}
+
+        # 注入 response_size_bytes 元数据字段
+        if isinstance(result, dict):
+            result["response_size_bytes"] = response_size
 
         # Cache successful non-error responses for cacheable endpoints
         if cache_key and isinstance(result, dict) and "error" not in result:

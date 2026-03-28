@@ -439,11 +439,34 @@ public class PluginServer {
         app.get("/config-strings", resourceRoutes::handleConfigStrings);
         app.get("/package-classes", classRoutes::handlePackageClasses);
 
+        // --- Frida Hook Generation ---
+        FridaRoutes fridaRoutes = new FridaRoutes(mainWindow);
+        app.get("/generate-frida-hook", fridaRoutes::handleGenerateFridaHook);
+        app.get("/generate-frida-trace", fridaRoutes::handleGenerateFridaTrace);
+        app.get("/generate-frida-enum", fridaRoutes::handleGenerateFridaEnum);
+
         // --- Renaming ---
         app.post("/rename-class", refactoringRoutes::handleRenameClass);
         app.post("/rename-method", refactoringRoutes::handleRenameMethod);
         app.post("/rename-field", refactoringRoutes::handleRenameField);
         app.post("/rename-package", refactoringRoutes::handleRenamePackage);
+
+        // --- Rename Mappings Import/Export ---
+        app.get("/export-rename-mappings", refactoringRoutes::handleExportRenameMappings);
+        app.post("/import-rename-mappings", refactoringRoutes::handleImportRenameMappings);
+
+        // --- Collaborative Workspace: Annotations / Bookmarks / Tags ---
+        AnnotationRoutes annotationRoutes = new AnnotationRoutes(mainWindow);
+        app.post("/annotations", annotationRoutes::handleAddAnnotation);
+        app.get("/annotations", annotationRoutes::handleGetAnnotations);
+        app.delete("/annotations/{id}", annotationRoutes::handleDeleteAnnotation);
+        app.post("/bookmarks", annotationRoutes::handleAddBookmark);
+        app.get("/bookmarks", annotationRoutes::handleGetBookmarks);
+        app.delete("/bookmarks/{id}", annotationRoutes::handleDeleteBookmark);
+        app.post("/tags", annotationRoutes::handleAddTag);
+        app.get("/tags", annotationRoutes::handleGetTags);
+        app.delete("/tags/{id}", annotationRoutes::handleDeleteTag);
+        app.get("/analysis-notes", annotationRoutes::handleGetAnalysisNotes);
 
         // --- Decompilation Status ---
         app.get("/decompile-status", ctx -> {

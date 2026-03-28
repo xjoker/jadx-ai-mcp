@@ -28,3 +28,10 @@ include = ["src*"]
 
 [project.scripts]
 jadx_mcp_server = "jadx_mcp_server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--ignore=tests/integration"
+markers = [
+    "integration: Integration tests that require a running JADX service",
+]

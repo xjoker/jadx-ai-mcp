@@ -1,6 +1,8 @@
 package com.zin.jadxaimcp.server.routes;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import io.javalin.http.Context;
@@ -282,6 +284,234 @@ public class RefactoringRoutes {
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to rename the package: " + e.getMessage(), e, logger);
         }
+    }
+
+    /**
+     * GET /export-rename-mappings
+     *
+     * 遍历所有已重命名的类/方法/字段，收集 raw name vs alias 差异，
+     * 输出 JSON 数组：[{type, original_name, new_name, class_context}]
+     */
+    public void handleExportRenameMappings(Context ctx) {
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+
+            List<Map<String, String>> mappings = new ArrayList<>();
+
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                String rawName = cls.getRawName();
+                String aliasName = cls.getFullName();
+
+                // 类被重命名：rawName 与 aliasName 不同
+                if (rawName != null && aliasName != null && !rawName.equals(aliasName)) {
+                    Map<String, String> entry = new HashMap<>();
+                    entry.put("type", "class");
+                    entry.put("original_name", rawName);
+                    entry.put("new_name", aliasName);
+                    entry.put("class_context", "");
+                    mappings.add(entry);
+                }
+
+                // 字段重命名
+                for (JavaField field : cls.getFields()) {
+                    String rawFieldName = field.getRawName();
+                    String aliasFieldName = field.getName();
+                    if (rawFieldName != null && aliasFieldName != null && !rawFieldName.equals(aliasFieldName)) {
+                        Map<String, String> fEntry = new HashMap<>();
+                        fEntry.put("type", "field");
+                        fEntry.put("original_name", rawFieldName);
+                        fEntry.put("new_name", aliasFieldName);
+                        fEntry.put("class_context", cls.getFullName());
+                        mappings.add(fEntry);
+                    }
+                }
+
+                // 方法重命名
+                for (JavaMethod method : cls.getMethods()) {
+                    String rawMethodName = JadxApiAdapter.getMethodRawName(method);
+                    String aliasMethodName = JadxApiAdapter.getMethodAliasName(method);
+                    if (rawMethodName != null && aliasMethodName != null && !rawMethodName.equals(aliasMethodName)) {
+                        Map<String, String> mEntry = new HashMap<>();
+                        mEntry.put("type", "method");
+                        mEntry.put("original_name", rawMethodName);
+                        mEntry.put("new_name", aliasMethodName);
+                        mEntry.put("class_context", cls.getFullName());
+                        mappings.add(mEntry);
+                    }
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("mappings", mappings);
+            result.put("total", mappings.size());
+            logger.info("[JAI] Exported {} rename mappings", mappings.size());
+            ctx.json(result);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Failed to export rename mappings: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
+     * POST /import-rename-mappings
+     *
+     * 接受 JSON body：{"mappings": [{type, original_name, new_name, class_context}]}
+     * 逐个应用重命名，返回成功/失败统计。
+     */
+    public void handleImportRenameMappings(Context ctx) {
+        JsonObject requestBody = parseJsonBody(ctx);
+        if (requestBody == null) return;
+
+        if (!requestBody.has("mappings") || !requestBody.get("mappings").isJsonArray()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing or invalid 'mappings' array in request body", logger);
+            return;
+        }
+
+        JsonArray mappingsArray = requestBody.getAsJsonArray("mappings");
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
+            int successCount = 0;
+            int failCount = 0;
+            List<String> errors = new ArrayList<>();
+
+            for (JsonElement element : mappingsArray) {
+                if (!element.isJsonObject()) {
+                    failCount++;
+                    errors.add("Skipped non-object element");
+                    continue;
+                }
+
+                JsonObject entry = element.getAsJsonObject();
+                String type = getStringFromJson(entry, "type");
+                String originalName = getStringFromJson(entry, "original_name");
+                String newName = getStringFromJson(entry, "new_name");
+                String classContext = getStringFromJson(entry, "class_context");
+
+                if (type == null || originalName == null || newName == null) {
+                    failCount++;
+                    errors.add("Missing required fields (type/original_name/new_name) in entry: " + entry);
+                    continue;
+                }
+
+                try {
+                    switch (type.toLowerCase()) {
+                        case "class": {
+                            JavaClass cls = ClassCacheManager.findClass(classMap, originalName);
+                            if (cls == null) {
+                                failCount++;
+                                errors.add("Class not found: " + originalName);
+                                continue;
+                            }
+                            ICodeNodeRef nodeRef = cls.getCodeNodeRef();
+                            NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, cls.getName(), newName);
+                            event.setRenameNode(nodeRef);
+                            event.setResetName(false);
+                            mainWindow.events().send(event);
+                            invalidateCodeForClass(cls, originalName);
+                            successCount++;
+                            break;
+                        }
+                        case "method": {
+                            if (classContext == null || classContext.isEmpty()) {
+                                failCount++;
+                                errors.add("class_context required for method: " + originalName);
+                                continue;
+                            }
+                            JavaClass cls = ClassCacheManager.findClass(classMap, classContext);
+                            if (cls == null) {
+                                failCount++;
+                                errors.add("Class not found for method: " + classContext);
+                                continue;
+                            }
+                            boolean found = false;
+                            for (JavaMethod method : cls.getMethods()) {
+                                if (JadxApiAdapter.matchesMethodName(method, originalName)) {
+                                    ICodeNodeRef nodeRef = method.getCodeNodeRef();
+                                    NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, method.getName(), newName);
+                                    event.setRenameNode(nodeRef);
+                                    event.setResetName(false);
+                                    mainWindow.events().send(event);
+                                    invalidateCodeForClass(cls, classContext);
+                                    found = true;
+                                    successCount++;
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                failCount++;
+                                errors.add("Method not found: " + originalName + " in " + classContext);
+                            }
+                            break;
+                        }
+                        case "field": {
+                            if (classContext == null || classContext.isEmpty()) {
+                                failCount++;
+                                errors.add("class_context required for field: " + originalName);
+                                continue;
+                            }
+                            JavaClass cls = ClassCacheManager.findClass(classMap, classContext);
+                            if (cls == null) {
+                                failCount++;
+                                errors.add("Class not found for field: " + classContext);
+                                continue;
+                            }
+                            boolean found = false;
+                            for (JavaField field : cls.getFields()) {
+                                if (JadxApiAdapter.matchesFieldName(field, originalName)) {
+                                    ICodeNodeRef nodeRef = field.getCodeNodeRef();
+                                    NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, field.getName(), newName);
+                                    event.setRenameNode(nodeRef);
+                                    event.setResetName(false);
+                                    mainWindow.events().send(event);
+                                    invalidateCodeForClass(cls, classContext);
+                                    found = true;
+                                    successCount++;
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                failCount++;
+                                errors.add("Field not found: " + originalName + " in " + classContext);
+                            }
+                            break;
+                        }
+                        default:
+                            failCount++;
+                            errors.add("Unknown type '" + type + "' for entry: " + originalName);
+                    }
+                } catch (Exception e) {
+                    failCount++;
+                    errors.add("Error processing " + type + " '" + originalName + "': " + e.getMessage());
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", failCount == 0);
+            result.put("total", mappingsArray.size());
+            result.put("applied", successCount);
+            result.put("failed", failCount);
+            result.put("errors", errors);
+            logger.info("[JAI] Import rename mappings: applied={}, failed={}", successCount, failCount);
+            ctx.json(result);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Failed to import rename mappings: " + e.getMessage(), e, logger);
+        }
+    }
+
+    private String getStringFromJson(JsonObject obj, String key) {
+        if (!obj.has(key) || obj.get(key).isJsonNull()) return null;
+        JsonElement el = obj.get(key);
+        return el.isJsonPrimitive() ? el.getAsString().trim() : null;
     }
 
     // Helper methods
