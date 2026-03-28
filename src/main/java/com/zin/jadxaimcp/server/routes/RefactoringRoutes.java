@@ -293,9 +293,16 @@ public class RefactoringRoutes {
      * MCP tool's HTTP requests. If params are ok return true else return false.
      */
     private boolean validateParams(Context ctx, String p1, String p2, String p3) {
-        if (p1 == null || p1.isEmpty() || p2 == null || p2.isEmpty()) {
-            //ctx.status(400).json(Map.of("error", "Missing required parameters."));
-            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameters", logger);
+        if (p1 == null || p1.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'class_name'", logger);
+            return true;
+        }
+        if (p2 == null || p2.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'field_name'", logger);
+            return true;
+        }
+        if (p3 == null || p3.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'new_field_name'", logger);
             return true;
         }
         return false;

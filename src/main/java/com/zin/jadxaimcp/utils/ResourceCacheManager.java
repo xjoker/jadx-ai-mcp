@@ -42,6 +42,8 @@ public class ResourceCacheManager {
     private static final AtomicReference<List<ResContainer>> cachedStringsFiles = new AtomicReference<>(null);
     private static final AtomicBoolean isLoading = new AtomicBoolean(false);
     private static final AtomicReference<String> loadError = new AtomicReference<>(null);
+    private static final AtomicReference<CompletableFuture<Void>> loadFuture = new AtomicReference<>(null);
+    private static final AtomicLong generationToken = new AtomicLong(0);
     private static final Object cacheLock = new Object();
 
     // Parsed strings.xml cache: keyed by locale path (e.g., "res/values/strings.xml")
@@ -107,6 +109,8 @@ public class ResourceCacheManager {
             logger.warn("Cannot init cache: wrapper is null");
             return false;
         }
+
+        long generation = generationToken.get();
         
         // Fast path: already cached
         if (cachedSubFiles.get() != null) {
@@ -121,16 +125,31 @@ public class ResourceCacheManager {
         // Start background loading
         try {
             final List<ResourceFile> resources = wrapper.getResources();
+            if (isLoadStale(generation)) {
+                logger.info("Discarding stale resource cache init for generation {}", generation);
+                return false;
+            }
             if (resources == null || resources.isEmpty()) {
                 isLoading.set(false);
                 loadError.set("No resources found in APK");
                 return false;
             }
             
-            CompletableFuture.runAsync(() -> loadResourcesArsc(resources));
+            loadError.set(null);
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> loadResourcesArsc(resources, generation));
+            loadFuture.set(future);
+            if (isLoadStale(generation)) {
+                future.cancel(true);
+                loadFuture.compareAndSet(future, null);
+                return false;
+            }
             return true;
             
         } catch (Exception e) {
+            if (isLoadStale(generation)) {
+                logger.info("Ignoring stale resource cache init failure for generation {}", generation);
+                return false;
+            }
             isLoading.set(false);
             loadError.set("Failed to start loading: " + e.getMessage());
             logger.error("Failed to init resource cache", e);
@@ -143,7 +162,11 @@ public class ResourceCacheManager {
      * 
      * @param resources List of resource files from JADX
      */
-    private static void loadResourcesArsc(List<ResourceFile> resources) {
+    private static void loadResourcesArsc(List<ResourceFile> resources, long generation) {
+        if (isLoadStale(generation)) {
+            logger.info("Discarding stale resource cache load before parsing for generation {}", generation);
+            return;
+        }
         loadStartTime.set(System.currentTimeMillis());
         currentPhase.set("finding_resources");
         processedFiles.set(0);
@@ -154,6 +177,10 @@ public class ResourceCacheManager {
             int fileIndex = 0;
             
             for (ResourceFile resFile : resources) {
+                if (isLoadStale(generation)) {
+                    logger.info("Discarding stale resource cache load during scan for generation {}", generation);
+                    return;
+                }
                 fileIndex++;
                 processedFiles.set(fileIndex);
                 
@@ -178,6 +205,10 @@ public class ResourceCacheManager {
                                 int subIndex = 0;
                                 
                                 for (ResContainer sub : subFiles) {
+                                    if (isLoadStale(generation)) {
+                                        logger.info("Discarding stale resource cache load during indexing for generation {}", generation);
+                                        return;
+                                    }
                                     subIndex++;
                                     processedFiles.set(subIndex);
                                     
@@ -197,6 +228,10 @@ public class ResourceCacheManager {
             // Atomically update cache
             currentPhase.set("finalizing");
             synchronized (cacheLock) {
+                if (isLoadStale(generation)) {
+                    logger.info("Discarding stale resource cache result for generation {}", generation);
+                    return;
+                }
                 if (allSubFiles.isEmpty()) {
                     loadError.set("resources.arsc contains no subfiles");
                     currentPhase.set("error");
@@ -224,6 +259,10 @@ public class ResourceCacheManager {
             
         } catch (Exception e) {
             synchronized (cacheLock) {
+                if (isLoadStale(generation)) {
+                    logger.info("Ignoring stale resource cache failure for generation {}", generation);
+                    return;
+                }
                 loadError.set("Failed to parse resources.arsc: " + e.getMessage());
                 currentPhase.set("error");
                 loadEndTime.set(System.currentTimeMillis());
@@ -409,13 +448,23 @@ public class ResourceCacheManager {
      */
     public static void clearCache() {
         synchronized (cacheLock) {
+            long generation = generationToken.incrementAndGet();
+            CompletableFuture<Void> future = loadFuture.getAndSet(null);
+            if (future != null) {
+                future.cancel(true);
+            }
             cachedSubFiles.set(null);
             cachedStringsFiles.set(null);
             parsedStringsCache.clear();
             isLoading.set(false);
             loadError.set(null);
+            loadStartTime.set(0);
+            loadEndTime.set(0);
+            currentPhase.set("idle");
+            processedFiles.set(0);
+            totalFiles.set(0);
+            logger.info("Resource cache cleared (generation {})", generation);
         }
-        logger.info("Resource cache cleared");
     }
     
     /**
@@ -450,5 +499,9 @@ public class ResourceCacheManager {
             isLoading.get(),
             loadError.get()
         );
+    }
+
+    private static boolean isLoadStale(long generation) {
+        return Thread.currentThread().isInterrupted() || generationToken.get() != generation;
     }
 }

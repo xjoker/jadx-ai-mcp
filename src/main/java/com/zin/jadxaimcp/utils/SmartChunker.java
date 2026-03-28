@@ -1,12 +1,15 @@
 package com.zin.jadxaimcp.utils;
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * Smart content chunker for large responses.
  * 
- * Automatically chunks large responses (>8KB) to prevent truncation by MCP clients.
+ * Automatically chunks large responses (>8KB UTF-8 bytes) to prevent truncation by MCP clients.
  * Small responses are returned as-is for backward compatibility.
  * 
  * Usage:
@@ -19,10 +22,7 @@ public class SmartChunker {
     
     /**
      * Default chunk size in bytes.
-     * 8KB is chosen as a safe threshold based on:
-     * - Claude Code: ~700 char display limit
-     * - Antigravity: 16KB hard limit
-     * - Codex CLI: 10KB default limit
+     * 8KB is chosen as a safe threshold based on transport size limits.
      */
     public static final int DEFAULT_CHUNK_SIZE = 8000;
     
@@ -50,7 +50,7 @@ public class SmartChunker {
      * @param content The full content to potentially chunk
      * @param requestedChunk Chunk number: 0=first chunk with metadata, 1-N=specific chunk
      * @param responseKey The key name for the response content
-     * @param chunkSize Custom chunk size in bytes
+     * @param chunkSize Custom chunk size in UTF-8 bytes
      * @return Map containing response and optional _chunking metadata
      */
     public static Map<String, Object> chunkResponse(String content, int requestedChunk, String responseKey, int chunkSize) {
@@ -61,17 +61,24 @@ public class SmartChunker {
             result.put(responseKey, content != null ? content : "");
             return result;
         }
+
+        if (chunkSize <= 0) {
+            result.put("error", "Invalid chunk size. Expected a positive byte count but got: " + chunkSize);
+            return result;
+        }
         
-        int contentLength = content.length();
+        int contentLength = getUtf8Length(content);
         
         // Small content: return as-is (no chunking)
         if (contentLength <= chunkSize) {
             result.put(responseKey, content);
             return result;
         }
-        
+
+        List<Integer> chunkBoundaries = calculateChunkBoundaries(content, chunkSize);
+
         // Large content: apply chunking
-        int totalChunks = (int) Math.ceil((double) contentLength / chunkSize);
+        int totalChunks = chunkBoundaries.size() - 1;
         int chunk = requestedChunk <= 0 ? 1 : requestedChunk;
         
         // Validate chunk number
@@ -80,9 +87,9 @@ public class SmartChunker {
             return result;
         }
         
-        // Calculate chunk boundaries
-        int start = (chunk - 1) * chunkSize;
-        int end = Math.min(start + chunkSize, contentLength);
+        // Chunk boundaries are computed in UTF-16 indices, but sized in UTF-8 bytes.
+        int start = chunkBoundaries.get(chunk - 1);
+        int end = chunkBoundaries.get(chunk);
         
         // Extract chunk content
         result.put(responseKey, content.substring(start, end));
@@ -117,7 +124,7 @@ public class SmartChunker {
      * @return true if content exceeds chunk threshold
      */
     public static boolean wouldChunk(String content) {
-        return content != null && content.length() > MIN_CHUNK_THRESHOLD;
+        return content != null && getUtf8Length(content) > MIN_CHUNK_THRESHOLD;
     }
     
     /**
@@ -127,9 +134,50 @@ public class SmartChunker {
      * @return Number of chunks (1 if no chunking needed)
      */
     public static int getChunkCount(String content) {
-        if (content == null || content.length() <= DEFAULT_CHUNK_SIZE) {
+        if (content == null) {
             return 1;
         }
-        return (int) Math.ceil((double) content.length() / DEFAULT_CHUNK_SIZE);
+        int contentLength = getUtf8Length(content);
+        if (contentLength <= DEFAULT_CHUNK_SIZE) {
+            return 1;
+        }
+        return calculateChunkBoundaries(content, DEFAULT_CHUNK_SIZE).size() - 1;
+    }
+
+    private static int getUtf8Length(String content) {
+        return content.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static List<Integer> calculateChunkBoundaries(String content, int chunkSize) {
+        List<Integer> boundaries = new ArrayList<>();
+        boundaries.add(0);
+
+        int length = content.length();
+        int index = 0;
+        while (index < length) {
+            int chunkStart = index;
+            int bytesInChunk = 0;
+
+            while (index < length) {
+                int codePoint = content.codePointAt(index);
+                int nextIndex = index + Character.charCount(codePoint);
+                int codePointBytes = getUtf8Length(content.substring(index, nextIndex));
+
+                if (bytesInChunk > 0 && bytesInChunk + codePointBytes > chunkSize) {
+                    break;
+                }
+
+                bytesInChunk += codePointBytes;
+                index = nextIndex;
+            }
+
+            if (index == chunkStart) {
+                int codePoint = content.codePointAt(index);
+                index += Character.charCount(codePoint);
+            }
+
+            boundaries.add(index);
+        }
+        return boundaries;
     }
 }

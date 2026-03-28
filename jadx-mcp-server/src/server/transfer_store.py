@@ -1,14 +1,11 @@
-"""
-Transfer Token Store - 令牌管理
-用于大文件传输的临时令牌生成、验证和过期管理
-"""
-
-import secrets
-import time
 import asyncio
+import secrets
+import threading
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Optional
+
 from src.server.logging_config import get_logger
 
 logger = get_logger("transfer_store")
@@ -40,6 +37,10 @@ class TransferToken:
     params: Optional[dict] = field(default_factory=dict)
 
 
+class TransferStoreCapacityError(RuntimeError):
+    """Raised when the in-memory transfer token store reaches capacity."""
+
+
 class TransferTokenStore:
     """
     内存令牌存储，支持自动过期清理
@@ -51,11 +52,39 @@ class TransferTokenStore:
     - 后台自动清理
     """
     
-    def __init__(self):
+    def __init__(self, max_tokens: int = 1000):
         self._tokens: Dict[str, TransferToken] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
-        self._lock = asyncio.Lock()
-        logger.info("TransferTokenStore initialized")
+        self._lock = threading.Lock()
+        self._max_tokens = max_tokens
+        logger.info(f"TransferTokenStore initialized (max_tokens={max_tokens})")
+
+    def _cleanup_expired_locked(self, now: Optional[float] = None) -> int:
+        """Remove expired tokens while holding the store lock."""
+        now = time.time() if now is None else now
+        expired_tokens = [
+            token_id
+            for token_id, token in self._tokens.items()
+            if token.expires_at <= now
+        ]
+
+        for token_id in expired_tokens:
+            self._tokens.pop(token_id, None)
+
+        if expired_tokens:
+            logger.info(f"Cleaned up {len(expired_tokens)} expired tokens")
+
+        return len(expired_tokens)
+
+    def _ensure_cleanup_task(self) -> None:
+        """Start the background cleanup task when running inside an event loop."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        if self._cleanup_task is None or self._cleanup_task.done():
+            self._cleanup_task = loop.create_task(self._auto_cleanup())
     
     def create(
         self, 
@@ -78,22 +107,30 @@ class TransferTokenStore:
         """
         token_id = secrets.token_urlsafe(24)  # 生成 32 字符 URL 安全令牌
         now = time.time()
-        
-        token = TransferToken(
-            token_id=token_id,
-            operation=operation,
-            resource_type=resource_type,
-            created_at=now,
-            expires_at=now + timeout_seconds,
-            params=params or {}
-        )
-        
-        self._tokens[token_id] = token
-        
-        # 启动清理任务（如果尚未运行）
-        if self._cleanup_task is None or self._cleanup_task.done():
-            self._cleanup_task = asyncio.create_task(self._auto_cleanup())
-        
+
+        with self._lock:
+            self._cleanup_expired_locked(now)
+            if len(self._tokens) >= self._max_tokens:
+                logger.warning(
+                    f"Transfer token store full: {len(self._tokens)}/{self._max_tokens}"
+                )
+                raise TransferStoreCapacityError(
+                    f"Too many active transfer tokens ({self._max_tokens} max). "
+                    "Wait for existing tokens to expire before creating more."
+                )
+
+            token = TransferToken(
+                token_id=token_id,
+                operation=operation,
+                resource_type=resource_type,
+                created_at=now,
+                expires_at=now + timeout_seconds,
+                params=params or {}
+            )
+
+            self._tokens[token_id] = token
+
+        self._ensure_cleanup_task()
         logger.info(f"Created token {token_id[:8]}... for {resource_type.value}, expires in {timeout_seconds}s")
         return token
     
@@ -107,17 +144,63 @@ class TransferTokenStore:
         Returns:
             TransferToken 或 None
         """
-        token = self._tokens.get(token_id)
-        if token is None:
-            logger.warning(f"Token {token_id[:8]}... not found")
-            return None
-        
-        if time.time() > token.expires_at:
-            logger.warning(f"Token {token_id[:8]}... expired")
-            self.revoke(token_id)
-            return None
-        
-        return token
+        with self._lock:
+            token = self._tokens.get(token_id)
+            if token is None:
+                logger.warning(f"Token {token_id[:8]}... not found")
+                return None
+
+            if time.time() >= token.expires_at:
+                logger.warning(f"Token {token_id[:8]}... expired")
+                self._tokens.pop(token_id, None)
+                return None
+
+            if token.used:
+                logger.warning(f"Token {token_id[:8]}... already used")
+                return None
+
+            return token
+
+    def consume(
+        self,
+        token_id: str,
+        expected_resource_type: ResourceType,
+    ) -> Optional[TransferToken]:
+        """
+        原子地消费令牌。
+
+        步骤:
+        1. 存在检查
+        2. 过期检查
+        3. 已使用检查
+        4. resource_type 匹配检查
+        5. 标记为已使用
+        """
+        with self._lock:
+            token = self._tokens.get(token_id)
+            if token is None:
+                logger.warning(f"Token {token_id[:8]}... not found during consume")
+                return None
+
+            if time.time() >= token.expires_at:
+                logger.warning(f"Token {token_id[:8]}... expired during consume")
+                self._tokens.pop(token_id, None)
+                return None
+
+            if token.used:
+                logger.warning(f"Token {token_id[:8]}... replay blocked (already used)")
+                return None
+
+            if token.resource_type != expected_resource_type:
+                logger.warning(
+                    f"Token {token_id[:8]}... resource mismatch: "
+                    f"expected {expected_resource_type.value}, got {token.resource_type.value}"
+                )
+                return None
+
+            token.used = True
+            logger.info(f"Token {token_id[:8]}... consumed for {expected_resource_type.value}")
+            return token
     
     def mark_used(self, token_id: str) -> bool:
         """
@@ -129,11 +212,16 @@ class TransferTokenStore:
         Returns:
             是否成功标记
         """
-        if token_id in self._tokens:
-            self._tokens[token_id].used = True
+        with self._lock:
+            token = self._tokens.get(token_id)
+            if token is None:
+                return False
+            if time.time() >= token.expires_at:
+                self._tokens.pop(token_id, None)
+                return False
+            token.used = True
             logger.info(f"Token {token_id[:8]}... marked as used")
             return True
-        return False
     
     def revoke(self, token_id: str) -> bool:
         """
@@ -145,11 +233,12 @@ class TransferTokenStore:
         Returns:
             是否成功撤销
         """
-        removed = self._tokens.pop(token_id, None)
-        if removed:
-            logger.info(f"Token {token_id[:8]}... revoked")
-            return True
-        return False
+        with self._lock:
+            removed = self._tokens.pop(token_id, None)
+            if removed:
+                logger.info(f"Token {token_id[:8]}... revoked")
+                return True
+            return False
     
     def get_status(self, token_id: str) -> dict:
         """
@@ -161,18 +250,23 @@ class TransferTokenStore:
         Returns:
             状态字典 {exists, used, expires_in}
         """
-        token = self._tokens.get(token_id)
-        if token is None:
-            return {"exists": False, "used": False, "expires_in": 0}
-        
-        expires_in = max(0, int(token.expires_at - time.time()))
-        return {
-            "exists": True, 
-            "used": token.used, 
-            "expires_in": expires_in,
-            "resource_type": token.resource_type.value,
-            "operation": token.operation.value
-        }
+        with self._lock:
+            token = self._tokens.get(token_id)
+            if token is None:
+                return {"exists": False, "used": False, "expires_in": 0}
+
+            if time.time() >= token.expires_at:
+                self._tokens.pop(token_id, None)
+                return {"exists": False, "used": False, "expires_in": 0}
+
+            expires_in = max(0, int(token.expires_at - time.time()))
+            return {
+                "exists": True,
+                "used": token.used,
+                "expires_in": expires_in,
+                "resource_type": token.resource_type.value,
+                "operation": token.operation.value
+            }
     
     async def _auto_cleanup(self):
         """后台自动清理过期令牌"""
@@ -180,23 +274,12 @@ class TransferTokenStore:
         while True:
             try:
                 await asyncio.sleep(30)  # 每 30 秒清理一次
-                
-                now = time.time()
-                expired_tokens = [
-                    token_id for token_id, token in self._tokens.items()
-                    if token.expires_at < now
-                ]
-                
-                for token_id in expired_tokens:
-                    self._tokens.pop(token_id, None)
-                
-                if expired_tokens:
-                    logger.info(f"Cleaned up {len(expired_tokens)} expired tokens")
-                
-                # 如果没有令牌了，停止清理任务
-                if not self._tokens:
-                    logger.info("No tokens remaining, stopping cleanup task")
-                    break
+
+                with self._lock:
+                    self._cleanup_expired_locked()
+                    if not self._tokens:
+                        logger.info("No tokens remaining, stopping cleanup task")
+                        break
                     
             except Exception as e:
                 logger.error(f"Error in auto-cleanup: {e}")

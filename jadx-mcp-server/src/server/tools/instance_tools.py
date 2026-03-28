@@ -11,6 +11,8 @@ Provides 7 tools for managing multiple JADX instances:
 - clear_class_cache: Clear ClassCacheManager cache (30s global cooldown)
 """
 
+import ipaddress
+
 from ..instance_registry import InstanceRegistry
 from ..user_auth import UserAuthManager
 from ..config_loader import get_config_loader
@@ -18,6 +20,47 @@ from ..logging_config import get_logger
 from ..types import ErrorCode, make_error
 
 logger = get_logger("instance_tools")
+
+_PRIVATE_IPV4_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+)
+
+
+def _strip_ip_brackets(host: str) -> str:
+    """Normalize bracketed IPv6 literals for address checks."""
+    return host.strip().removeprefix("[").removesuffix("]")
+
+
+def _is_local_address(host: str) -> bool:
+    """Allow shared credentials only for localhost and loopback addresses."""
+    normalized_host = _strip_ip_brackets(host).lower()
+    if normalized_host == "localhost":
+        return True
+
+    try:
+        return ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_private_network_address(host: str) -> bool:
+    """Reject direct RFC1918/link-local IPv4 targets for non-admin users."""
+    normalized_host = _strip_ip_brackets(host)
+    if _is_local_address(normalized_host):
+        return False
+
+    try:
+        ip_obj = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        return False
+
+    if isinstance(ip_obj, ipaddress.IPv4Address):
+        return any(ip_obj in network for network in _PRIVATE_IPV4_NETWORKS)
+
+    return False
 
 
 def register_instance_tools(mcp):
@@ -112,7 +155,7 @@ def register_instance_tools(mcp):
             host: JADX instance IP address (e.g., "192.168.1.10" or "localhost")
             port: JADX instance port number (e.g., 8650)
             name: Optional custom name. Leave empty to auto-generate from APK name+version
-            token: Optional JADX plugin authentication token. Uses default if not provided.
+            token: Optional JADX plugin authentication token. Required for non-local hosts.
             
         Returns:
             {
@@ -124,6 +167,8 @@ def register_instance_tools(mcp):
         # Get current user from auth context
         user = UserAuthManager.get_current_user()
         username = user.name if user else "anonymous"
+        is_admin = user.is_admin if user else False
+        host = host.strip()
         
         # === PERMISSION CHECK ===
         config_loader = get_config_loader()
@@ -132,28 +177,44 @@ def register_instance_tools(mcp):
             allow_global = config.security.allow_dynamic_instances
 
             user_config = config.get_user_by_token(user.token) if user and user.token else None
-            has_permission = False
+            has_permission = user_config.has_add_instances_permission if user_config else False
 
-            if user_config:
-                has_permission = user_config.has_add_instances_permission
-            elif user and user.is_admin:
-                has_permission = True
-
-            if not allow_global and not has_permission:
-                logger.warning(f"User '{username}' denied add_jadx_instance: permission denied")
-                return make_error(
-                    ErrorCode.PERMISSION_DENIED,
-                    "Dynamic instance creation is disabled. Contact admin to enable 'security.allow_dynamic_instances' or grant 'can_add_instances' permission.",
-                    required_permission="can_add_instances",
-                )
+            if not is_admin:
+                if not allow_global:
+                    logger.warning(f"User '{username}' denied add_jadx_instance: globally disabled")
+                    return make_error(
+                        ErrorCode.PERMISSION_DENIED,
+                        "Dynamic instance addition is globally disabled",
+                    )
+                if not has_permission:
+                    logger.warning(f"User '{username}' denied add_jadx_instance: missing permission")
+                    return make_error(
+                        ErrorCode.PERMISSION_DENIED,
+                        "User does not have can_add_instances permission",
+                        required_permission="can_add_instances",
+                    )
         else:
             # No config file — only admin users may add instances
-            if not (user and user.is_admin):
+            if not is_admin:
                 logger.warning(f"User '{username}' denied add_jadx_instance: no config, non-admin")
                 return make_error(
                     ErrorCode.PERMISSION_DENIED,
                     "Dynamic instance creation requires admin privileges when no config file is loaded.",
                 )
+
+        if _is_private_network_address(host) and not is_admin:
+            logger.warning(f"User '{username}' denied add_jadx_instance: private network target {host}:{port}")
+            return make_error(
+                ErrorCode.PERMISSION_DENIED,
+                "Private network JADX instances can only be added by administrators",
+            )
+
+        if not _is_local_address(host) and not token:
+            logger.warning(f"User '{username}' denied add_jadx_instance: explicit token required for {host}:{port}")
+            return make_error(
+                ErrorCode.INVALID_INPUT,
+                "Non-local JADX instances require an explicit token; shared default tokens are only used for localhost",
+            )
         
         # Handle localhost
         if host.lower() == "localhost":

@@ -120,8 +120,8 @@ public class ResourceRoutes {
                 content, chunk, "content");
             result.put("name", manifest.getOriginalName());
             result.put("type", "manifest/xml");
-            
-            ctx.json(result);
+
+            sendChunkedResponse(ctx, result);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to fetch the AndroidManifest.xml file: " + e.getMessage(), e, logger);
         }
@@ -173,8 +173,16 @@ public class ResourceRoutes {
             // Get parameters
             String mode = ctx.queryParam("mode") != null ? ctx.queryParam("mode") : "summary";
             String locale = ctx.queryParam("locale") != null ? ctx.queryParam("locale") : "values";
-            int offset = ctx.queryParam("offset") != null ? Integer.parseInt(ctx.queryParam("offset")) : 0;
-            int limit = ctx.queryParam("limit") != null ? Math.min(200, Integer.parseInt(ctx.queryParam("limit"))) : 50;
+            Integer offsetValue = parseNonNegativeIntParam(ctx, "offset", 0);
+            if (offsetValue == null) {
+                return;
+            }
+            Integer limitValue = parseNonNegativeIntParam(ctx, "limit", 50);
+            if (limitValue == null) {
+                return;
+            }
+            int offset = offsetValue;
+            int limit = Math.min(200, limitValue);
             
             // Find the target strings file
             String targetFile = "res/" + locale + "/strings.xml";
@@ -231,7 +239,7 @@ public class ResourceRoutes {
                 case "list":
                     // Paginated list of keys
                     int endIndex = Math.min(offset + limit, allKeys.size());
-                    List<String> pageKeys = allKeys.subList(offset, endIndex);
+                    List<String> pageKeys = offset >= allKeys.size() ? List.of() : allKeys.subList(offset, endIndex);
                     
                     result.put("status", "success");
                     result.put("mode", "list");
@@ -239,7 +247,7 @@ public class ResourceRoutes {
                     result.put("offset", offset);
                     result.put("limit", limit);
                     result.put("keys", pageKeys);
-                    result.put("has_more", endIndex < allKeys.size());
+                    result.put("has_more", offset < allKeys.size() && endIndex < allKeys.size());
                     break;
                     
                 case "search":
@@ -317,6 +325,43 @@ public class ResourceRoutes {
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Error in handleStrings: " + e.getMessage(), e, logger);
         }
+    }
+
+    private Integer parseNonNegativeIntParam(Context ctx, String paramName, int defaultValue) {
+        String rawValue = ctx.queryParam(paramName);
+        if (rawValue == null || rawValue.isEmpty()) {
+            return defaultValue;
+        }
+
+        try {
+            int value = Integer.parseInt(rawValue);
+            if (value < 0) {
+                JadxAIMCPPluginError.handleError(
+                    ctx,
+                    400,
+                    "Invalid '" + paramName + "' parameter: must be a non-negative integer",
+                    logger
+                );
+                return null;
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            JadxAIMCPPluginError.handleError(
+                ctx,
+                400,
+                "Invalid '" + paramName + "' parameter: must be an integer",
+                logger
+            );
+            return null;
+        }
+    }
+
+    private void sendChunkedResponse(Context ctx, Map<String, Object> result) {
+        if (result.containsKey("error")) {
+            ctx.status(400).json(result);
+            return;
+        }
+        ctx.json(result);
     }
     
     /**
@@ -638,8 +683,8 @@ public class ResourceRoutes {
                 
                 // Merge chunking info
                 result.putAll(chunkedResult);
-                
-                ctx.json(result);
+
+                sendChunkedResponse(ctx, result);
                 return;
             }
 
@@ -662,8 +707,8 @@ public class ResourceRoutes {
                 
                 // Merge chunking info
                 result.putAll(chunkedResult);
-                
-                ctx.json(result);
+
+                sendChunkedResponse(ctx, result);
                 return;
             }
 

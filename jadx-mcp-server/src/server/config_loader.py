@@ -52,7 +52,7 @@ class JadxInstanceConfig:
 @dataclass
 class ServerConfig:
     """MCP Server configuration"""
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8651
     mcp_url: str = ""  # External URL for Transfer API (e.g., http://192.168.1.100:8651)
 
@@ -91,7 +91,7 @@ class AppConfig:
         instances_data = data.get("jadx_instances", [])
         
         server = ServerConfig(
-            host=server_data.get("host", "0.0.0.0"),
+            host=server_data.get("host", "127.0.0.1"),
             port=server_data.get("port", 8651),
             mcp_url=server_data.get("mcp_url", ""),
         )

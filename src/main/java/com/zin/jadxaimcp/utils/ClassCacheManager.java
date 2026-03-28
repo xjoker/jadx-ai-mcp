@@ -24,6 +24,7 @@ public class ClassCacheManager {
     private static final AtomicReference<Map<String, JavaClass>> classCache = new AtomicReference<>();
     private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
     private static final AtomicReference<CompletableFuture<Void>> initFuture = new AtomicReference<>();
+    private static final AtomicLong generationToken = new AtomicLong(0);
     
     // Health monitoring
     private static final AtomicLong startTime = new AtomicLong(0);
@@ -54,6 +55,7 @@ public class ClassCacheManager {
      * Initialize the cache asynchronously
      */
     public static void initCache(JadxWrapper wrapper) {
+        long generation = generationToken.get();
         if (isInitialized.compareAndSet(false, true)) {
             startTime.set(System.currentTimeMillis());
             currentPhase.set("LOADING");
@@ -65,7 +67,16 @@ public class ClassCacheManager {
                     
                     Map<String, JavaClass> temp = new HashMap<>();
                     for (JavaClass cls : allClasses) {
+                        if (isLoadStale(generation)) {
+                            logger.info("[JAI] Discarding stale class cache load for generation {}", generation);
+                            return;
+                        }
                         temp.put(cls.getFullName(), cls);
+                    }
+
+                    if (isLoadStale(generation)) {
+                        logger.info("[JAI] Discarding stale class cache result for generation {}", generation);
+                        return;
                     }
                     
                     classCache.set(temp);
@@ -75,6 +86,10 @@ public class ClassCacheManager {
                     long duration = (completionTime.get() - startTime.get()) / 1000;
                     logger.info("[JAI] Class cache loaded: {} classes in {}s", temp.size(), duration);
                 } catch (Exception e) {
+                    if (isLoadStale(generation)) {
+                        logger.info("[JAI] Ignoring stale class cache failure for generation {}", generation);
+                        return;
+                    }
                     currentPhase.set("ERROR");
                     logger.error("[JAI] Failed to load class cache", e);
                     throw new RuntimeException("Class cache initialization failed", e);
@@ -82,6 +97,10 @@ public class ClassCacheManager {
             });
             
             initFuture.set(future);
+            if (isLoadStale(generation)) {
+                future.cancel(true);
+                initFuture.compareAndSet(future, null);
+            }
         }
     }
     
@@ -98,7 +117,11 @@ public class ClassCacheManager {
         CompletableFuture<Void> future = initFuture.get();
         if (future != null) {
             future.get(); // Wait for completion
-            return classCache.get();
+            cache = classCache.get();
+            if (cache != null) {
+                return cache;
+            }
+            throw new IllegalStateException("Cache initialization was cancelled or invalidated.");
         }
         
         throw new IllegalStateException("Cache not initialized. Call initCache() first.");
@@ -230,14 +253,24 @@ public class ClassCacheManager {
             }
 
             lastClearTime.set(now);
+            long generation = generationToken.incrementAndGet();
+            CompletableFuture<Void> future = initFuture.getAndSet(null);
+            if (future != null) {
+                future.cancel(true);
+            }
             classCache.set(null);
             isInitialized.set(false);
-            initFuture.set(null);
+            startTime.set(0);
+            completionTime.set(0);
             currentPhase.set("NOT_INITIALIZED");
             clearCodeCache();
-            logger.info("[JAI] Class cache cleared");
+            logger.info("[JAI] Class cache cleared (generation {})", generation);
             return true;
         }
+    }
+
+    private static boolean isLoadStale(long generation) {
+        return Thread.currentThread().isInterrupted() || generationToken.get() != generation;
     }
     
     /**

@@ -6,7 +6,12 @@ Transfer Tools - MCP 工具封装
 from typing import Optional
 from datetime import datetime, timezone
 
-from ..transfer_store import get_token_store, Operation, ResourceType
+from ..transfer_store import (
+    TransferStoreCapacityError,
+    get_token_store,
+    Operation,
+    ResourceType,
+)
 from ..logging_config import get_logger
 from ..rate_limiter import get_token_limiter
 from ..param_validator import ValidationError
@@ -90,7 +95,11 @@ async def create_transfer_token(
         return make_error(ErrorCode.INVALID_INPUT, f"Invalid parameter: {str(e)}")
     
     store = get_token_store()
-    token = store.create(op, rt, timeout_seconds, params)
+    try:
+        token = store.create(op, rt, timeout_seconds, params)
+    except TransferStoreCapacityError as e:
+        logger.warning(f"Transfer token creation rejected: {e}")
+        return make_error(ErrorCode.RATE_LIMITED, str(e))
     
     # 从配置获取 MCP Server URL
     transfer_base_url = get_mcp_server_url()

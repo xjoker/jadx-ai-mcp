@@ -76,6 +76,18 @@ class InstanceRegistry:
     _http_client_lock: asyncio.Lock = asyncio.Lock()
 
     @classmethod
+    def _can_user_access_locked(
+        cls,
+        instance: JadxInstance,
+        username: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> bool:
+        """Check instance visibility while holding _thread_lock."""
+        if username is None or is_admin:
+            return True
+        return instance.owner is None or instance.owner == username
+
+    @classmethod
     async def _get_http_client(cls) -> httpx.AsyncClient:
         """Get or create the shared async HTTP client for registry operations."""
         if cls._http_client is not None and not cls._http_client.is_closed:
@@ -144,15 +156,8 @@ class InstanceRegistry:
                 # 2. Determine instance name
                 if not name:
                     name = apk_info.get("instance_name") or f"jadx-{port}"
-                
-                # 3. Check if name already exists
-                if name in cls._instances:
-                    return {
-                        "success": False,
-                        "message": f"Instance name '{name}' already exists. Please use a different name",
-                    }
-                
-                # 4. Create and register instance
+
+                # 3. Create and register instance
                 instance = JadxInstance(
                     name=name,
                     host=host,
@@ -165,11 +170,22 @@ class InstanceRegistry:
                     is_dynamic=is_dynamic,
                     registration_source=registration_source,
                 )
-                cls._instances[name] = instance
-                
-                # 5. If first instance, set as default
-                if cls._default_instance is None:
-                    cls._default_instance = name
+                set_as_default = False
+                with cls._thread_lock:
+                    if name in cls._instances:
+                        return {
+                            "success": False,
+                            "message": f"Instance name '{name}' already exists. Please use a different name",
+                        }
+
+                    cls._instances[name] = instance
+
+                    # 4. If first instance, set as default
+                    if cls._default_instance is None:
+                        cls._default_instance = name
+                        set_as_default = True
+
+                if set_as_default:
                     logger.info(f"Set default instance: {name}")
                 
                 owner_info = f" (owner: {owner})" if owner else " (shared)"
@@ -337,36 +353,36 @@ class InstanceRegistry:
         Returns:
             {"success": bool, "message": str}
         """
-        if name not in cls._instances:
-            return {
-                "success": False,
-                "message": f"Instance '{name}' not found",
-            }
-        
-        instance = cls._instances[name]
-        
-        # Permission check: admin can remove any, user can only remove their own dynamic instances
-        if not is_admin:
-            if instance.owner is None:
-                return {
-                    "success": False,
-                    "message": f"Cannot remove shared instance '{name}'. Only admins can remove shared instances.",
-                }
-            if instance.owner != username:
-                return {
-                    "success": False,
-                    "message": f"Cannot remove instance '{name}'. You can only remove your own instances.",
-                }
-        
-        # Thread-safe modification
+        new_default = None
         with cls._thread_lock:
+            instance = cls._instances.get(name)
+            if instance is None:
+                return {
+                    "success": False,
+                    "message": f"Instance '{name}' not found",
+                }
+
+            # Permission check: admin can remove any, user can only remove their own dynamic instances
+            if not is_admin:
+                if instance.owner is None:
+                    return {
+                        "success": False,
+                        "message": f"Cannot remove shared instance '{name}'. Only admins can remove shared instances.",
+                    }
+                if instance.owner != username:
+                    return {
+                        "success": False,
+                        "message": f"Cannot remove instance '{name}'. You can only remove your own instances.",
+                    }
+
             del cls._instances[name]
             
             # If removed instance was default, select another
             if cls._default_instance == name:
                 cls._default_instance = next(iter(cls._instances), None)
-                if cls._default_instance:
-                    logger.info(f"Default instance changed to: {cls._default_instance}")
+                new_default = cls._default_instance
+        if new_default:
+            logger.info(f"Default instance changed to: {new_default}")
         
         owner_info = f" (owner: {instance.owner})" if instance.owner else " (shared)"
         logger.info(f"Removed instance: {name}{owner_info} by user: {username or 'system'}")
@@ -378,9 +394,11 @@ class InstanceRegistry:
     @classmethod
     def list_instances(cls) -> List[dict]:
         """List all registered instances"""
-        instances = [inst.to_dict() for inst in cls._instances.values()]
+        with cls._thread_lock:
+            instances = [inst.to_dict() for inst in cls._instances.values()]
+            default_name = cls._default_instance
         for inst in instances:
-            inst["is_default"] = inst["name"] == cls._default_instance
+            inst["is_default"] = inst["name"] == default_name
         return instances
     
     @classmethod
@@ -400,18 +418,16 @@ class InstanceRegistry:
         Returns:
             List of instance dicts the user can access
         """
-        result = []
-        for inst in cls._instances.values():
-            # Admin sees everything
-            if is_admin:
-                result.append(inst.to_dict())
-            # User sees shared instances + their own
-            elif inst.owner is None or inst.owner == username:
-                result.append(inst.to_dict())
-        
-        # Mark default instance
+        with cls._thread_lock:
+            result = [
+                inst.to_dict()
+                for inst in cls._instances.values()
+                if cls._can_user_access_locked(inst, username, is_admin)
+            ]
+            default_name = cls._default_instance
+
         for inst in result:
-            inst["is_default"] = inst["name"] == cls._default_instance
+            inst["is_default"] = inst["name"] == default_name
         
         return result
     
@@ -428,18 +444,27 @@ class InstanceRegistry:
         Returns:
             JadxInstance if accessible, None otherwise
         """
-        instance = cls._instances.get(name)
-        if not instance:
+        with cls._thread_lock:
+            instance = cls._instances.get(name)
+            if instance is None:
+                return None
+            if cls._can_user_access_locked(instance, username, is_admin):
+                return instance
             return None
-        
-        # Admin can access all
-        if is_admin:
-            return instance
-        
-        # User can access shared or their own
-        if instance.owner is None or instance.owner == username:
-            return instance
-        
+
+    @classmethod
+    def get_default_for_user(cls, username: str, is_admin: bool = False) -> Optional[JadxInstance]:
+        """Get the current user's visible default instance, or first visible fallback."""
+        with cls._thread_lock:
+            if cls._default_instance and cls._default_instance in cls._instances:
+                default_instance = cls._instances[cls._default_instance]
+                if cls._can_user_access_locked(default_instance, username, is_admin):
+                    return default_instance
+
+            for instance in cls._instances.values():
+                if cls._can_user_access_locked(instance, username, is_admin):
+                    return instance
+
         return None
     
     @classmethod
@@ -455,24 +480,21 @@ class InstanceRegistry:
         Returns:
             {"success": bool, "message": str}
         """
-        if name not in cls._instances:
-            return {
-                "success": False,
-                "message": f"Instance '{name}' not found",
-            }
-        
-        instance = cls._instances[name]
-        
-        # Permission check: user can only set accessible instances as default
-        if not is_admin:
-            if instance.owner is not None and instance.owner != username:
+        with cls._thread_lock:
+            instance = cls._instances.get(name)
+            if instance is None:
+                return {
+                    "success": False,
+                    "message": f"Instance '{name}' not found",
+                }
+
+            # Permission check: user can only set accessible instances as default
+            if not cls._can_user_access_locked(instance, username, is_admin):
                 return {
                     "success": False,
                     "message": f"Cannot set '{name}' as default. You don't have access to this instance.",
                 }
-        
-        # Thread-safe modification
-        with cls._thread_lock:
+
             cls._default_instance = name
         logger.info(f"Default instance set to: {name} by user: {username or 'system'}")
         return {
@@ -483,20 +505,22 @@ class InstanceRegistry:
     @classmethod
     def get_default(cls) -> Optional[JadxInstance]:
         """Get default instance"""
-        if cls._default_instance and cls._default_instance in cls._instances:
-            return cls._instances[cls._default_instance]
-        # If no default instance, return first one
-        if cls._instances:
-            return next(iter(cls._instances.values()))
-        return None
+        with cls._thread_lock:
+            if cls._default_instance and cls._default_instance in cls._instances:
+                return cls._instances[cls._default_instance]
+            # If no default instance, return first one
+            if cls._instances:
+                return next(iter(cls._instances.values()))
+            return None
     
     @classmethod
     def get_first_connected(cls) -> Optional[JadxInstance]:
         """Return the first instance with status 'connected', or None."""
-        for inst in cls._instances.values():
-            if inst.status == "connected":
-                return inst
-        return None
+        with cls._thread_lock:
+            for inst in cls._instances.values():
+                if inst.status == "connected":
+                    return inst
+            return None
 
     @classmethod
     def get_instance(cls, name: str) -> Optional[JadxInstance]:
@@ -505,7 +529,12 @@ class InstanceRegistry:
             return cls._instances.get(name)
     
     @classmethod
-    def find_instance_by_apk(cls, query: str) -> Optional[JadxInstance]:
+    def find_instance_by_apk(
+        cls,
+        query: str,
+        username: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> Optional[JadxInstance]:
         """
         Find a connected instance by APK package name, file name, or instance name (fuzzy).
 
@@ -522,7 +551,12 @@ class InstanceRegistry:
         """
         query_lower = query.lower()
         with cls._thread_lock:
-            connected = [i for i in cls._instances.values() if i.status == "connected"]
+            connected = [
+                instance
+                for instance in cls._instances.values()
+                if instance.status == "connected"
+                and cls._can_user_access_locked(instance, username, is_admin)
+            ]
 
         # 1. Exact instance name (registry name)
         for inst in connected:
@@ -655,7 +689,7 @@ class InstanceRegistry:
         healthy_count = 0
         
         # Iterate over a copy to avoid RuntimeError if dict changes during iteration
-        instances_snapshot = list(cls._instances.items())
+        instances_snapshot = list(cls.get_all_instances().items())
         
         for name, instance in instances_snapshot:
             new_status = "unknown"
@@ -723,7 +757,7 @@ class InstanceRegistry:
             })
         
         return {
-            "total": len(cls._instances),
+            "total": len(instances_snapshot),
             "healthy": healthy_count,
             "instances": results,
         }
@@ -731,10 +765,12 @@ class InstanceRegistry:
     @classmethod
     def get_instance_count(cls) -> int:
         """Get number of registered instances"""
-        return len(cls._instances)
+        with cls._thread_lock:
+            return len(cls._instances)
     
     @classmethod
     def clear_all(cls) -> None:
         """Clear all instances (for testing)"""
-        cls._instances.clear()
-        cls._default_instance = None
+        with cls._thread_lock:
+            cls._instances.clear()
+            cls._default_instance = None

@@ -49,7 +49,7 @@ class TestAppConfig:
     def test_empty_config(self):
         """Empty dict should create default config"""
         config = AppConfig.from_dict({})
-        assert config.server.host == "0.0.0.0"
+        assert config.server.host == "127.0.0.1"
         assert config.server.port == 8651
         assert len(config.users) == 0
         assert len(config.jadx_instances) == 0

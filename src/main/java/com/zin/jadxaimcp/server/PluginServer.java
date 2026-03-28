@@ -1,8 +1,10 @@
 package com.zin.jadxaimcp.server;
 
 import java.nio.channels.ServerSocketChannel;
+import java.util.function.Consumer;
 
 import io.javalin.Javalin;
+import jadx.api.plugins.events.JadxEvents;
 import jadx.gui.ui.MainWindow;
 import jadx.api.plugins.events.types.NodeRenamedByUser;
 import org.eclipse.jetty.server.ServerConnector;
@@ -27,6 +29,10 @@ public class PluginServer {
     private final PaginationUtils paginationUtils;
     private final AuthConfig authConfig;
     private JadxAIMCP plugin;
+    private ClassRoutes classRoutes;
+    private Consumer<NodeRenamedByUser> renameListener;
+    private Thread.UncaughtExceptionHandler previousUncaughtExceptionHandler;
+    private Thread.UncaughtExceptionHandler oomExceptionHandler;
     private volatile boolean isRunning = false;
 
     /**
@@ -204,7 +210,7 @@ public class PluginServer {
 
         } catch (Exception e) {
             logger.error("JADX-AI-MCP Plugin Error: Could not start HTTP Server. Exception: " + e.getMessage(), e);
-            isRunning = false;
+            stop();
             // Re-throw to let the main plugin know startup failed
             throw new RuntimeException("Failed to start Javalin Server", e);
         }
@@ -225,17 +231,23 @@ public class PluginServer {
      * This method is called during plugin restart or JADX shutdown.
      */
     public void stop() {
-        if (app != null) {
-            try {
+        try {
+            if (app != null) {
                 app.stop();
                 logger.info("JADX-AI-MCP Plugin: HTTP Server Stopped");
-            } catch (Exception e) {
-                logger.error("JADX-AI-MCP Plugin Error: Error during shutdown: " + e.getMessage(), e);
-            } finally {
-                app = null;
-                isRunning = false;
-                System.getProperties().remove(JVM_SERVER_KEY);
             }
+        } catch (Exception e) {
+            logger.error("JADX-AI-MCP Plugin Error: Error during shutdown: " + e.getMessage(), e);
+        } finally {
+            teardownCacheInvalidation();
+            restoreOomHandler();
+            if (classRoutes != null) {
+                classRoutes.shutdownSearchExecutor();
+                classRoutes = null;
+            }
+            app = null;
+            isRunning = false;
+            System.getProperties().remove(JVM_SERVER_KEY);
         }
     }
 
@@ -363,7 +375,7 @@ public class PluginServer {
         // Instantiate Route Controllers
         // Passing 'mainWindow' and 'paginationUtils' to them so they can do their work
         GeneralRoutes generalRoutes = new GeneralRoutes(mainWindow, port, this);
-        ClassRoutes classRoutes = new ClassRoutes(mainWindow, paginationUtils);
+        classRoutes = new ClassRoutes(mainWindow, paginationUtils);
         MethodRoutes methodRoutes = new MethodRoutes(mainWindow, paginationUtils);
         ResourceRoutes resourceRoutes = new ResourceRoutes(mainWindow);
         RefactoringRoutes refactoringRoutes = new RefactoringRoutes(mainWindow);
@@ -554,12 +566,25 @@ public class PluginServer {
      * Automatically clears ClassCacheManager when any rename event occurs.
      */
     private void setupCacheInvalidation() {
-        mainWindow.events().addListener(jadx.api.plugins.events.JadxEvents.NODE_RENAMED_BY_USER, event -> {
+        if (renameListener != null) {
+            return;
+        }
+        renameListener = event -> {
             logger.info("[JAI] Rename detected, clearing class cache");
             ClassCacheManager.clearCache();
             CodeSearchCoordinator.clearCache();
-        });
+        };
+        mainWindow.events().addListener(JadxEvents.NODE_RENAMED_BY_USER, renameListener);
         logger.info("[JAI] Cache invalidation listener registered");
+    }
+
+    private void teardownCacheInvalidation() {
+        if (renameListener == null) {
+            return;
+        }
+        mainWindow.events().removeListener(JadxEvents.NODE_RENAMED_BY_USER, renameListener);
+        renameListener = null;
+        logger.info("[JAI] Cache invalidation listener unregistered");
     }
 
     /**
@@ -568,8 +593,11 @@ public class PluginServer {
      * even across classloader reloads.
      */
     private void installOomHandler() {
-        Thread.UncaughtExceptionHandler existing = Thread.getDefaultUncaughtExceptionHandler();
-        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+        if (oomExceptionHandler != null) {
+            return;
+        }
+        previousUncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler();
+        oomExceptionHandler = (thread, throwable) -> {
             if (isOomRelated(throwable)) {
                 // Write flag first — this must succeed even if heap is exhausted
                 System.getProperties().put(JVM_OOM_KEY, System.currentTimeMillis());
@@ -582,11 +610,24 @@ public class PluginServer {
                 }
             }
             // Delegate to previous handler if any
-            if (existing != null) {
-                existing.uncaughtException(thread, throwable);
+            if (previousUncaughtExceptionHandler != null) {
+                previousUncaughtExceptionHandler.uncaughtException(thread, throwable);
             }
-        });
+        };
+        Thread.setDefaultUncaughtExceptionHandler(oomExceptionHandler);
         logger.debug("[JAI] Global OOM detection handler installed");
+    }
+
+    private void restoreOomHandler() {
+        if (oomExceptionHandler == null) {
+            return;
+        }
+        if (Thread.getDefaultUncaughtExceptionHandler() == oomExceptionHandler) {
+            Thread.setDefaultUncaughtExceptionHandler(previousUncaughtExceptionHandler);
+        }
+        oomExceptionHandler = null;
+        previousUncaughtExceptionHandler = null;
+        logger.debug("[JAI] Global OOM detection handler restored");
     }
 
     /**

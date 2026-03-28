@@ -160,9 +160,11 @@ def _get_auth_headers() -> Dict[str, str]:
 
 async def get_from_jadx(
     endpoint: str,
-    params: Dict[str, Any] = {},
+    params: Optional[Dict[str, Any]] = None,
     instance_id: Optional[str] = None,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    username: Optional[str] = None,
+    is_admin: bool = False,
 ) -> Union[str, Dict[str, Any]]:
     """
     Generic async helper to request data from the JADX plugin.
@@ -172,6 +174,8 @@ async def get_from_jadx(
         params: Query parameters dictionary for the request
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
         timeout: Optional per-request timeout in seconds. Overrides the client default.
+        username: Optional current username for ACL-aware instance resolution.
+        is_admin: Whether the current user has admin access.
 
     Returns:
         Union[str, Dict[str, Any]]: Parsed JSON response or error dictionary
@@ -185,6 +189,8 @@ async def get_from_jadx(
         Supports multi-instance routing when InstanceRegistry is available.
         Uses connection pooling for better performance.
     """
+    params = params or {}
+
     # Determine the base URL based on instance_id
     base_url = JADX_HTTP_BASE
     auth_token = AUTH_TOKEN
@@ -195,10 +201,18 @@ async def get_from_jadx(
         from .instance_registry import InstanceRegistry
 
         if instance_id:
-            instance_obj = InstanceRegistry.get_instance(instance_id)
+            if username is not None:
+                instance_obj = InstanceRegistry.get_instance_for_user(instance_id, username, is_admin)
+            else:
+                instance_obj = InstanceRegistry.get_instance(instance_id)
+
             if not instance_obj:
                 # Fuzzy match: try APK package name, file name, or partial instance name
-                instance_obj = InstanceRegistry.find_instance_by_apk(instance_id)
+                instance_obj = InstanceRegistry.find_instance_by_apk(
+                    instance_id,
+                    username=username,
+                    is_admin=is_admin,
+                )
                 if instance_obj:
                     logger.info(f"Fuzzy matched instance_id '{instance_id}' -> '{instance_obj.name}'")
                 else:
@@ -210,10 +224,18 @@ async def get_from_jadx(
                     )
             base_url = instance_obj.url
         else:
-            # Use default instance — no fallback to other instances,
-            # because each instance loads a different APK/JAR.
-            # Silently switching would return data from the wrong app.
-            instance_obj = InstanceRegistry.get_default()
+            # Resolve the effective default instance.
+            # With user context, this is the user's visible default or first visible fallback.
+            if username is not None:
+                instance_obj = InstanceRegistry.get_default_for_user(username, is_admin)
+                if not instance_obj:
+                    return make_error(
+                        ErrorCode.NO_INSTANCE,
+                        f"No JADX instance is available for user '{username}'",
+                        suggestion="Use 'list_jadx_instances' to see the instances you can access.",
+                    )
+            else:
+                instance_obj = InstanceRegistry.get_default()
             if instance_obj:
                 base_url = instance_obj.url
 
@@ -326,7 +348,11 @@ async def get_from_jadx(
     # Check cache for cacheable endpoints
     cache_key = None
     if ep_stripped in CACHEABLE_ENDPOINTS:
-        cache_key = _make_cache_key(instance_id, ep_stripped, params)
+        cache_key = _make_cache_key(
+            instance_obj.name if instance_obj else instance_id,
+            ep_stripped,
+            params,
+        )
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
@@ -469,4 +495,3 @@ async def get_from_jadx(
         error_detail = str(e) if str(e) else "(no message)"
         logger.error(f"JADX request failed: {type(e).__name__}: {error_detail}")
         return make_error(ErrorCode.INTERNAL_ERROR, f"Request failed: {type(e).__name__}")
-

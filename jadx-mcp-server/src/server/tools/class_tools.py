@@ -10,9 +10,9 @@ License: See LICENSE file
 """
 
 from typing import Optional
-from src.server.config import get_from_jadx
 from src.PaginationUtils import PaginationUtils
 from src.server.logging_config import get_logger
+from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
 
 logger = get_logger("class_tools")
 

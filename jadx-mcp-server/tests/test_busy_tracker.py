@@ -12,7 +12,9 @@ from src.server.busy_tracker import (
     InstanceBusyTracker,
     get_operation_policy,
     should_bypass_busy_check,
+    with_busy_check,
 )
+from src.server.instance_registry import InstanceRegistry
 
 
 @pytest.fixture(autouse=True)
@@ -207,3 +209,36 @@ async def test_exclusive_request_waits_briefly_and_acquires_after_code_read_rele
     assert exclusive["lane"] == LANE_EXCLUSIVE
 
     await InstanceBusyTracker.release("demo", exclusive["token"])
+
+
+@pytest.mark.asyncio
+async def test_with_busy_check_normalizes_aliases_to_same_instance():
+    InstanceRegistry.register_pending_instance("demo-main", "127.0.0.1", 8650)
+    InstanceRegistry.update_instance_status(
+        "demo-main",
+        "connected",
+        apk_info={"apk_package": "com.example.demo"},
+    )
+
+    started = asyncio.Event()
+    finish = asyncio.Event()
+
+    @with_busy_check
+    async def rename(instance_id=None):
+        started.set()
+        await finish.wait()
+        return {"ok": True}
+
+    first_task = asyncio.create_task(rename(instance_id="demo-main"))
+    await started.wait()
+    await asyncio.sleep(0)
+
+    second = await rename(instance_id="com.example.demo")
+    snapshot = InstanceBusyTracker.get_snapshot("demo-main")
+
+    assert second["error"] == "INSTANCE_BUSY"
+    assert second["lane"] == LANE_EXCLUSIVE
+    assert snapshot["exclusive_inflight"] == 1
+
+    finish.set()
+    assert await first_task == {"ok": True}

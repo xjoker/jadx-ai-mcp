@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from src.server.instance_registry import InstanceRegistry
 from src.server.response_cache import (
     CACHEABLE_ENDPOINTS,
     ResponseCache,
@@ -101,6 +102,34 @@ class TestResponseCache:
         cache.put("k1", {"v": 2})
         assert cache.get("k1") == {"v": 2}
         assert cache.stats()["size"] == 1
+
+    def test_aliases_resolve_to_canonical_instance_name(self):
+        InstanceRegistry.register_pending_instance("demo-main", "127.0.0.1", 8650)
+        InstanceRegistry.update_instance_status(
+            "demo-main",
+            "connected",
+            apk_info={"apk_package": "com.example.demo"},
+        )
+
+        cache = ResponseCache(max_size=10, ttl_seconds=60)
+        cache.put(_make_cache_key("com.example.demo", "class-info", {"class_name": "com.A"}), {"data": 1})
+
+        canonical_key = _make_cache_key("demo-main", "class-info", {"class_name": "com.A"})
+        assert cache.get(canonical_key) == {"data": 1}
+
+    def test_invalidate_instance_accepts_aliases(self):
+        InstanceRegistry.register_pending_instance("demo-main", "127.0.0.1", 8650)
+        InstanceRegistry.update_instance_status(
+            "demo-main",
+            "connected",
+            apk_info={"apk_package": "com.example.demo"},
+        )
+
+        cache = ResponseCache(max_size=10, ttl_seconds=60)
+        cache.put(_make_cache_key("demo-main", "class-info", {"class_name": "com.A"}), {"data": 1})
+
+        cache.invalidate_instance("com.example.demo")
+        assert cache.get(_make_cache_key("demo-main", "class-info", {"class_name": "com.A"})) is None
 
 
 class TestEndpointSets:

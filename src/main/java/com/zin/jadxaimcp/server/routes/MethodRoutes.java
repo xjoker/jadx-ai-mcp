@@ -63,23 +63,17 @@ public class MethodRoutes {
                 return;
             }
 
-            // Case 1: Search in all classes if no class name provided
-            // Use ClassNode for fast method name lookup without triggering decompilation
-            if (className == null || className.isEmpty()) {
-                // Try to acquire global lock (fast-fail pattern)
-                if (!JadxSearchLock.tryAcquire()) {
-                    Map<String, Object> busyResponse = new java.util.HashMap<>();
-                    busyResponse.put("error", "Search operation in progress");
-                    busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
-                    busyResponse.put("busy", true);
-                    ctx.status(503).json(busyResponse);
-                    return;
-                }
-                try {
+            if (!tryAcquireDecompileLock(ctx)) {
+                return;
+            }
+            try {
+                // Case 1: Search in all classes if no class name provided
+                // Use ClassNode for fast method name lookup without triggering decompilation
+                if (className == null || className.isEmpty()) {
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                         jadx.core.dex.nodes.ClassNode classNode = cls.getClassNode();
                         if (classNode == null) continue;
-                        
+
                         for (jadx.core.dex.nodes.MethodNode mth : classNode.getMethods()) {
                             if (mth.getMethodInfo().getName().equalsIgnoreCase(methodName)) {
                                 // Found! Now get the JavaMethod (this triggers decompilation for this class only)
@@ -92,22 +86,22 @@ public class MethodRoutes {
                             }
                         }
                     }
-                } finally {
-                    JadxSearchLock.release();
                 }
-            } 
-            // Case 2: Search in specific class (no global search, minimal lock needed)
-            else {
-                for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
-                    if (cls.getFullName().equals(className)) {
-                        for (JavaMethod method : cls.getMethods()) {
-                            if (method.getName().equalsIgnoreCase(methodName)) {
-                                returnMethodResult(ctx, cls, method);
-                                return;
+                // Case 2: Search in specific class
+                else {
+                    for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                        if (cls.getFullName().equals(className)) {
+                            for (JavaMethod method : cls.getMethods()) {
+                                if (method.getName().equalsIgnoreCase(methodName)) {
+                                    returnMethodResult(ctx, cls, method);
+                                    return;
+                                }
                             }
                         }
                     }
                 }
+            } finally {
+                JadxSearchLock.release();
             }
 
             // if execution reaches here, it means that method has not been found
@@ -197,84 +191,95 @@ public class MethodRoutes {
                 ctx.json(response);
                 return;
             }
-            
-            // Get the cached class map
-            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
 
-            List<Map<String, Object>> results = new ArrayList<>();
-            int foundCount = 0;
-
-            for (String pair : methodPairs) {
-                String trimmedPair = pair.trim();
-                Map<String, Object> methodResult = new HashMap<>();
-                
-                // Parse class_name:method_name format
-                int colonIndex = trimmedPair.lastIndexOf(':');
-                if (colonIndex == -1) {
-                    methodResult.put("input", trimmedPair);
-                    methodResult.put("found", false);
-                    methodResult.put("error", "Invalid format. Use class_name:method_name");
-                    results.add(methodResult);
-                    continue;
-                }
-
-                String className = trimmedPair.substring(0, colonIndex);
-                String methodName = trimmedPair.substring(colonIndex + 1);
-                
-                methodResult.put("class_name", className);
-                methodResult.put("method_name", methodName);
-
-                JavaClass cls = classMap.get(className);
-                if (cls == null) {
-                    methodResult.put("found", false);
-                    methodResult.put("error", "Class not found");
-                    results.add(methodResult);
-                    continue;
-                }
-
-                // Find method in class
-                boolean methodFound = false;
-                for (JavaMethod method : cls.getMethods()) {
-                    if (method.getName().equalsIgnoreCase(methodName)) {
-                        try {
-                            methodResult.put("found", true);
-                            methodResult.put("decl", String.valueOf(method.getCodeNodeRef()));
-                            methodResult.put("code", method.getCodeStr());
-                            foundCount++;
-                            methodFound = true;
-                        } catch (Exception e) {
-                            methodResult.put("found", true);
-                            methodResult.put("error", "Failed to get code: " + e.getMessage());
-                        }
-                        break;
-                    }
-                }
-
-                if (!methodFound && !methodResult.containsKey("found")) {
-                    methodResult.put("found", false);
-                    methodResult.put("error", "Method not found in class");
-                }
-                results.add(methodResult);
+            if (!tryAcquireDecompileLock(ctx)) {
+                return;
             }
+            try {
+                // Get the cached class map
+                Map<String, JavaClass> classMap = ClassCacheManager.getCache();
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("methods", results);
-            response.put("total", methodPairs.length);
-            response.put("found", foundCount);
+                List<Map<String, Object>> results = new ArrayList<>();
+                int foundCount = 0;
 
-            // Serialize and apply SmartChunker to prevent large response truncation
-            com.google.gson.Gson gson = new com.google.gson.Gson();
-            String responseJson = gson.toJson(response);
+                for (String pair : methodPairs) {
+                    String trimmedPair = pair.trim();
+                    Map<String, Object> methodResult = new HashMap<>();
 
-            // Apply chunking (auto-chunks if response > 8KB)
-            Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
-                responseJson,
-                chunk,
-                "batch_result"
-            );
+                    // Parse class_name:method_name format
+                    int colonIndex = trimmedPair.lastIndexOf(':');
+                    if (colonIndex == -1) {
+                        methodResult.put("input", trimmedPair);
+                        methodResult.put("found", false);
+                        methodResult.put("error", "Invalid format. Use class_name:method_name");
+                        results.add(methodResult);
+                        continue;
+                    }
 
-            ctx.json(chunkedResponse);
+                    String className = trimmedPair.substring(0, colonIndex);
+                    String methodName = trimmedPair.substring(colonIndex + 1);
 
+                    methodResult.put("class_name", className);
+                    methodResult.put("method_name", methodName);
+
+                    JavaClass cls = classMap.get(className);
+                    if (cls == null) {
+                        methodResult.put("found", false);
+                        methodResult.put("error", "Class not found");
+                        results.add(methodResult);
+                        continue;
+                    }
+
+                    // Find method in class
+                    boolean methodFound = false;
+                    for (JavaMethod method : cls.getMethods()) {
+                        if (method.getName().equalsIgnoreCase(methodName)) {
+                            try {
+                                methodResult.put("found", true);
+                                methodResult.put("decl", String.valueOf(method.getCodeNodeRef()));
+                                methodResult.put("code", method.getCodeStr());
+                                foundCount++;
+                                methodFound = true;
+                            } catch (Exception e) {
+                                methodResult.put("found", true);
+                                methodResult.put("error", "Failed to get code: " + e.getMessage());
+                            }
+                            break;
+                        }
+                    }
+
+                    if (!methodFound && !methodResult.containsKey("found")) {
+                        methodResult.put("found", false);
+                        methodResult.put("error", "Method not found in class");
+                    }
+                    results.add(methodResult);
+                }
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("methods", results);
+                response.put("total", methodPairs.length);
+                response.put("found", foundCount);
+
+                // Serialize and apply SmartChunker to prevent large response truncation
+                com.google.gson.Gson gson = new com.google.gson.Gson();
+                String responseJson = gson.toJson(response);
+
+                // Apply chunking (auto-chunks if response > 8KB)
+                Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
+                    responseJson,
+                    chunk,
+                    "batch_result"
+                );
+
+                if (chunkedResponse.containsKey("error")) {
+                    ctx.status(400).json(chunkedResponse);
+                    return;
+                }
+
+                ctx.json(chunkedResponse);
+            } finally {
+                JadxSearchLock.release();
+            }
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving batch methods: " + e.getMessage(), e, logger);
         }
@@ -581,6 +586,10 @@ public class MethodRoutes {
             JavaClass cls = classMap.get(className);
             
             if (cls != null) {
+                if (!tryAcquireDecompileLock(ctx)) {
+                    return;
+                }
+                try {
                     for (JavaMethod method : cls.getMethods()) {
                         if (method.getName().equalsIgnoreCase(methodName)) {
                             String code = method.getCodeStr();
@@ -623,10 +632,14 @@ public class MethodRoutes {
                             return;
                         }
                     }
-                    JadxAIMCPPluginError.handleError(ctx, 404, 
-                        "Method " + methodName + " not found in class " + className, logger);
-                    return;
+                } finally {
+                    JadxSearchLock.release();
                 }
+
+                JadxAIMCPPluginError.handleError(ctx, 404,
+                    "Method " + methodName + " not found in class " + className, logger);
+                return;
+            }
             
             // Class not found
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
@@ -750,5 +763,18 @@ public class MethodRoutes {
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error searching native methods: " + e.getMessage(), e, logger);
         }
+    }
+
+    private boolean tryAcquireDecompileLock(Context ctx) {
+        if (JadxSearchLock.tryAcquire()) {
+            return true;
+        }
+
+        Map<String, Object> busyResponse = new HashMap<>();
+        busyResponse.put("error", "Decompilation operation in progress");
+        busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+        busyResponse.put("busy", true);
+        ctx.status(503).json(busyResponse);
+        return false;
     }
 }

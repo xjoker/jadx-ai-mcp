@@ -3,20 +3,21 @@ Transfer Server - HTTP 端点实现
 提供绕过 MCP 限制的大文件下载端点
 """
 
+import asyncio
 import io
-import zipfile
 import json
-import secrets
+import zipfile
 from typing import Optional
+
 from starlette.applications import Starlette
-from starlette.responses import Response, JSONResponse
-from starlette.routing import Route
 from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
 
 from .transfer_store import get_token_store, ResourceType
-from .config import get_from_jadx
 from .logging_config import get_logger
 from .rate_limiter import get_download_limiter
+from .request_context import get_from_jadx_for_current_user as get_from_jadx
 from .param_validator import (
     validate_class_names,
     validate_token,
@@ -87,6 +88,44 @@ def compress_data(data: bytes, encoding: str) -> tuple[bytes, str]:
             logger.warning(f"GZIP compression failed: {e}, using identity")
     
     return data, "identity"
+
+
+def _build_zip_response_payload(results: list[dict]) -> tuple[bytes, dict]:
+    """Build the ZIP archive in a worker thread."""
+    buffer = io.BytesIO()
+
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in results:
+            if item.get("found", False):
+                filename = item["name"].replace(".", "/") + ".java"
+                zf.writestr(filename, item["content"])
+
+        index_data = {
+            "total": len(results),
+            "found": sum(1 for r in results if r.get("found", False)),
+            "classes": [
+                {"name": r["name"], "found": r.get("found", False)}
+                for r in results
+            ]
+        }
+        zf.writestr("_index.json", json.dumps(index_data, indent=2))
+
+    return buffer.getvalue(), index_data
+
+
+def _build_json_response_payload(
+    results: list[dict],
+    compression: str,
+) -> tuple[bytes, dict, str, int]:
+    """Serialize and compress JSON in a worker thread."""
+    response_data = {
+        "classes": results,
+        "total": len(results),
+        "found": sum(1 for r in results if r.get("found", False))
+    }
+    data_bytes = json.dumps(response_data, ensure_ascii=False).encode("utf-8")
+    compressed_data, actual_encoding = compress_data(data_bytes, compression)
+    return compressed_data, response_data, actual_encoding, len(data_bytes)
 
 
 async def _fetch_batch_classes(class_names: list, instance_id: Optional[str]) -> list:
@@ -191,20 +230,29 @@ async def download_batch_classes(request: Request):
     
     instance_id = request.query_params.get("instance_id")
     
-    # 2. 验证令牌
+    # 2. 原子消费令牌
     store = get_token_store()
-    token = store.validate(token_id)
+    token = store.consume(token_id, ResourceType.BATCH_CLASSES)
     
     if token is None:
-        logger.warning(f"Invalid or expired token from {client_ip}: {token_id[:8]}...")
+        existing_token = store.validate(token_id)
+        if existing_token is not None and existing_token.resource_type != ResourceType.BATCH_CLASSES:
+            logger.warning(
+                f"Token not authorized for batch_classes from {client_ip}: "
+                f"{existing_token.resource_type}"
+            )
+            return JSONResponse(
+                {
+                    "error": (
+                        "Token not authorized for this resource. "
+                        f"Expected batch_classes, got {existing_token.resource_type.value}"
+                    )
+                },
+                status_code=403
+            )
+
+        logger.warning(f"Invalid, expired, or used token from {client_ip}: {token_id[:8]}...")
         return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
-    
-    if token.resource_type != ResourceType.BATCH_CLASSES:
-        logger.warning(f"Token not authorized for batch_classes from {client_ip}: {token.resource_type}")
-        return JSONResponse(
-            {"error": f"Token not authorized for this resource. Expected batch_classes, got {token.resource_type.value}"}, 
-            status_code=403
-        )
     
     logger.info(f"Download request from {client_ip}: {len(class_names)} classes, format={format_type}, compression={compression_param}")
 
@@ -216,36 +264,14 @@ async def download_batch_classes(request: Request):
         logger.error(f"Failed to fetch classes: {e}")
         return JSONResponse({"error": f"Failed to fetch classes: {str(e)}"}, status_code=500)
     
-    # 4. 标记令牌已使用
-    store.mark_used(token_id)
-    
-    # 5. 构建响应
+    # 4. 构建响应
     if format_type == "zip":
-        # ZIP 格式：每个类一个文件
-        buffer = io.BytesIO()
         try:
-            with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for item in results:
-                    if item.get("found", False):
-                        # 转换类名为文件路径: com.example.A -> com/example/A.java
-                        filename = item["name"].replace(".", "/") + ".java"
-                        zf.writestr(filename, item["content"])
-                
-                # 添加索引文件
-                index_data = {
-                    "total": len(results),
-                    "found": sum(1 for r in results if r.get("found", False)),
-                    "classes": [
-                        {"name": r["name"], "found": r.get("found", False)}
-                        for r in results
-                    ]
-                }
-                zf.writestr("_index.json", json.dumps(index_data, indent=2))
-            
+            payload, index_data = await asyncio.to_thread(_build_zip_response_payload, results)
             logger.info(f"Created ZIP with {index_data['found']} classes")
             
             return Response(
-                content=buffer.getvalue(),
+                content=payload,
                 media_type="application/zip",
                 headers={
                     "Content-Disposition": f"attachment; filename=classes.zip",
@@ -258,15 +284,6 @@ async def download_batch_classes(request: Request):
             return JSONResponse({"error": f"Failed to create ZIP: {str(e)}"}, status_code=500)
     
     else:
-        # JSON 格式
-        response_data = {
-            "classes": results,
-            "total": len(results),
-            "found": sum(1 for r in results if r.get("found", False))
-        }
-        
-        data_bytes = json.dumps(response_data, ensure_ascii=False).encode("utf-8")
-        
         # 选择压缩算法
         if compression_param == "auto":
             accept_encoding = request.headers.get("Accept-Encoding", "")
@@ -275,21 +292,29 @@ async def download_batch_classes(request: Request):
             compression = "identity"
         else:
             compression = compression_param  # br 或 gzip
-        
-        compressed_data, actual_encoding = compress_data(data_bytes, compression)
+
+        try:
+            compressed_data, response_data, actual_encoding, original_size = await asyncio.to_thread(
+                _build_json_response_payload,
+                results,
+                compression,
+            )
+        except Exception as e:
+            logger.error(f"Failed to build JSON response: {e}")
+            return JSONResponse({"error": f"Failed to build JSON response: {str(e)}"}, status_code=500)
         
         headers = {
             "Content-Type": "application/json; charset=utf-8",
             "X-Total-Classes": str(len(results)),
             "X-Found-Classes": str(response_data['found']),
-            "X-Original-Size": str(len(data_bytes))
+            "X-Original-Size": str(original_size)
         }
         
         if actual_encoding != "identity":
             headers["Content-Encoding"] = actual_encoding
         
         logger.info(
-            f"Returning JSON response: {len(data_bytes)} bytes "
+            f"Returning JSON response: {original_size} bytes "
             f"(compressed: {len(compressed_data)} bytes, encoding: {actual_encoding})"
         )
         

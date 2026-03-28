@@ -10,7 +10,7 @@ License: See LICENSE file
 """
 
 from typing import Optional
-from src.server.config import get_from_jadx
+from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
 
 
 async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
@@ -159,7 +159,7 @@ def register_refactor_tools(mcp, with_busy_check):
         target_type_lower = target_type.lower()
 
         if dry_run:
-            from src.server.config import get_from_jadx as _get
+            from src.server.request_context import get_from_jadx_for_current_user as _get
             # Verify target exists via get_class_info (lightweight, no decompile)
             lookup_class = old_name if target_type_lower in ("class", "package") else class_name
             if not lookup_class:

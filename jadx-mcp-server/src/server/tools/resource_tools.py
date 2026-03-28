@@ -9,8 +9,8 @@ License: See LICENSE file
 """
 
 from typing import Optional
-from src.server.config import get_from_jadx
 from src.PaginationUtils import PaginationUtils
+from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
 
 
 async def get_android_manifest(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
@@ -707,4 +707,3 @@ def register_resource_tools(mcp, with_busy_check):
             instance_id: Optional. Target JADX instance name. Uses default if not specified.
         """
         return await _jar_get_bytecode(class_name, instance_id=instance_id)
-

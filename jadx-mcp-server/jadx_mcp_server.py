@@ -211,9 +211,15 @@ def main():
                 args.host = loaded_config.server.host
             if loaded_config.server.port and args.port == parser.get_default("port"):
                 args.port = loaded_config.server.port
-            if loaded_config.defaults.request_timeout:
+            if (
+                loaded_config.defaults.request_timeout
+                and args.request_timeout == parser.get_default("request_timeout")
+            ):
                 args.request_timeout = loaded_config.defaults.request_timeout
-            if loaded_config.defaults.busy_timeout:
+            if (
+                loaded_config.defaults.busy_timeout
+                and args.max_busy_timeout == parser.get_default("max_busy_timeout")
+            ):
                 args.max_busy_timeout = loaded_config.defaults.busy_timeout
         else:
             print(f"[WARN] Config file not found: {config_path}, using CLI arguments")
@@ -400,14 +406,19 @@ def main():
         nonlocal auth_users, allow_anonymous, require_auth
         print(f"\n[Hot-Reload] Configuration changed, updating instances...")
         
-        # Get current instance names
-        current_names = {inst["name"] for inst in InstanceRegistry.list_instances()}
+        current_instances = InstanceRegistry.list_instances()
+        current_names = {inst["name"] for inst in current_instances}
+        current_config_names = {
+            inst["name"]
+            for inst in current_instances
+            if inst.get("registration_source") == "config"
+        }
         
         # Get new enabled instance names from config
         new_names = {inst.name for inst in new_config.jadx_instances if inst.enabled}
         
-        # Remove instances no longer in config (system-level operation)
-        for name in current_names - new_names:
+        # Remove config-managed instances no longer in config (system-level operation)
+        for name in current_config_names - new_names:
             result = InstanceRegistry.remove_instance(name, username="system", is_admin=True)
             print(f"  [Hot-Reload] Removed: {name}")
         
@@ -415,7 +426,11 @@ def main():
         for inst_cfg in new_config.jadx_instances:
             if inst_cfg.enabled and inst_cfg.name not in current_names:
                 result = await InstanceRegistry.add_instance(
-                    inst_cfg.host, inst_cfg.port, inst_cfg.name, registration_source="config"
+                    inst_cfg.host,
+                    inst_cfg.port,
+                    inst_cfg.name,
+                    token=inst_cfg.token if inst_cfg.token else None,
+                    registration_source="config",
                 )
                 if result["success"]:
                     print(f"  [Hot-Reload] Added: {inst_cfg.name}")

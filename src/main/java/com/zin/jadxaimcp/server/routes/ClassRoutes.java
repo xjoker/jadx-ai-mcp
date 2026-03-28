@@ -50,6 +50,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -68,7 +69,7 @@ public class ClassRoutes {
     private final PaginationUtils paginationUtils;
     
     // Thread pool for parallel batch search
-    private static final ExecutorService SEARCH_EXECUTOR = Executors.newFixedThreadPool(
+    private final ExecutorService searchExecutor = Executors.newFixedThreadPool(
         Math.max(2, Runtime.getRuntime().availableProcessors() - 1));
 
     /**
@@ -104,10 +105,15 @@ public class ClassRoutes {
     private static final int DEFAULT_RESULT_LIMIT = 50;   // Default results per page
     private static final int MAX_RESULT_LIMIT = 200;      // Maximum results per page
     private static final int SEARCH_TIMEOUT_SECONDS = 60; // Timeout for search operations
+    private static final String SEARCH_DECOMPILATION_BUSY_MESSAGE = "Search/decompilation operation in progress";
 
     public ClassRoutes(MainWindow mainWindow, PaginationUtils paginationUtils) {
         this.mainWindow = mainWindow;
         this.paginationUtils = paginationUtils;
+    }
+
+    public void shutdownSearchExecutor() {
+        searchExecutor.shutdownNow();
     }
 
     // ------------------------------- Request Handlers --------------------------
@@ -708,6 +714,7 @@ public class ClassRoutes {
             }
         }
 
+        boolean lockAcquired = false;
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
             
@@ -719,6 +726,12 @@ public class ClassRoutes {
                     ctx, fileType.getPrimaryType().getName());
                 return;
             }
+
+            if (!JadxSearchLock.tryAcquire()) {
+                sendSearchDecompilationBusyResponse(ctx);
+                return;
+            }
+            lockAcquired = true;
             
             for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                 if (cls.getFullName().equals(className)) {
@@ -748,6 +761,10 @@ public class ClassRoutes {
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving smali: " + e.getMessage(), e, logger);
+        } finally {
+            if (lockAcquired) {
+                JadxSearchLock.release();
+            }
         }
     }
 
@@ -889,6 +906,7 @@ public class ClassRoutes {
      *                Note: Only available for APK/AAR files with AndroidManifest.xml
      */
     public void handleMainActivity(Context ctx) {
+        boolean lockAcquired = false;
         try {
             // Parse chunk parameter
             int chunk = 0;
@@ -942,6 +960,12 @@ public class ClassRoutes {
                 return;
             }
 
+            if (!JadxSearchLock.tryAcquire()) {
+                sendSearchDecompilationBusyResponse(ctx);
+                return;
+            }
+            lockAcquired = true;
+
             // Use SmartChunker for large responses
             String code = mainActivityClass.getCode();
             Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
@@ -954,6 +978,10 @@ public class ClassRoutes {
             JadxAIMCPPluginError.handleError(ctx,
                     "Internal error occurred while trying to get the Main Activity class code: " + e.getMessage(), e,
                     logger);
+        } finally {
+            if (lockAcquired) {
+                JadxSearchLock.release();
+            }
         }
     }
 
@@ -1086,33 +1114,47 @@ public class ClassRoutes {
                     ", limit: " + ctx.queryParam("limit") +
                     ", count: " + ctx.queryParam("count"));
 
-            // Build list of class info maps Before pagination
+            PaginationWindow paginationWindow = resolvePaginationWindow(ctx, matchedClasses.size());
+
+            // Build list of class info maps only for the requested page
             List<Map<String, Object>> classInfoList = new ArrayList<>();
-            for (JavaClass cls : matchedClasses) {
-                Map<String, Object> classInfo = new HashMap<>();
-                classInfo.put("name", cls.getFullName());
-                classInfo.put("type", "code/java");
-                try {
-                    String code = cls.getCode();
-                    classInfo.put("content", code);
-                    logger.debug("JADX AI MCP: Successfully got code for " + cls.getFullName() +
-                            " (length: " + code.length() + ")");
-                } catch (Exception e) {
-                    logger.warn("Failed to decompile class " + cls.getFullName() + ": " + e.getMessage());
-                    classInfo.put("content", "// Error decompiling class: " + e.getMessage());
+            if (paginationWindow.hasResults()) {
+                if (!JadxSearchLock.tryAcquire()) {
+                    sendSearchDecompilationBusyResponse(ctx);
+                    return;
                 }
-                classInfoList.add(classInfo);
+
+                try {
+                    for (JavaClass cls : matchedClasses.subList(
+                            paginationWindow.getStartIndex(),
+                            paginationWindow.getEndIndex())) {
+                        Map<String, Object> classInfo = new HashMap<>();
+                        classInfo.put("name", cls.getFullName());
+                        classInfo.put("type", "code/java");
+                        try {
+                            String code = cls.getCode();
+                            classInfo.put("content", code);
+                            logger.debug("JADX AI MCP: Successfully got code for " + cls.getFullName() +
+                                    " (length: " + code.length() + ")");
+                        } catch (Exception e) {
+                            logger.warn("Failed to decompile class " + cls.getFullName() + ": " + e.getMessage());
+                            classInfo.put("content", "// Error decompiling class: " + e.getMessage());
+                        }
+                        classInfoList.add(classInfo);
+                    }
+                } finally {
+                    JadxSearchLock.release();
+                }
             }
 
             logger.info("JADX AI MCP: Built " + classInfoList.size() + " class info objects");
 
-            // Apply pagination to the pre-build list
-            Map<String, Object> result = paginationUtils.handlePagination(
-                    ctx,
+            Map<String, Object> result = buildPaginatedResponse(
                     classInfoList,
+                    matchedClasses.size(),
+                    paginationWindow,
                     "application-classes",
-                    "classes",
-                    item -> item); // Identity function since items are already transformed
+                    "classes");
 
             ctx.json(result);
         } catch (PaginationException e) {
@@ -1353,7 +1395,7 @@ public class ClassRoutes {
         int resultsNeeded
     ) {
         final String term = searchTerm.toLowerCase();
-        final ConcurrentLinkedQueue<String> results = new ConcurrentLinkedQueue<>();
+        final Set<String> matchedClasses = ConcurrentHashMap.newKeySet();
         final AtomicInteger totalMatches = new AtomicInteger(0);
         final AtomicBoolean cancelled = new AtomicBoolean(false);
 
@@ -1361,6 +1403,7 @@ public class ClassRoutes {
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(SEARCH_TIMEOUT_SECONDS);
         boolean timedOut = false;
         int batchCount = 0;
+        boolean requiresContentSearch = requiresContentSearch(searchLocations);
 
         if (collectAllResults && filteredClasses.size() > 100) {
             List<JavaClass> topClasses = new ArrayList<>();
@@ -1376,9 +1419,10 @@ public class ClassRoutes {
 
             Set<JavaClass> includedSet = new HashSet<>(filteredClasses);
             List<Future<?>> futures = new ArrayList<>();
+            ConcurrentLinkedQueue<JavaClass> contentCandidates = new ConcurrentLinkedQueue<>();
 
             for (List<JavaClass> batch : batches) {
-                Future<?> future = SEARCH_EXECUTOR.submit(() -> {
+                Future<?> future = searchExecutor.submit(() -> {
                     for (JavaClass cls : batch) {
                         if (cancelled.get() || Thread.currentThread().isInterrupted()) {
                             return;
@@ -1392,13 +1436,16 @@ public class ClassRoutes {
                         }
 
                         try {
-                            if (classMatchesAnyLocation(cls, term, searchLocations)) {
-                                int total = totalMatches.incrementAndGet();
-                                results.add(cls.getFullName());
-                                if (!collectAllResults && total >= resultsNeeded) {
-                                    cancelled.set(true);
-                                    return;
+                            if (classMatchesAnyMetadataLocation(cls, term, searchLocations)) {
+                                if (matchedClasses.add(cls.getFullName())) {
+                                    int total = totalMatches.incrementAndGet();
+                                    if (!collectAllResults && total >= resultsNeeded) {
+                                        cancelled.set(true);
+                                        return;
+                                    }
                                 }
+                            } else if (requiresContentSearch) {
+                                contentCandidates.add(cls);
                             }
                         } catch (Exception ignored) {
                             // Skip failed classes and continue scanning remaining classes.
@@ -1425,6 +1472,27 @@ public class ClassRoutes {
                     // Ignore individual batch failures and keep any partial matches found.
                 }
             }
+
+            if (!timedOut && requiresContentSearch) {
+                for (JavaClass cls : contentCandidates) {
+                    if (cancelled.get()) {
+                        break;
+                    }
+                    if (System.nanoTime() >= deadlineNanos) {
+                        timedOut = true;
+                        cancelled.set(true);
+                        break;
+                    }
+                    if (classMatchesAnyContentLocation(cls, term, searchLocations)
+                            && matchedClasses.add(cls.getFullName())) {
+                        int total = totalMatches.incrementAndGet();
+                        if (!collectAllResults && total >= resultsNeeded) {
+                            cancelled.set(true);
+                            break;
+                        }
+                    }
+                }
+            }
         } else {
             for (JavaClass cls : filteredClasses) {
                 if (cancelled.get()) {
@@ -1434,11 +1502,13 @@ public class ClassRoutes {
                     timedOut = true;
                     break;
                 }
-                if (classMatchesAnyLocation(cls, term, searchLocations)) {
-                    int total = totalMatches.incrementAndGet();
-                    results.add(cls.getFullName());
-                    if (!collectAllResults && total >= resultsNeeded) {
-                        cancelled.set(true);
+                boolean metadataMatched = classMatchesAnyMetadataLocation(cls, term, searchLocations);
+                if (metadataMatched || (requiresContentSearch && classMatchesAnyContentLocation(cls, term, searchLocations))) {
+                    if (matchedClasses.add(cls.getFullName())) {
+                        int total = totalMatches.incrementAndGet();
+                        if (!collectAllResults && total >= resultsNeeded) {
+                            cancelled.set(true);
+                        }
                     }
                 }
             }
@@ -1455,7 +1525,7 @@ public class ClassRoutes {
         searchInfo.put("search_locations", searchLocations.toString());
 
         CodeSearchCoordinator.SearchResult result = new CodeSearchCoordinator.SearchResult(
-            new ArrayList<>(results),
+            buildOrderedMatchList(filteredClasses, matchedClasses),
             searchInfo
         );
 
@@ -1476,12 +1546,8 @@ public class ClassRoutes {
         String term,
         Set<SearchLocation> searchLocations
     ) {
-        for (SearchLocation location : searchLocations) {
-            if (classMatchesInLocation(cls, term, location)) {
-                return true;
-            }
-        }
-        return false;
+        return classMatchesAnyMetadataLocation(cls, term, searchLocations)
+            || classMatchesAnyContentLocation(cls, term, searchLocations);
     }
 
     private Map<String, Object> buildSearchResponse(
@@ -1516,6 +1582,13 @@ public class ClassRoutes {
             busyResponse.put("waited_seconds", waitedSeconds);
         }
         ctx.status(503).json(busyResponse);
+    }
+
+    private void sendSearchDecompilationBusyResponse(Context ctx) {
+        ctx.status(503).json(Map.of(
+            "error", SEARCH_DECOMPILATION_BUSY_MESSAGE,
+            "retry_after", JadxSearchLock.RETRY_AFTER_SECONDS
+        ));
     }
 
     private static final class SearchExecution {
@@ -1576,23 +1649,236 @@ public class ClassRoutes {
                     }
                     return false;
                     
-                case CODE:
-                    String code = cls.getCode();
-                    return code != null && code.toLowerCase().contains(term);
-                    
-                case COMMENT:
-                    String commentCode = cls.getCode();
-                    if (commentCode == null) return false;
-                    // Check for comments containing the term
-                    return commentCode.contains("//" + term) || commentCode.contains("/*" + term)
-                        || (commentCode.toLowerCase().contains("//") && commentCode.toLowerCase().contains(term))
-                        || (commentCode.toLowerCase().contains("/*") && commentCode.toLowerCase().contains(term));
-                    
                 default:
                     return false;
             }
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    private boolean classMatchesAnyMetadataLocation(
+        JavaClass cls,
+        String term,
+        Set<SearchLocation> searchLocations
+    ) {
+        for (SearchLocation location : searchLocations) {
+            if (location == SearchLocation.CODE || location == SearchLocation.COMMENT) {
+                continue;
+            }
+            if (classMatchesInLocation(cls, term, location)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean classMatchesAnyContentLocation(
+        JavaClass cls,
+        String term,
+        Set<SearchLocation> searchLocations
+    ) {
+        if (!requiresContentSearch(searchLocations)) {
+            return false;
+        }
+
+        try {
+            String code = cls.getCode();
+            if (code == null) {
+                return false;
+            }
+
+            String normalizedCode = code.toLowerCase();
+            if (searchLocations.contains(SearchLocation.CODE) && normalizedCode.contains(term)) {
+                return true;
+            }
+            return searchLocations.contains(SearchLocation.COMMENT) && matchesCommentSearch(normalizedCode, term);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean matchesCommentSearch(String normalizedCode, String term) {
+        return normalizedCode.contains("//" + term)
+            || normalizedCode.contains("/*" + term)
+            || (normalizedCode.contains("//") && normalizedCode.contains(term))
+            || (normalizedCode.contains("/*") && normalizedCode.contains(term));
+    }
+
+    private boolean requiresContentSearch(Set<SearchLocation> searchLocations) {
+        return searchLocations.contains(SearchLocation.CODE)
+            || searchLocations.contains(SearchLocation.COMMENT);
+    }
+
+    private List<String> buildOrderedMatchList(List<JavaClass> filteredClasses, Set<String> matchedClasses) {
+        List<String> orderedMatches = new ArrayList<>();
+        for (JavaClass cls : filteredClasses) {
+            String fullName = cls.getFullName();
+            if (matchedClasses.contains(fullName)) {
+                orderedMatches.add(fullName);
+            }
+        }
+        return orderedMatches;
+    }
+
+    private PaginationWindow resolvePaginationWindow(Context ctx, int totalItems) throws PaginationException {
+        String offsetParam = ctx.queryParam("offset");
+        String limitParam = ctx.queryParam("limit");
+        String countParam = ctx.queryParam("count");
+        String pageSizeParam = limitParam != null ? limitParam : countParam;
+
+        int offset = 0;
+        int requestedLimit = 0;
+        boolean hasCustomLimit = pageSizeParam != null && !pageSizeParam.isEmpty();
+
+        if (offsetParam != null && !offsetParam.isEmpty()) {
+            try {
+                offset = Integer.parseInt(offsetParam.trim());
+                if (offset < 0) {
+                    throw paginationUtils.new PaginationException("Offset must be non-negative, got: " + offset);
+                }
+                if (offset > paginationUtils.MAX_OFFSET) {
+                    throw paginationUtils.new PaginationException(
+                        "Offset too large, maximum: " + paginationUtils.MAX_OFFSET);
+                }
+            } catch (NumberFormatException e) {
+                throw paginationUtils.new PaginationException("Invalid offset format: '" + offsetParam + "'");
+            }
+        }
+
+        if (hasCustomLimit) {
+            try {
+                requestedLimit = Integer.parseInt(pageSizeParam.trim());
+                if (requestedLimit < 0) {
+                    throw paginationUtils.new PaginationException(
+                        "Limit must be non-negative, got: " + requestedLimit);
+                }
+                if (requestedLimit > paginationUtils.MAX_PAGE_SIZE) {
+                    throw paginationUtils.new PaginationException(
+                        "Limit too large, maximum: " + paginationUtils.MAX_PAGE_SIZE);
+                }
+            } catch (NumberFormatException e) {
+                throw paginationUtils.new PaginationException("Invalid limit format: '" + pageSizeParam + "'");
+            }
+        }
+
+        int effectiveLimit;
+        if (hasCustomLimit) {
+            effectiveLimit = requestedLimit == 0 ? Math.max(0, totalItems - offset) : requestedLimit;
+        } else {
+            effectiveLimit = Math.min(paginationUtils.DEFAULT_PAGE_SIZE, Math.max(0, totalItems - offset));
+        }
+        effectiveLimit = Math.max(0, Math.min(effectiveLimit, totalItems - offset));
+
+        if (offset >= totalItems) {
+            return new PaginationWindow(offset, effectiveLimit, requestedLimit, 0, 0, false, totalItems);
+        }
+
+        int startIndex = offset;
+        int endIndex = Math.min(startIndex + effectiveLimit, totalItems);
+        boolean hasMore = endIndex < totalItems;
+        int nextOffset = hasMore ? endIndex : -1;
+
+        return new PaginationWindow(offset, effectiveLimit, requestedLimit, startIndex, endIndex, hasMore, nextOffset);
+    }
+
+    private Map<String, Object> buildPaginatedResponse(
+        List<?> data,
+        int totalItems,
+        PaginationWindow window,
+        String dataType,
+        String itemsKey
+    ) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("type", dataType);
+        result.put(itemsKey, data);
+
+        Map<String, Object> pagination = new HashMap<>();
+        pagination.put("total", totalItems);
+        pagination.put("offset", window.getOffset());
+        pagination.put("limit", window.getLimit());
+        pagination.put("count", data.size());
+        pagination.put("has_more", window.hasMore());
+
+        if (window.hasMore()) {
+            pagination.put("next_offset", window.getNextOffset());
+        }
+
+        if (window.getOffset() > 0) {
+            int prevOffset = Math.max(0, window.getOffset() - window.getLimit());
+            pagination.put("prev_offset", prevOffset);
+        }
+
+        if (window.getLimit() > 0) {
+            int currentPage = (window.getOffset() / window.getLimit()) + 1;
+            int totalPages = (int) Math.ceil((double) totalItems / window.getLimit());
+            pagination.put("current_page", currentPage);
+            pagination.put("total_pages", totalPages);
+            pagination.put("page_size", window.getLimit());
+        }
+
+        result.put("requested_count", window.getRequestedLimit());
+        result.put("pagination", pagination);
+        return result;
+    }
+
+    private static final class PaginationWindow {
+        private final int offset;
+        private final int limit;
+        private final int requestedLimit;
+        private final int startIndex;
+        private final int endIndex;
+        private final boolean hasMore;
+        private final int nextOffset;
+
+        private PaginationWindow(
+            int offset,
+            int limit,
+            int requestedLimit,
+            int startIndex,
+            int endIndex,
+            boolean hasMore,
+            int nextOffset
+        ) {
+            this.offset = offset;
+            this.limit = limit;
+            this.requestedLimit = requestedLimit;
+            this.startIndex = startIndex;
+            this.endIndex = endIndex;
+            this.hasMore = hasMore;
+            this.nextOffset = nextOffset;
+        }
+
+        public int getOffset() {
+            return offset;
+        }
+
+        public int getLimit() {
+            return limit;
+        }
+
+        public int getRequestedLimit() {
+            return requestedLimit;
+        }
+
+        public int getStartIndex() {
+            return startIndex;
+        }
+
+        public int getEndIndex() {
+            return endIndex;
+        }
+
+        public boolean hasMore() {
+            return hasMore;
+        }
+
+        public int getNextOffset() {
+            return nextOffset;
+        }
+
+        public boolean hasResults() {
+            return endIndex > startIndex;
         }
     }
 

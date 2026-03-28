@@ -26,6 +26,7 @@ import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.JadxSearchLock;
 
 public class XrefsRoutes {
     private static final Logger logger = LoggerFactory.getLogger(XrefsRoutes.class);
@@ -62,6 +63,9 @@ public class XrefsRoutes {
         String className = validateRequiredParam(ctx, "class_name");
         if (className == null) return;
 
+        if (!tryAcquireDecompileLock(ctx)) {
+            return;
+        }
         try {
             JavaClass targetJavaClass = findClassByName(ctx, className);
             if (targetJavaClass == null) return;
@@ -128,6 +132,8 @@ public class XrefsRoutes {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToClass(): " + e.getMessage(), logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to find class references: " + e.getMessage(), e, logger);
+        } finally {
+            JadxSearchLock.release();
         }
     }
 
@@ -156,6 +162,9 @@ public class XrefsRoutes {
         String methodName = validateRequiredParam(ctx, "method_name");
         if (className == null || methodName == null) return;
 
+        if (!tryAcquireDecompileLock(ctx)) {
+            return;
+        }
         try {
             JavaClass containingClass = findClassByName(ctx, className);
             if (containingClass == null) return;
@@ -183,6 +192,8 @@ public class XrefsRoutes {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToMethod(): " + e.getMessage(), logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to find method references: " + e.getMessage(), e, logger);
+        } finally {
+            JadxSearchLock.release();
         }
     }
 
@@ -205,6 +216,9 @@ public class XrefsRoutes {
         String fieldName = validateRequiredParam(ctx, "field_name");
         if (className == null || fieldName == null) return;
 
+        if (!tryAcquireDecompileLock(ctx)) {
+            return;
+        }
         try {
             JavaClass containingClass = findClassByName(ctx, className);
             if (containingClass == null) return;
@@ -220,6 +234,8 @@ public class XrefsRoutes {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToField(): " + e.getMessage(), logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error occurred while trying to find field references: " + e.getMessage(), e, logger);
+        } finally {
+            JadxSearchLock.release();
         }
     }
     // Helper methods
@@ -469,6 +485,9 @@ public class XrefsRoutes {
             return;
         }
 
+        if (!tryAcquireDecompileLock(ctx)) {
+            return;
+        }
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
             
@@ -529,10 +548,12 @@ public class XrefsRoutes {
 
                 List<Map<String, String>> xrefs = new ArrayList<>();
                 Set<String> seen = new HashSet<>();
+                boolean matched = false;
 
                 try {
                     switch (type) {
                         case "class":
+                            matched = true;
                             ClassNode classNode = targetClass.getClassNode();
                             for (MethodNode mth : classNode.getUseInMth()) {
                                 Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
@@ -550,11 +571,18 @@ public class XrefsRoutes {
                             String methodName = parts[2];
                             for (JavaMethod method : targetClass.getMethods()) {
                                 if (method.getName().equals(methodName)) {
+                                    matched = true;
                                     for (MethodNode mth : method.getMethodNode().getUseIn()) {
                                         Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
                                         addIfUnique(xrefs, seen, ref);
                                     }
                                 }
+                            }
+                            if (!matched) {
+                                result.put("found", false);
+                                result.put("error", "Method '" + methodName + "' not found in class " + className);
+                                results.add(result);
+                                continue;
                             }
                             break;
                             
@@ -568,11 +596,18 @@ public class XrefsRoutes {
                             String fieldName = parts[2];
                             for (JavaField field : targetClass.getFields()) {
                                 if (field.getName().equals(fieldName)) {
+                                    matched = true;
                                     for (MethodNode mth : field.getFieldNode().getUseIn()) {
                                         Map<String, String> ref = extractMethodNodeReferenceInfo(mth);
                                         addIfUnique(xrefs, seen, ref);
                                     }
                                 }
+                            }
+                            if (!matched) {
+                                result.put("found", false);
+                                result.put("error", "Field '" + fieldName + "' not found in class " + className);
+                                results.add(result);
+                                continue;
                             }
                             break;
                             
@@ -601,6 +636,21 @@ public class XrefsRoutes {
 
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error in batch xrefs: " + e.getMessage(), e, logger);
+        } finally {
+            JadxSearchLock.release();
         }
+    }
+
+    private boolean tryAcquireDecompileLock(Context ctx) {
+        if (JadxSearchLock.tryAcquire()) {
+            return true;
+        }
+
+        Map<String, Object> busyResponse = new HashMap<>();
+        busyResponse.put("error", "Decompilation operation in progress");
+        busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+        busyResponse.put("busy", true);
+        ctx.status(503).json(busyResponse);
+        return false;
     }
 }

@@ -179,6 +179,20 @@ class TestInstanceRegistryUserVisibility:
         # Admin can access any
         assert InstanceRegistry.get_instance_for_user("bob-inst", "admin", True) is not None
 
+    def test_get_default_for_user_falls_back_to_first_visible_instance(self):
+        """User-specific default should skip inaccessible global defaults."""
+        InstanceRegistry.register_pending_instance("bob-inst", "127.0.0.1", 8650, owner="bob")
+        InstanceRegistry.register_pending_instance("shared", "127.0.0.1", 8651, owner=None)
+        InstanceRegistry.register_pending_instance("alice-inst", "127.0.0.1", 8652, owner="alice")
+
+        alice_default = InstanceRegistry.get_default_for_user("alice", is_admin=False)
+        admin_default = InstanceRegistry.get_default_for_user("admin", is_admin=True)
+
+        assert alice_default is not None
+        assert alice_default.name == "shared"
+        assert admin_default is not None
+        assert admin_default.name == "bob-inst"
+
 
 class TestInstanceRegistryDefaults:
     """Tests for default instance management"""

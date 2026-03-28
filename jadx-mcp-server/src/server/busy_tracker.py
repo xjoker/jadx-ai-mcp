@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
-from .instance_registry import InstanceRegistry
 from .logging_config import get_logger
 from .types import ErrorCode
 
@@ -295,11 +294,32 @@ class InstanceBusyTracker:
         }
 
     @classmethod
-    def _resolve_instance_name(cls, requested_instance: str | None) -> str | None:
-        if requested_instance:
-            return requested_instance
+    def _resolve_instance_name(
+        cls,
+        requested_instance: str | None,
+        username: str | None = None,
+        is_admin: bool = False,
+    ) -> str | None:
+        try:
+            from .instance_registry import InstanceRegistry
+        except ImportError:
+            return requested_instance or DEFAULT_INSTANCE_TRACKING_KEY
 
-        default_instance = InstanceRegistry.get_default()
+        if requested_instance:
+            instance = InstanceRegistry.get_instance(requested_instance)
+            if instance is None:
+                instance = InstanceRegistry.find_instance_by_apk(
+                    requested_instance,
+                    username=username,
+                    is_admin=is_admin,
+                )
+            return instance.name if instance else requested_instance
+
+        default_instance = (
+            InstanceRegistry.get_default_for_user(username, is_admin)
+            if username is not None
+            else InstanceRegistry.get_default()
+        )
         if default_instance:
             return default_instance.name
 
@@ -538,7 +558,23 @@ def with_busy_check(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaita
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         bound = signature.bind_partial(*args, **kwargs)
         requested_instance = bound.arguments.get("instance_id")
-        instance_name = InstanceBusyTracker._resolve_instance_name(requested_instance)
+        username = None
+        is_admin = False
+        try:
+            from .user_auth import UserAuthManager
+
+            user = UserAuthManager.get_current_user()
+            if user is not None:
+                username = user.name
+                is_admin = user.is_admin
+        except ImportError:
+            pass
+
+        instance_name = InstanceBusyTracker._resolve_instance_name(
+            requested_instance,
+            username=username,
+            is_admin=is_admin,
+        )
 
         if instance_name is None:
             return {
