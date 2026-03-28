@@ -378,7 +378,9 @@ public class MethodRoutes {
                         if (collected < count) {
                             Map<String, String> match = new HashMap<>();
                             match.put("class_name", cls.getFullName());
+                            match.put("raw_class_name", cls.getRawName());
                             match.put("method_name", mthName);
+                            match.put("raw_method_name", mthName);
                             match.put("is_constructor", String.valueOf(methodInfo.isConstructor()));
                             results.add(match);
                             collected++;
@@ -1008,7 +1010,12 @@ public class MethodRoutes {
 
                         Map<String, Object> nativeMethodInfo = new HashMap<>();
                         nativeMethodInfo.put("class_name", className);
-                        nativeMethodInfo.put("method_name", methodSnapshot.getName());
+                        nativeMethodInfo.put("raw_class_name", JadxApiAdapter.getClassRawName(cls));
+                        String methodAliasName = methodSnapshot.getAliasName() != null
+                            ? methodSnapshot.getAliasName()
+                            : methodSnapshot.getName();
+                        nativeMethodInfo.put("method_name", methodAliasName);
+                        nativeMethodInfo.put("raw_method_name", methodSnapshot.getName());
                         nativeMethodInfo.put("short_id", methodSnapshot.getShortId());
 
                         // Get parameter types for Frida overload

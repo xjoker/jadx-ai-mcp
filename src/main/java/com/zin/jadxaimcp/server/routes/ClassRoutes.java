@@ -185,7 +185,12 @@ public class ClassRoutes {
                     classes,
                     "class-list",
                     "classes",
-                    JavaClass::getFullName);
+                    cls -> {
+                        Map<String, Object> classEntry = new HashMap<>();
+                        classEntry.put("name", JadxApiAdapter.getClassAliasName(cls));
+                        classEntry.put("raw_name", JadxApiAdapter.getClassRawName(cls));
+                        return classEntry;
+                    });
             ctx.json(result);
         } catch (PaginationException e) {
             JadxAIMCPPluginError.handleError(ctx, "Pagination Error: " + e.getMessage(), e, logger);
@@ -853,10 +858,13 @@ public class ClassRoutes {
                 info.put("interfaces", interfaces);
 
                 // Inner classes
-                List<String> innerClasses = new ArrayList<>();
+                List<Map<String, Object>> innerClasses = new ArrayList<>();
                 try {
                     for (JavaClass inner : cls.getInnerClasses()) {
-                        innerClasses.add(inner.getFullName());
+                        Map<String, Object> innerEntry = new HashMap<>();
+                        innerEntry.put("name", JadxApiAdapter.getClassAliasName(inner));
+                        innerEntry.put("raw_name", JadxApiAdapter.getClassRawName(inner));
+                        innerClasses.add(innerEntry);
                     }
                 } catch (Exception e) {
                     logger.warn("Failed to get inner classes for {}: {}", className, e.getMessage());
@@ -989,8 +997,9 @@ public class ClassRoutes {
             Map<String, Object> result = com.zin.jadxaimcp.utils.SmartChunker.chunkResponse(
                 code, chunk, "content");
             result.put("name", mainActivityClass.getFullName());
+            result.put("raw_name", JadxApiAdapter.getClassRawName(mainActivityClass));
             result.put("type", "code/java");
-            
+
             ctx.json(result);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx,
@@ -1056,6 +1065,7 @@ public class ClassRoutes {
             for (JavaClass cls : matchedClasses) {
                 Map<String, Object> classInfo = new HashMap<>();
                 classInfo.put("name", cls.getFullName());
+                classInfo.put("raw_name", JadxApiAdapter.getClassRawName(cls));
                 classesInfo.add(classInfo);
             }
 
@@ -1148,6 +1158,7 @@ public class ClassRoutes {
                             paginationWindow.getEndIndex())) {
                         Map<String, Object> classInfo = new HashMap<>();
                         classInfo.put("name", cls.getFullName());
+                        classInfo.put("raw_name", JadxApiAdapter.getClassRawName(cls));
                         classInfo.put("type", "code/java");
                         try {
                             String code = cls.getCode();

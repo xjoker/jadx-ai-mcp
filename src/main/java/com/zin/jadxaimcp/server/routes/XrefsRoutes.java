@@ -385,13 +385,16 @@ public class XrefsRoutes {
             JavaClass parentJavaClass = null;
             if (parent != null) {
                 refInfo.put("class", parent.getFullName());
+                refInfo.put("raw_class", JadxApiAdapter.getClassRawName(parent));
                 parentJavaClass = ensureClassDecompiled(parent);
             }
             String name = method.isClassInit() ? "" : method.getName();
             if ("<clinit>".equals(name)) name = "";
             refInfo.put("method", name);
+            refInfo.put("raw_method", JadxApiAdapter.getMethodRawName(method));
             JadxApiAdapter.MethodInfoSnapshot methodInfo = JadxApiAdapter.getMethodInfo(method);
             refInfo.put("from_method", methodInfo != null ? methodInfo.getFullId() : method.getFullName());
+            refInfo.put("raw_from_method", JadxApiAdapter.getMethodRawFullId(method));
             refInfo.put("source_line", resolveDefinitionSourceLine(parentJavaClass, method.getDefPos()));
             return refInfo;
         } catch (Exception e) {
@@ -460,8 +463,11 @@ public class XrefsRoutes {
             if (!hasMethodReferenceInClass) {
                 Map<String, Object> classRefInfo = new HashMap<>();
                 classRefInfo.put("class", topUseClass.getFullName());
+                classRefInfo.put("raw_class", JadxApiAdapter.getClassRawName(topUseClass));
                 classRefInfo.put("method", "");
+                classRefInfo.put("raw_method", "");
                 classRefInfo.put("from_method", "");
+                classRefInfo.put("raw_from_method", "");
                 classRefInfo.put("source_line", resolveDefinitionSourceLine(topUseClass, topUseClass.getDefPos()));
                 addIfUnique(referenceList, seenReferences, classRefInfo);
             }
@@ -537,6 +543,7 @@ public class XrefsRoutes {
             int position) {
         Map<String, Object> refInfo = new HashMap<>();
         refInfo.put("class", topUseClass.getFullName());
+        refInfo.put("raw_class", JadxApiAdapter.getClassRawName(topUseClass));
         refInfo.put("code_snippet", line);
 
         int decompiledLine = CodeUtils.getLineNumForPos(
@@ -551,11 +558,15 @@ public class XrefsRoutes {
             JavaMethod fromMethod = (JavaMethod) enclosingNode;
             String legacyMethodName = fromMethod.isClassInit() ? "" : fromMethod.getName();
             refInfo.put("method", legacyMethodName);
+            refInfo.put("raw_method", JadxApiAdapter.getMethodRawName(fromMethod));
             JadxApiAdapter.MethodInfoSnapshot methodInfo = JadxApiAdapter.getMethodInfo(fromMethod);
             refInfo.put("from_method", methodInfo != null ? methodInfo.getFullId() : fromMethod.getFullName());
+            refInfo.put("raw_from_method", JadxApiAdapter.getMethodRawFullId(fromMethod));
         } else {
             refInfo.put("method", "");
+            refInfo.put("raw_method", "");
             refInfo.put("from_method", "");
+            refInfo.put("raw_from_method", "");
         }
         return refInfo;
     }
