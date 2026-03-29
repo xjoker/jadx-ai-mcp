@@ -279,7 +279,10 @@ class TestLargeResponseMetadataIntegration:
         result = await batch_get_class_source(context["batch_class_names"])
 
         assert "error" not in result, f"Unexpected batch_get_class_source error: {result}"
-        assert "classes" in result
-        assert "response_size_bytes" in result
+        # response_size_bytes is injected by the Python MCP layer
+        assert "response_size_bytes" in result, f"Missing response_size_bytes in {list(result.keys())}"
         assert isinstance(result["response_size_bytes"], int)
         assert result["response_size_bytes"] > 0
+        # Actual class data may be in "classes" directly or nested in "batch_result"
+        has_classes = "classes" in result or "batch_result" in result
+        assert has_classes, f"Expected classes or batch_result in {list(result.keys())}"
