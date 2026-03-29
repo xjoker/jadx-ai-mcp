@@ -188,7 +188,8 @@ class TestRenameMethodIntegration:
 
     async def test_get_rename_method_is_not_allowed(self, jadx_base_url, http_client):
         resp = await http_client.get(f"{jadx_base_url}/rename-method")
-        assert resp.status_code == 405, f"Expected 405, got {resp.status_code}"
+        # Javalin returns 404 for unregistered GET when only POST is registered
+        assert resp.status_code in (404, 405), f"Expected 404 or 405, got {resp.status_code}"
 
 
 class TestRenameFieldIntegration:

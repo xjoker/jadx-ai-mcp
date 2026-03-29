@@ -175,7 +175,13 @@ async def fetch_batch_method_result(jadx_base_url, http_client, class_name: str,
     assert resp.status_code == 200
 
     data = resp.json()
-    methods = data.get("methods")
+    # Response may be direct {"methods": [...]} or wrapped {"batch_result": "JSON string"}
+    if "batch_result" in data and isinstance(data["batch_result"], str):
+        import json
+        inner = json.loads(data["batch_result"])
+        methods = inner.get("methods", [])
+    else:
+        methods = data.get("methods", [])
     assert isinstance(methods, list), f"Expected methods list, got {data}"
     assert len(methods) == 1, f"Expected single batch method result, got {methods}"
     return methods[0]
