@@ -1,0 +1,60 @@
+services:
+  jadx-integration:
+    image: ${TEST_IMAGE:-jadx-ai-mcp:test}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        DOCKER_PLATFORM: ${DOCKER_PLATFORM:-linux/amd64}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    container_name: ${TEST_CONTAINER_NAME:-jadx-ai-mcp-integration}
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        rm -f /apks/target.jar /apks/target.apk
+        case "${TEST_TARGET:-jar}" in
+          jar)
+            ln -sf /fixtures/jadx-test-library-1.0.0.jar /apks/target.jar
+            ;;
+          apk)
+            ln -sf /fixtures/jadx-test-app-1.0.0.apk /apks/target.apk
+            ;;
+          *)
+            echo "Unsupported TEST_TARGET: ${TEST_TARGET:-}" >&2
+            exit 1
+            ;;
+        esac
+        exec /start.sh
+    ports:
+      - "${HOST_JADX_BIND:-127.0.0.1}:${HOST_JADX_PORT:-8650}:8650"
+      - "${HOST_MCP_BIND:-127.0.0.1}:${HOST_MCP_PORT:-8651}:8651"
+    volumes:
+      - ./tests/fixtures/jadx-test-library-1.0.0.jar:/fixtures/jadx-test-library-1.0.0.jar:ro
+      - ./tests/fixtures/jadx-test-app-1.0.0.apk:/fixtures/jadx-test-app-1.0.0.apk:ro
+      - ${TEST_CONFIG_PATH:-./jadx-mcp-server/data/config/jadx-config.toml}:/opt/jadx/jadx-mcp-server/data/config/jadx-config.toml:ro
+    environment:
+      TZ: ${TZ:-UTC}
+      JADX_API_PORT: 8650
+      JADX_MCP_PORT: 8651
+      JADX_MCP_BIND_ADDRESS: 0.0.0.0
+      JADX_MCP_AUTH_ENABLED: "false"
+      JADX_MCP_AUTH_TOKEN: ${JADX_PLUGIN_AUTH_TOKEN:-test-plugin-token}
+      JAVA_OPTS: ${JADX_JAVA_OPTS:--Xmx2560m}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://127.0.0.1:8651}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1:8650/health >/dev/null && curl -fsS http://127.0.0.1:8651/health >/dev/null
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    restart: "no"
+    networks:
+      - jadx-integration
+
+networks:
+  jadx-integration:
+    driver: bridge
