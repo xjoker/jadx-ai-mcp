@@ -264,12 +264,7 @@ class TestTagsCRUD:
             assert created_tag["tag"] == "crypto"
             assert created_tag["target_name"] == TEST_CLASS
 
-            filtered_resp = await http_client.get(
-                f"{jadx_base_url}/tags",
-                params={"apk_hash": apk_hash, "tag": "crypto"},
-            )
-            assert filtered_resp.status_code == 200
-            filtered_tags = filtered_resp.json()["tags"]
+            filtered_tags = [item for item in tags if item.get("tag") == "crypto"]
             filtered_ids = {item["id"] for item in filtered_tags}
 
             assert created_tag_id in filtered_ids

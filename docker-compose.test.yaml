@@ -37,7 +37,7 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       JADX_API_PORT: 8650
-      JADX_MCP_PORT: 8651
+      JADX_MCP_PORT: 8650
       JADX_MCP_BIND_ADDRESS: 0.0.0.0
       JADX_MCP_AUTH_ENABLED: "false"
       JADX_MCP_AUTH_TOKEN: ${JADX_PLUGIN_AUTH_TOKEN:-test-plugin-token}

@@ -4,7 +4,7 @@ Layer 3 Integration Tests - 6.1.7-dev New Feature Coverage
 Covers:
 - Analysis planning tool behavior via direct Python tool calls
 - Search endpoint improvements on the Java plugin HTTP API
-- Unified file-info output for the JAR fixture
+- Unified file-info output for the loaded integration fixture
 - POST semantics for refactor endpoints
 - Python-side response_size_bytes metadata injection on batch tools
 """
@@ -17,14 +17,12 @@ import pytest_asyncio
 from src.server.config import HttpClientManager, set_jadx_config
 from src.server.tools.analysis_tools import suggest_analysis_plan
 from src.server.tools.class_tools import batch_get_class_source
+from .helpers import resolve_fixture_context
 
 
 pytestmark = pytest.mark.integration
 
 
-TEST_PACKAGE = "com.jadxtest.library"
-TEST_CLASS = "com.jadxtest.library.Calculator"
-SECOND_TEST_CLASS = "com.jadxtest.library.StringUtils"
 EXPECTED_PLAN_IDS = {
     "quick_analysis",
     "security_audit",
@@ -64,14 +62,14 @@ def _step_tools(result: dict, plan_id: str) -> list[str]:
     return []
 
 
-def _search_params(search_term: str, search_in: str) -> dict[str, str | int]:
+def _search_params(search_term: str, search_in: str, package_name: str) -> dict[str, str | int]:
     # Keep the request compatible with the current route while also reflecting
     # the feature-request wording that uses "keyword".
     return {
         "keyword": search_term,
         "search_term": search_term,
         "search_in": search_in,
-        "package": TEST_PACKAGE,
+        "package": package_name,
         "count": 20,
     }
 
@@ -156,22 +154,28 @@ class TestAnalysisPlanIntegration:
 @pytest.mark.asyncio
 class TestSearchImprovementsIntegration:
     async def test_code_search_finds_calculator_class(self, jadx_base_url, http_client):
+        context = await resolve_fixture_context(jadx_base_url, http_client)
+        search_term = context["class_name"].rsplit(".", 1)[-1]
+
         resp = await http_client.get(
             f"{jadx_base_url}/search-classes-by-keyword",
-            params=_search_params("Calculator", "code"),
+            params=_search_params(search_term, "code", context["package_name"]),
             timeout=120.0,
         )
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
 
         data = resp.json()
         assert "classes" in data
-        assert TEST_CLASS in data["classes"], f"Expected {TEST_CLASS} in code search results"
+        assert context["class_name"] in data["classes"], \
+            f"Expected {context['class_name']} in code search results"
         assert data["search_info"]["timed_out"] is False
 
     async def test_comment_search_returns_structured_response(self, jadx_base_url, http_client):
+        context = await resolve_fixture_context(jadx_base_url, http_client)
+
         resp = await http_client.get(
             f"{jadx_base_url}/search-classes-by-keyword",
-            params=_search_params("test", "comment"),
+            params=_search_params("test", "comment", context["package_name"]),
             timeout=120.0,
         )
         assert resp.status_code == 200, f"Comment search should not fail, got {resp.status_code}"
@@ -184,16 +188,19 @@ class TestSearchImprovementsIntegration:
         assert data["search_info"]["total_found"] >= len(data["classes"])
 
     async def test_method_name_search_finds_add_method(self, jadx_base_url, http_client):
+        context = await resolve_fixture_context(jadx_base_url, http_client)
+
         resp = await http_client.get(
             f"{jadx_base_url}/search-classes-by-keyword",
-            params=_search_params("add", "method_name"),
+            params=_search_params(context["method_name"], "method_name", context["package_name"]),
             timeout=120.0,
         )
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
 
         data = resp.json()
         assert "classes" in data
-        assert TEST_CLASS in data["classes"], f"Expected {TEST_CLASS} in method-name search results"
+        assert context["class_name"] in data["classes"], \
+            f"Expected {context['class_name']} in method-name search results"
         assert "METHOD_NAME" in data["search_info"]["search_locations"]
 
 
@@ -205,10 +212,16 @@ class TestCompositePackageDetectionIntegration:
 
         data = resp.json()
         assert data["loaded"] is True
-        assert data["file_type"] == "jar"
-        assert data["file_category"] == "java"
-        assert data["android_features"] is False
-        assert data["smali_available"] is False
+        assert data["file_type"] in {"jar", "apk"}
+
+        if data["file_type"] == "jar":
+            assert data["file_category"] == "java"
+            assert data["android_features"] is False
+            assert data["smali_available"] is False
+        else:
+            assert data["file_category"] == "android"
+            assert data["android_features"] is True
+            assert data["smali_available"] is True
 
     async def test_file_info_recommends_expected_jar_tools(self, jadx_base_url, http_client):
         resp = await http_client.get(f"{jadx_base_url}/file-info")
@@ -217,9 +230,24 @@ class TestCompositePackageDetectionIntegration:
         data = resp.json()
         recommended_tools = set(data.get("recommended_tools", []))
 
-        assert {"jar_get_manifest", "jar_get_entry_points", "jar_get_services", "get_class_source"} <= recommended_tools
-        assert "get_android_manifest" not in recommended_tools
-        assert "get_smali_of_class" not in recommended_tools
+        if data["file_type"] == "jar":
+            assert {
+                "jar_get_manifest",
+                "jar_get_entry_points",
+                "jar_get_services",
+                "get_class_source",
+            } <= recommended_tools
+            assert "get_android_manifest" not in recommended_tools
+            assert "get_smali_of_class" not in recommended_tools
+        else:
+            assert {
+                "get_android_manifest",
+                "get_main_activity_class",
+                "get_strings",
+                "get_smali_of_class",
+            } <= recommended_tools
+            assert "jar_get_manifest" not in recommended_tools
+            assert "jar_get_entry_points" not in recommended_tools
 
 
 @pytest.mark.asyncio
@@ -245,9 +273,10 @@ class TestRenamePostSemanticsIntegration:
 @pytest.mark.asyncio
 class TestLargeResponseMetadataIntegration:
     async def test_batch_class_source_includes_response_size_bytes(
-        self, configured_python_tool_calls
+        self, configured_python_tool_calls, jadx_base_url, http_client
     ):
-        result = await batch_get_class_source([TEST_CLASS, SECOND_TEST_CLASS])
+        context = await resolve_fixture_context(jadx_base_url, http_client)
+        result = await batch_get_class_source(context["batch_class_names"])
 
         assert "error" not in result, f"Unexpected batch_get_class_source error: {result}"
         assert "classes" in result
