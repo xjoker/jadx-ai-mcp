@@ -71,7 +71,7 @@ public class JadxAIMCP implements JadxPlugin {
                 .name("JADX-AI-MCP Plugin")
                 .description("Integrates MCP Server support for JADX")
                 .homepage("https://github.com/xjoker/jadx-ai-mcp")
-                .requiredJadxVersion("1.5.5")
+                .requiredJadxVersion("1.5.5, r2333")
                 .build();
     }
 
