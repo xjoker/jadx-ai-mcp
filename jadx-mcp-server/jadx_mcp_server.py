@@ -249,12 +249,12 @@ def main():
         default_jadx_token = args.auth_token
     
     # Set shared JADX token
+    _default_tokens = {"admin-secret-token", "jadx-plugin-secret-token"}
     if default_jadx_token:
         config.set_auth_token(default_jadx_token)
         InstanceRegistry.set_auth_token(default_jadx_token)
         print(f"[OK] Default JADX plugin token configured")
         # Warn about default tokens in production
-        _default_tokens = {"admin-secret-token", "jadx-plugin-secret-token"}
         if default_jadx_token in _default_tokens:
             logger.warning("Default JADX plugin token detected — change it for production use")
     else:
