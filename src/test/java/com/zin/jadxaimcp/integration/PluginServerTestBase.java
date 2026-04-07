@@ -73,6 +73,9 @@ public abstract class PluginServerTestBase {
         server = new PluginServer(mainWindow, port, "127.0.0.1");
         server.start();
 
+        // Disable authentication for integration tests
+        server.getAuthConfig().setAuthEnabled(false);
+
         // 4. Create HTTP client
         client = new OkHttpClient.Builder()
                 .followRedirects(false)
