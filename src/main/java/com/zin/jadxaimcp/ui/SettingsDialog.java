@@ -349,13 +349,11 @@ public class SettingsDialog extends JDialog {
      */
     private void restartServer() {
         plugin.restartServer();
-        // Delayed status update
-        SwingUtilities.invokeLater(() -> {
-            try {
-                Thread.sleep(1500);
-            } catch (InterruptedException ignored) {}
+        // Delayed status update — use Swing Timer to avoid blocking the EDT
+        new javax.swing.Timer(1500, e -> {
+            ((javax.swing.Timer) e.getSource()).stop();
             updateServerStatus();
-        });
+        }).start();
     }
     
     /**

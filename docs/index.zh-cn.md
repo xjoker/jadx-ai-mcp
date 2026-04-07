@@ -38,7 +38,7 @@
 
 | 文档 | 说明 |
 |:-----|:-----|
-| [工具参考](reference/tools.zh-cn.md) | 完整的 39 个 MCP 工具矩阵 |
+| [工具参考](reference/tools.zh-cn.md) | 完整的 54 个 MCP 工具矩阵 |
 | [配置参考](reference/configuration.zh-cn.md) | 所有配置项详解 |
 | [安全策略](security/security.zh-cn.md) | 认证、权限、SSRF 防护 |
 

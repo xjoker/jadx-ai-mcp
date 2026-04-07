@@ -181,7 +181,7 @@ async def get_from_jadx(
         params: Query parameters dictionary for the request
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
         timeout: Optional per-request timeout in seconds. Overrides the client default.
-        method: HTTP method to use. Currently supports GET and POST.
+        method: HTTP method to use. Currently supports GET, POST, and DELETE.
         json_body: Optional JSON body for POST requests.
         username: Optional current username for ACL-aware instance resolution.
         is_admin: Whether the current user has admin access.
@@ -201,11 +201,11 @@ async def get_from_jadx(
     params = params or {}
     method_upper = method.upper()
 
-    if method_upper not in {"GET", "POST"}:
+    if method_upper not in {"GET", "POST", "DELETE"}:
         return make_error(
             ErrorCode.INVALID_INPUT,
             f"Unsupported HTTP method: {method_upper}",
-            suggestion="Use GET for read-only requests or POST for mutating requests.",
+            suggestion="Use GET for read-only requests, POST for mutating requests, or DELETE for removal.",
         )
 
     # Determine the base URL based on instance_id

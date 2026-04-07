@@ -38,7 +38,7 @@
 
 | Document | Description |
 |:---------|:------------|
-| [Tools Reference](reference/tools.md) | Complete 39 MCP tools matrix |
+| [Tools Reference](reference/tools.md) | Complete 54 MCP tools matrix |
 | [Configuration Reference](reference/configuration.md) | All configuration options |
 | [Security Policy](security/security.md) | Authentication, permissions, SSRF protection |
 

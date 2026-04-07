@@ -174,7 +174,7 @@ See [AI Client Configuration](docs/guides/ai-clients.md) for full details.
 
 | Document | Description |
 |:---------|:------------|
-| [Tools Reference](docs/reference/tools.md) | Complete 39 MCP tools matrix |
+| [Tools Reference](docs/reference/tools.md) | Complete 54 MCP tools matrix |
 | [Configuration Reference](docs/reference/configuration.md) | All configuration options |
 | [Security Policy](docs/security/security.md) | Authentication, permissions, SSRF protection |
 

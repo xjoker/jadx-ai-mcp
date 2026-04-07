@@ -176,7 +176,7 @@ async def batch_get_class_source(
             try:
                 info = await get_class_info(class_name, instance_id)
                 class_infos.append(info)
-            except:
+            except Exception:
                 class_infos.append({"class_name": class_name, "error": "Failed to get info"})
 
         return {

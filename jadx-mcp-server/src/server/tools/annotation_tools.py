@@ -252,6 +252,83 @@ async def get_tags(
     return await get_from_jadx("tags", params=params, instance_id=instance_id)
 
 
+# ==================== Delete Tools ====================
+
+async def delete_annotation(
+    annotation_id: int,
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Delete an annotation by its ID.
+
+    Args:
+        annotation_id: The numeric ID of the annotation to delete
+        instance_id: Optional. Target JADX instance name
+
+    Returns:
+        dict: { success, deleted_id }
+
+    MCP Tool: delete_annotation
+    Description: Delete an annotation by ID
+    """
+    logger.info(f"delete_annotation: id={annotation_id}")
+    return await get_from_jadx(
+        f"annotations/{annotation_id}",
+        instance_id=instance_id,
+        method="DELETE",
+    )
+
+
+async def delete_bookmark(
+    bookmark_id: int,
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Delete a bookmark by its ID.
+
+    Args:
+        bookmark_id: The numeric ID of the bookmark to delete
+        instance_id: Optional. Target JADX instance name
+
+    Returns:
+        dict: { success, deleted_id }
+
+    MCP Tool: delete_bookmark
+    Description: Delete a bookmark by ID
+    """
+    logger.info(f"delete_bookmark: id={bookmark_id}")
+    return await get_from_jadx(
+        f"bookmarks/{bookmark_id}",
+        instance_id=instance_id,
+        method="DELETE",
+    )
+
+
+async def delete_tag(
+    tag_id: int,
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Delete a tag by its ID.
+
+    Args:
+        tag_id: The numeric ID of the tag to delete
+        instance_id: Optional. Target JADX instance name
+
+    Returns:
+        dict: { success, deleted_id }
+
+    MCP Tool: delete_tag
+    Description: Delete a tag by ID
+    """
+    logger.info(f"delete_tag: id={tag_id}")
+    return await get_from_jadx(
+        f"tags/{tag_id}",
+        instance_id=instance_id,
+        method="DELETE",
+    )
+
+
 # ==================== Summary Tools ====================
 
 async def get_analysis_summary(
@@ -290,10 +367,13 @@ async def get_analysis_summary(
 
 _add_annotation = add_annotation
 _get_annotations = get_annotations
+_delete_annotation = delete_annotation
 _add_bookmark = add_bookmark
 _list_bookmarks = list_bookmarks
+_delete_bookmark = delete_bookmark
 _add_tag = add_tag
 _get_tags = get_tags
+_delete_tag = delete_tag
 _get_analysis_summary = get_analysis_summary
 
 
@@ -350,6 +430,20 @@ def register_annotation_tools(mcp, with_busy_check):
 
     @mcp.tool()
     @with_busy_check
+    async def delete_annotation(
+        annotation_id: int,
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Delete an annotation by its ID.
+
+        Args:
+            annotation_id: The numeric ID of the annotation to delete (from get_annotations results)
+            instance_id: Optional. Target JADX instance name
+        """
+        return await _delete_annotation(annotation_id, instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
     async def add_bookmark(
         target_type: str,
         target_name: str,
@@ -400,6 +494,20 @@ def register_annotation_tools(mcp, with_busy_check):
 
     @mcp.tool()
     @with_busy_check
+    async def delete_bookmark(
+        bookmark_id: int,
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Delete a bookmark by its ID.
+
+        Args:
+            bookmark_id: The numeric ID of the bookmark to delete (from list_bookmarks results)
+            instance_id: Optional. Target JADX instance name
+        """
+        return await _delete_bookmark(bookmark_id, instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
     async def add_tag(
         target_type: str,
         target_name: str,
@@ -445,6 +553,20 @@ def register_annotation_tools(mcp, with_busy_check):
             target_type=target_type, target_name=target_name,
             apk_hash=apk_hash, instance_id=instance_id,
         )
+
+    @mcp.tool()
+    @with_busy_check
+    async def delete_tag(
+        tag_id: int,
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Delete a tag by its ID.
+
+        Args:
+            tag_id: The numeric ID of the tag to delete (from get_tags results)
+            instance_id: Optional. Target JADX instance name
+        """
+        return await _delete_tag(tag_id, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check

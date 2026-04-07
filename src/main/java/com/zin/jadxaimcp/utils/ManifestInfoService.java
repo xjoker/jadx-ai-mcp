@@ -18,12 +18,11 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Shared AndroidManifest.xml parsing service with cached results.
@@ -34,7 +33,7 @@ public final class ManifestInfoService {
     private static final ManifestInfoService INSTANCE = new ManifestInfoService();
 
     private final Map<ResourceFile, Optional<ManifestInfo>> manifestInfoCache =
-            Collections.synchronizedMap(new WeakHashMap<>());
+            new ConcurrentHashMap<>();
 
     private ManifestInfoService() {
     }
@@ -74,18 +73,7 @@ public final class ManifestInfoService {
         if (manifestFile == null) {
             return Optional.empty();
         }
-
-        synchronized (manifestInfoCache) {
-            if (manifestInfoCache.containsKey(manifestFile)) {
-                return manifestInfoCache.get(manifestFile);
-            }
-        }
-
-        Optional<ManifestInfo> parsedInfo = parseManifestInfo(manifestFile);
-        synchronized (manifestInfoCache) {
-            manifestInfoCache.put(manifestFile, parsedInfo);
-        }
-        return parsedInfo;
+        return manifestInfoCache.computeIfAbsent(manifestFile, this::parseManifestInfo);
     }
 
     public String getPackageName(JadxWrapper wrapper) {

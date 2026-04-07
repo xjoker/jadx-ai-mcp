@@ -300,7 +300,7 @@ def main():
     # Banner & Health Check
     try:
         print(jadx_mcp_server_banner())
-    except:
+    except Exception:
         from src.banner import SERVER_VERSION
         print(
             f"[JADX AI MCP Server] v{SERVER_VERSION} | MCP: {args.host}:{args.port} | JADX: {args.jadx_host}:{args.jadx_port}"
