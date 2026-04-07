@@ -80,6 +80,14 @@ from src.server.tools import (
     register_transfer_tools,
     register_frida_tools,
     register_annotation_tools,
+    register_digest_tools,
+    register_security_tools,
+    register_session_tools,
+    register_export_tools,
+    register_diff_tools,
+    register_dataflow_tools,
+    register_decompile_tools,
+    register_scaling_tools,
 )
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
@@ -119,6 +127,18 @@ register_instance_tools(mcp)
 register_transfer_tools(mcp)
 register_frida_tools(mcp, with_busy_check)
 register_annotation_tools(mcp, with_busy_check)
+register_digest_tools(mcp, with_busy_check)
+register_security_tools(mcp, with_busy_check)
+register_session_tools(mcp, with_busy_check)
+register_export_tools(mcp, with_busy_check)
+register_diff_tools(mcp, with_busy_check)
+register_dataflow_tools(mcp, with_busy_check)
+register_decompile_tools(mcp, with_busy_check)
+register_scaling_tools(mcp)
+
+# Load balancer status tool
+from src.server.load_balancer import register_loadbalancer_tools
+register_loadbalancer_tools(mcp)
 
 
 def main():

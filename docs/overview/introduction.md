@@ -198,7 +198,7 @@ Compared to the original [zinja-coder/jadx-ai-mcp](https://github.com/zinja-code
 |:--------|:------------|
 | 🚀 **Smart Batch Optimization** | 4-tier strategy avoids 60-120s wasted decompilation. Auto-chunks large responses (>8KB). |
 | 🔄 **Transfer API** | HTTP direct download bypasses MCP's ~16KB limit. Tested with 322K classes. |
-| 💼 **Full JVM Support** | APK, JAR, AAR, DEX all supported. 54 MCP tools total, including 5 JAR-specific tools. |
+| 💼 **Full JVM Support** | APK, JAR, AAR, DEX all supported. 68 MCP tools total, including 5 JAR-specific tools. |
 | ⚡ **ClassCacheManager** | Background caching + auto-invalidation, 10-50x faster repeated analysis. |
 | 🐳 **All-in-One Docker** | One-command deployment of GUI + AI server. Multi-platform (amd64/arm64). |
 
@@ -224,7 +224,7 @@ Done! Put your APK or JAR in `~/apks/`, open it in JADX, and let AI analyze it.
 
 - [System Architecture](architecture.md) - Understand the three-tier design
 - [Quick Start](../getting-started/quickstart.md) - 5-minute deployment
-- [Tools Reference](../reference/tools.md) - Complete 54-tool matrix
+- [Tools Reference](../reference/tools.md) - Complete 68-tool matrix
 - [AI Skills](../guides/ai-prompts.md) - Testing prompt examples
 
 ---

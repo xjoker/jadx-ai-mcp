@@ -8,7 +8,7 @@
 
 > ✅ Full support | ⚠️ Partial | ❌ Not available | 🔄 Returns NOT_APPLICABLE
 
-This server currently registers **54 MCP tools**, including **5 JAR-specific tools**, **10 annotation/bookmark/tag tools**, and **1 Transfer API helper**.
+This server currently registers **68 MCP tools**, including **5 JAR-specific tools**, **10 annotation/bookmark/tag tools**, **14 advanced analysis tools** (security scan, data flow, diff, decompile management, session, export, scaling, load balancer), and **1 Transfer API helper**.
 
 | Tool | APK | JAR | AAR | DEX | Description |
 |:-----|:---:|:---:|:---:|:---:|:------------|
