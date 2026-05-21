@@ -171,18 +171,6 @@ class TestJARMethodAnalysis:
         # STRICT: Must have methods
         assert len(methods) >= 1, f"Expected >= 1 methods, got {len(methods)}"
 
-    async def test_search_method_by_name(self, jadx_base_url, http_client):
-        """User asks: Find all 'get' methods"""
-        resp = await http_client.get(
-            f"{jadx_base_url}/search-method",
-            params={"method_name": "get", "count": 20}
-        )
-        assert resp.status_code == 200
-
-        data = resp.json()
-        # Should return methods array (may be empty or have results)
-        assert "methods" in data, "Should have methods field"
-
     async def test_get_fields_of_class(self, jadx_base_url, http_client):
         """User asks: What fields does User have?"""
         resp = await http_client.get(
@@ -301,18 +289,6 @@ class TestJARErrorHandling:
         elif resp.status_code == 200:
             data = resp.json()
             assert "classes" in data
-
-    async def test_invalid_method_search_returns_empty(self, jadx_base_url, http_client):
-        """Non-matching search should return empty results"""
-        resp = await http_client.get(
-            f"{jadx_base_url}/search-method",
-            params={"method_name": "xyzDefinitelyNotExistingMethod123"}
-        )
-        assert resp.status_code == 200
-
-        data = resp.json()
-        methods = data.get("methods", [])
-        assert len(methods) == 0, "Should return empty list for no matches"
 
     async def test_smali_not_available_for_jar(self, jadx_base_url, http_client):
         """Smali should not be available for JAR files"""

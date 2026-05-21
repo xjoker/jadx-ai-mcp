@@ -21,6 +21,8 @@ from . import dataflow_tools
 from . import decompile_tools
 from . import scaling_tools
 from . import file_management_tools
+from . import diagnostics_tools
+from . import workflow_tools
 
 from .class_tools import register_class_tools
 from .search_tools import register_search_tools
@@ -41,3 +43,5 @@ from .dataflow_tools import register_dataflow_tools
 from .decompile_tools import register_decompile_tools
 from .scaling_tools import register_scaling_tools
 from .file_management_tools import register_file_management_tools
+from .diagnostics_tools import register_diagnostics_tools
+from .workflow_tools import register_workflow_tools

@@ -485,6 +485,30 @@ public class ClassCacheManager {
     }
 
     /**
+     * Retrieve the already-decompiled code string for a class from JADX's upstream
+     * {@code ICodeCache} WITHOUT triggering a fresh decompile.
+     *
+     * <p>Returns {@code null} if the class has not been decompiled yet (cache miss).
+     * This is safe to call from multiple threads concurrently — it only reads the
+     * JADX code cache, no {@link JadxSearchLock} required.</p>
+     *
+     * @param cls the class whose cached code to retrieve
+     * @return raw decompiled source string, or {@code null} if not cached
+     */
+    @SuppressWarnings("JadxInternalApiUsage")
+    public static String getCachedCodeDirect(JavaClass cls) {
+        if (cls == null) {
+            return null;
+        }
+        try {
+            ICodeInfo info = cls.getClassNode().getCodeFromCache();
+            return info != null ? info.getCodeStr() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * Compatibility no-op.
      *
      * <p>Once {@link JavaClass#getCode()} returns, JADX has already stored the full
@@ -534,6 +558,34 @@ public class ClassCacheManager {
             }
         }
         logger.info("[JAI] Cleared {} upstream code cache entries", removed);
+    }
+
+    /**
+     * Return name-index size statistics for the /index-stats endpoint.
+     *
+     * <p>Returns a map with:
+     * <ul>
+     *   <li>{@code class_name_buckets}  — distinct simple-class-name entries</li>
+     *   <li>{@code method_name_buckets} — distinct method-name entries</li>
+     *   <li>{@code field_name_buckets}  — distinct field-name entries</li>
+     *   <li>{@code raw_name_map_size}   — size of the secondary raw-name lookup map</li>
+     *   <li>{@code index_ready}         — true when all three indices are non-null</li>
+     * </ul>
+     * </p>
+     */
+    public static Map<String, Object> getNameIndexStats() {
+        Map<String, Object> stats = new HashMap<>();
+        Map<String, List<JavaClass>> clsIdx = classNameIndex.get();
+        Map<String, List<JavaClass>> mthIdx = methodNameIndex.get();
+        Map<String, List<JavaClass>> fldIdx = fieldNameIndex.get();
+        Map<String, JavaClass> rawMap = rawNameCache.get();
+
+        stats.put("class_name_buckets", clsIdx != null ? clsIdx.size() : 0);
+        stats.put("method_name_buckets", mthIdx != null ? mthIdx.size() : 0);
+        stats.put("field_name_buckets", fldIdx != null ? fldIdx.size() : 0);
+        stats.put("raw_name_map_size", rawMap != null ? rawMap.size() : 0);
+        stats.put("index_ready", clsIdx != null && mthIdx != null && fldIdx != null);
+        return stats;
     }
 
     /**

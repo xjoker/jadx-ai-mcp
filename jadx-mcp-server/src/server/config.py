@@ -27,6 +27,34 @@ JADX_HTTP_BASE = f"http://{JADX_HOST}:{JADX_PORT}"
 AUTH_TOKEN: Optional[str] = None
 REQUEST_TIMEOUT: int = 120  # Default timeout in seconds (configurable)
 
+# ---------------------------------------------------------------------------
+# File-mount / Docker-secrets support
+#
+# JADX_MCP_AUTH_TOKEN_FILE (optional)
+#   Path to a file containing the outbound JADX service-account token.
+#   Whitespace (including trailing newlines) is trimmed automatically.
+#   Takes precedence over --auth-token CLI flag and TOML jadx_token.
+#
+#   Example (docker secrets):
+#     docker run ... \
+#       --secret jadx_token,target=/run/secrets/jadx_token \
+#       -e JADX_MCP_AUTH_TOKEN_FILE=/run/secrets/jadx_token \
+#       ...
+# ---------------------------------------------------------------------------
+def _load_token_from_file(path: str) -> Optional[str]:
+    """Read and trim a token from a file path. Returns None on error (logs warning)."""
+    import os
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            token = fh.read().strip()
+        if not token:
+            logger.warning("JADX_MCP_AUTH_TOKEN_FILE points to an empty file: %s", path)
+            return None
+        return token
+    except OSError as exc:
+        logger.error("JADX_MCP_AUTH_TOKEN_FILE is set but file cannot be read: %s — %s", path, exc)
+        return None
+
 # Tiered timeout constants (seconds)
 TIMEOUT_HEALTH: int = 10      # Health/ping endpoints
 TIMEOUT_METADATA: int = 30    # Lightweight metadata (class-info, methods-of-class, fields-of-class, etc.)

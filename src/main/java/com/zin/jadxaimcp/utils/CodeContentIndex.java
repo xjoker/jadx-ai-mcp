@@ -4,11 +4,17 @@ import jadx.api.JavaClass;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.StampedLock;
 
 /**
@@ -24,9 +30,17 @@ import java.util.concurrent.locks.StampedLock;
  *   <li>Each 3-gram entry: ~40B key object + ~N/8 bytes for a N-class BitSet.</li>
  *   <li>For 10 000 classes × ~1 800 unique trigrams per class ≈ 18M trigram
  *       occurrences; with heavy de-duplication the map stays well under 100 MB in
- *       practice.  The {@code JADX_MCP_CODE_INDEX_MAX_TRIGRAMS} cap (default 200 000)
+ *       practice.  The {@code JADX_MCP_CODE_INDEX_MAX_TRIGRAMS} cap (default 500 000)
  *       prevents unbounded growth on very large APKs.</li>
  * </ul>
+ *
+ * <h2>Adaptive eviction</h2>
+ * <p>A background heap-watcher thread periodically checks JVM heap pressure.
+ * When used/max ratio exceeds {@code HEAP_PRESSURE_HIGH} (default 0.80), a
+ * selectivity-based eviction sweep removes trigrams with the highest BitSet
+ * cardinality first — those trigrams appear in many classes and provide the
+ * least filtering benefit.  Eviction stops when the ratio drops below
+ * {@code HEAP_PRESSURE_LOW} (default 0.70), providing hysteresis.</p>
  *
  * <h2>Thread safety</h2>
  * <ul>
@@ -35,6 +49,9 @@ import java.util.concurrent.locks.StampedLock;
  *       (BitSet is not thread-safe natively).</li>
  *   <li>{@link #clear()} atomically replaces the internal state so in-flight
  *       readers see either the old or new view, never a torn intermediate.</li>
+ *   <li>Eviction sweeps snapshot the {@code state} reference once; if {@link #clear()}
+ *       races and replaces the state mid-sweep, the sweep detects the mismatch and
+ *       abandons safely.</li>
  * </ul>
  */
 public final class CodeContentIndex {
@@ -48,7 +65,7 @@ public final class CodeContentIndex {
     /** Set to {@code "false"} to disable the index entirely. Default: {@code true}. */
     static final boolean ENABLED;
 
-    /** Maximum number of distinct trigrams stored before further classes are skipped. Default: 200 000. */
+    /** Maximum number of distinct trigrams stored before further classes are skipped. Default: 500 000. */
     static final int MAX_TRIGRAMS;
 
     /**
@@ -58,12 +75,24 @@ public final class CodeContentIndex {
      */
     static final int MAX_CLASS_SIZE_BYTES;
 
+    /** Set to {@code "false"} to disable adaptive eviction. Default: {@code true}. */
+    static final boolean EVICTION_ENABLED;
+
+    /** Heap pressure ratio above which eviction sweeps begin. Default: 0.80. */
+    static final double HEAP_PRESSURE_HIGH;
+
+    /** Heap pressure ratio below which eviction sweeps stop (hysteresis). Default: 0.70. */
+    static final double HEAP_PRESSURE_LOW;
+
+    /** Interval in seconds between heap-watcher ticks. Default: 10. */
+    static final int HEAP_WATCHER_INTERVAL_SECONDS;
+
     static {
         String enabledEnv = System.getenv("JADX_MCP_CODE_INDEX_ENABLED");
         ENABLED = enabledEnv == null || !enabledEnv.equalsIgnoreCase("false");
 
         String maxTrigramsEnv = System.getenv("JADX_MCP_CODE_INDEX_MAX_TRIGRAMS");
-        int maxTrigrams = 200_000;
+        int maxTrigrams = 500_000;
         if (maxTrigramsEnv != null) {
             try {
                 maxTrigrams = Integer.parseInt(maxTrigramsEnv.trim());
@@ -85,6 +114,45 @@ public final class CodeContentIndex {
             }
         }
         MAX_CLASS_SIZE_BYTES = maxSize;
+
+        String evictionEnabledEnv = System.getenv("JADX_MCP_CODE_INDEX_EVICTION_ENABLED");
+        EVICTION_ENABLED = evictionEnabledEnv == null || !evictionEnabledEnv.equalsIgnoreCase("false");
+
+        String pressureHighEnv = System.getenv("JADX_MCP_CODE_INDEX_HEAP_PRESSURE_HIGH");
+        double pressureHigh = 0.80;
+        if (pressureHighEnv != null) {
+            try {
+                pressureHigh = Double.parseDouble(pressureHighEnv.trim());
+            } catch (NumberFormatException ignored) {
+                logger.warn("[JAI] Invalid JADX_MCP_CODE_INDEX_HEAP_PRESSURE_HIGH='{}'; using default {}",
+                        pressureHighEnv, pressureHigh);
+            }
+        }
+        HEAP_PRESSURE_HIGH = pressureHigh;
+
+        String pressureLowEnv = System.getenv("JADX_MCP_CODE_INDEX_HEAP_PRESSURE_LOW");
+        double pressureLow = 0.70;
+        if (pressureLowEnv != null) {
+            try {
+                pressureLow = Double.parseDouble(pressureLowEnv.trim());
+            } catch (NumberFormatException ignored) {
+                logger.warn("[JAI] Invalid JADX_MCP_CODE_INDEX_HEAP_PRESSURE_LOW='{}'; using default {}",
+                        pressureLowEnv, pressureLow);
+            }
+        }
+        HEAP_PRESSURE_LOW = pressureLow;
+
+        String intervalEnv = System.getenv("JADX_MCP_HEAP_WATCHER_INTERVAL_SECONDS");
+        int interval = 10;
+        if (intervalEnv != null) {
+            try {
+                interval = Integer.parseInt(intervalEnv.trim());
+            } catch (NumberFormatException ignored) {
+                logger.warn("[JAI] Invalid JADX_MCP_HEAP_WATCHER_INTERVAL_SECONDS='{}'; using default {}",
+                        intervalEnv, interval);
+            }
+        }
+        HEAP_WATCHER_INTERVAL_SECONDS = interval;
     }
 
     // -------------------------------------------------------------------------
@@ -93,6 +161,37 @@ public final class CodeContentIndex {
 
     /** Volatile reference to the active state; replace entirely on clear(). */
     private static volatile State state = new State();
+
+    // -------------------------------------------------------------------------
+    // Eviction statistics
+    // -------------------------------------------------------------------------
+
+    /** Cumulative total of trigrams removed by eviction sweeps across all state generations. */
+    private static final AtomicLong totalEvictions = new AtomicLong(0);
+
+    // -------------------------------------------------------------------------
+    // Background heap-watcher
+    // -------------------------------------------------------------------------
+
+    private static final ScheduledExecutorService heapWatcher;
+
+    static {
+        if (ENABLED && EVICTION_ENABLED) {
+            ScheduledExecutorService svc = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "jadx-heap-watcher");
+                t.setDaemon(true);
+                return t;
+            });
+            svc.scheduleAtFixedRate(
+                    CodeContentIndex::heapWatcherTick,
+                    HEAP_WATCHER_INTERVAL_SECONDS,
+                    HEAP_WATCHER_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS);
+            heapWatcher = svc;
+        } else {
+            heapWatcher = null;
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Public API
@@ -274,6 +373,36 @@ public final class CodeContentIndex {
     }
 
     /**
+     * Index a class using its already-decompiled code from JADX's upstream cache,
+     * without triggering a fresh decompile.
+     *
+     * <p>This is the preferred entry-point for the parallel trigram-fill phase:
+     * the code is already in JADX's {@code ICodeCache} (no JADX lock needed), and
+     * {@link CodeContentIndex} is fully thread-safe, so multiple workers can call
+     * this concurrently.</p>
+     *
+     * @param cls      the class to index (must not be null)
+     * @param codeStr  the decompiled source as returned by {@code getCodeFromCache()};
+     *                 pass {@code null} to skip silently (class not yet decompiled)
+     * @return {@code true} if the class was newly indexed, {@code false} if it was
+     *         already present or skipped (null/empty code, cap reached, disabled)
+     */
+    public static boolean tryIndexFromCache(JavaClass cls, String codeStr) {
+        if (!ENABLED || cls == null || codeStr == null || codeStr.isEmpty()) {
+            return false;
+        }
+        State s = state;
+        // Fast-path: already indexed (no work to do)
+        if (s.classToId.containsKey(cls)) {
+            return false;
+        }
+        // Delegate to the normal index path using pre-lowercased code
+        int beforeCount = s.classCount.get();
+        index(cls, codeStr.toLowerCase());
+        return state.classCount.get() > beforeCount;
+    }
+
+    /**
      * Return the number of distinct trigrams currently stored in the index.
      * Useful for health/stats endpoints.
      */
@@ -286,6 +415,151 @@ public final class CodeContentIndex {
      */
     public static int indexedClassCount() {
         return state.classCount.get();
+    }
+
+    /**
+     * Return the cumulative number of trigrams evicted by adaptive eviction sweeps.
+     */
+    public static long evictionsTotal() {
+        return totalEvictions.get();
+    }
+
+    /**
+     * Return a stats snapshot suitable for the /index-stats endpoint.
+     *
+     * @return map with keys: enabled, indexed_classes, trigram_count, max_trigrams,
+     *         max_class_size_bytes, estimated_memory_mb, saturation_percent,
+     *         evictions_total, eviction_enabled, heap_pressure_high, heap_pressure_low
+     */
+    public static java.util.Map<String, Object> getStats() {
+        java.util.Map<String, Object> stats = new java.util.LinkedHashMap<>();
+        stats.put("enabled", ENABLED);
+        int indexedClasses = indexedClassCount();
+        int trigramCnt = trigramCount();
+        stats.put("indexed_classes", indexedClasses);
+        stats.put("trigram_count", trigramCnt);
+        stats.put("max_trigrams", MAX_TRIGRAMS);
+        stats.put("max_class_size_bytes", MAX_CLASS_SIZE_BYTES);
+        // Rough memory estimate: each trigram entry ≈ 40B key + ceiling(indexedClasses/8) bytes for BitSet
+        long bitsetBytesPerEntry = (long) Math.ceil((double) Math.max(indexedClasses, 1) / 8.0);
+        long estimatedBytes = (long) trigramCnt * (40 + bitsetBytesPerEntry);
+        stats.put("estimated_memory_mb", (int) (estimatedBytes / (1024 * 1024)));
+        double saturation = MAX_TRIGRAMS > 0 ? (double) trigramCnt / MAX_TRIGRAMS : 0.0;
+        stats.put("saturation_percent", Math.round(saturation * 10000.0) / 100.0);
+        // Eviction stats
+        stats.put("evictions_total", totalEvictions.get());
+        stats.put("eviction_enabled", EVICTION_ENABLED);
+        stats.put("heap_pressure_high", HEAP_PRESSURE_HIGH);
+        stats.put("heap_pressure_low", HEAP_PRESSURE_LOW);
+        return stats;
+    }
+
+    // -------------------------------------------------------------------------
+    // Adaptive eviction — heap watcher and sweep
+    // -------------------------------------------------------------------------
+
+    /**
+     * Called on each heap-watcher tick. Checks heap pressure and triggers an
+     * eviction sweep if the HIGH threshold is exceeded.
+     */
+    static void heapWatcherTick() {
+        try {
+            Runtime rt = Runtime.getRuntime();
+            double pressure = heapPressure(rt);
+            if (pressure > HEAP_PRESSURE_HIGH) {
+                logger.info("[JAI] CodeContentIndex: heap pressure {}% exceeds threshold {}% — starting eviction sweep",
+                        String.format("%.1f", pressure * 100), String.format("%.0f", HEAP_PRESSURE_HIGH * 100));
+                runEvictionSweep(pressure);
+            }
+        } catch (Exception e) {
+            logger.warn("[JAI] CodeContentIndex: heap-watcher tick failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Compute current JVM heap pressure as used/max ratio.
+     * Package-private so tests can call it.
+     */
+    static double heapPressure(Runtime rt) {
+        long used = rt.totalMemory() - rt.freeMemory();
+        long max = rt.maxMemory();
+        if (max <= 0) return 0.0;
+        return (double) used / max;
+    }
+
+    /**
+     * Run one eviction sweep against the current state.
+     *
+     * <p>Strategy: sort trigram entries by BitSet cardinality descending (high cardinality
+     * = present in many classes = least selective) and remove the top entries until either
+     * the trigram count drops to {@code targetCount} or the heap pressure falls below
+     * {@link #HEAP_PRESSURE_LOW}.</p>
+     *
+     * <p>Race safety: snapshot {@code state} at entry; abandon if {@code clear()} replaces
+     * it during the sweep.</p>
+     *
+     * @param initialPressure heap pressure that triggered this sweep (for logging)
+     */
+    static void runEvictionSweep(double initialPressure) {
+        State currentState = state; // snapshot — must stay stable throughout sweep
+        ConcurrentHashMap<String, BitSet> index = currentState.trigramIndex;
+
+        int countBefore = index.size();
+        if (countBefore == 0) {
+            return;
+        }
+
+        // Target: drop to 87.5% of current count (= 0.70 / 0.80 hysteresis ratio)
+        // so that after eviction heap pressure should be roughly below HEAP_PRESSURE_LOW.
+        int targetCount = (int) (countBefore * (HEAP_PRESSURE_LOW / HEAP_PRESSURE_HIGH));
+
+        // Phase 1: collect all (trigram, cardinality) pairs — O(N) scan
+        List<Map.Entry<String, Integer>> candidates = new ArrayList<>(countBefore);
+        for (Map.Entry<String, BitSet> entry : index.entrySet()) {
+            if (state != currentState) {
+                logger.debug("[JAI] CodeContentIndex: eviction sweep abandoned — clear() raced");
+                return;
+            }
+            int cardinality;
+            synchronized (entry.getValue()) {
+                cardinality = entry.getValue().cardinality();
+            }
+            candidates.add(new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), cardinality));
+        }
+
+        // Phase 2: sort descending by cardinality (highest = least selective = evict first)
+        candidates.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+
+        // Phase 3: remove until we hit targetCount or state is replaced
+        int evicted = 0;
+        for (Map.Entry<String, Integer> candidate : candidates) {
+            if (state != currentState) {
+                logger.debug("[JAI] CodeContentIndex: eviction sweep abandoned mid-pass — clear() raced");
+                break;
+            }
+            if (index.size() <= targetCount) {
+                break;
+            }
+            index.remove(candidate.getKey());
+            evicted++;
+        }
+
+        int countAfter = index.size();
+        if (evicted > 0) {
+            totalEvictions.addAndGet(evicted);
+            // Reset capReached so new classes can be indexed again
+            currentState.capReached.set(false);
+            logger.info("[JAI] CodeContentIndex: eviction sweep complete — pressure={}%, evicted={}, count {}->{}",
+                    String.format("%.1f", initialPressure * 100), evicted, countBefore, countAfter);
+        }
+    }
+
+    /**
+     * Trigger an eviction sweep directly, bypassing the heap-pressure check.
+     * Package-private; used by tests.
+     */
+    static void forceEvictionSweep() {
+        runEvictionSweep(HEAP_PRESSURE_HIGH + 0.01);
     }
 
     // -------------------------------------------------------------------------

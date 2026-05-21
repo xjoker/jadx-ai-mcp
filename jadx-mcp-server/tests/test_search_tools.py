@@ -35,35 +35,6 @@ class TestGetMethodByName:
         assert captured["instance_id"] == "inst1"
 
 
-class TestSearchMethodByName:
-
-    @pytest.mark.asyncio
-    async def test_calls_correct_endpoint(self, monkeypatch):
-        captured = {}
-        monkeypatch.setattr(search_tools, "get_from_jadx", _make_fake_get_from_jadx(captured))
-        await search_tools.search_method_by_name("onCreate", offset=10, count=25)
-        assert captured["endpoint"] == "search-method"
-        assert captured["params"]["method_name"] == "onCreate"
-        assert captured["params"]["offset"] == 10
-        assert captured["params"]["count"] == 25
-
-    @pytest.mark.asyncio
-    async def test_error_response_includes_recovery_hint(self, monkeypatch):
-        captured = {"response": {"error": "timeout"}}
-        monkeypatch.setattr(search_tools, "get_from_jadx", _make_fake_get_from_jadx(captured))
-        result = await search_tools.search_method_by_name("foo")
-        assert "recovery_hint" in result
-
-    @pytest.mark.asyncio
-    async def test_exception_returns_error_dict(self, monkeypatch):
-        async def fail(*args, **kwargs):
-            raise ConnectionError("connection refused")
-        monkeypatch.setattr(search_tools, "get_from_jadx", fail)
-        result = await search_tools.search_method_by_name("foo")
-        assert "error" in result
-        assert "recovery_hint" in result
-
-
 class TestBatchGetMethodByName:
 
     @pytest.mark.asyncio

@@ -44,6 +44,8 @@ public class JadxAIMCP implements JadxPlugin {
     private static final String ENV_PORT = "JADX_MCP_PORT";
     private static final String ENV_AUTH_TOKEN = "JADX_MCP_AUTH_TOKEN";
     private static final String ENV_AUTH_ENABLED = "JADX_MCP_AUTH_ENABLED";
+    private static final String ENV_AUTH_TOKEN_FILE = "JADX_MCP_AUTH_TOKEN_FILE";
+    private static final String ENV_API_BIND_LOOPBACK_ONLY = "JADX_API_BIND_LOOPBACK_ONLY";
 
     // Config & State
     private int currentPort = DEFAULT_PORT;
@@ -133,13 +135,20 @@ public class JadxAIMCP implements JadxPlugin {
      * Environment variables take precedence over Preferences for Docker/container deployments.
      */
     private void applyEnvironmentOverrides() {
-        // Override bind address
+        // Override bind address (explicit JADX_MCP_BIND_ADDRESS wins over loopback flag)
         String envBindAddress = System.getenv(ENV_BIND_ADDRESS);
         if (envBindAddress != null && !envBindAddress.isEmpty()) {
             currentBindAddress = envBindAddress;
             logger.info("JADX-AI-MCP Plugin: Using bind address from environment: " + envBindAddress);
+        } else {
+            // JADX_API_BIND_LOOPBACK_ONLY=true switches default bind to 127.0.0.1
+            String loopbackOnly = System.getenv(ENV_API_BIND_LOOPBACK_ONLY);
+            if ("true".equalsIgnoreCase(loopbackOnly)) {
+                currentBindAddress = "127.0.0.1";
+                logger.info("JADX-AI-MCP Plugin: JADX_API_BIND_LOOPBACK_ONLY=true; binding to 127.0.0.1");
+            }
         }
-        
+
         // Override port
         String envPort = System.getenv(ENV_PORT);
         if (envPort != null && !envPort.isEmpty()) {
@@ -158,6 +167,16 @@ public class JadxAIMCP implements JadxPlugin {
      */
     public String getEnvAuthToken() {
         return System.getenv(ENV_AUTH_TOKEN);
+    }
+
+    /**
+     * Gets the authentication token file path from environment variable if set.
+     * When set, the token is read from this file (Docker secrets / file-mount pattern).
+     * Takes priority over JADX_MCP_AUTH_TOKEN.
+     * @return Path to the secret file, or null if not set
+     */
+    public String getEnvAuthTokenFile() {
+        return System.getenv(ENV_AUTH_TOKEN_FILE);
     }
     
     /**

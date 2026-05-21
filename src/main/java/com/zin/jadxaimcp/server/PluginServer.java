@@ -68,7 +68,7 @@ public class PluginServer {
         
         // Initialize AuthConfig with environment overrides if plugin is available
         if (plugin != null) {
-            this.authConfig = new AuthConfig(plugin.getEnvAuthToken(), plugin.getEnvAuthEnabled());
+            this.authConfig = new AuthConfig(plugin.getEnvAuthToken(), plugin.getEnvAuthEnabled(), plugin.getEnvAuthTokenFile());
         } else {
             this.authConfig = new AuthConfig();
         }
@@ -393,7 +393,7 @@ public class PluginServer {
      * 2. It maps HTTP GET endpoints to handler methods organized by category:
      *    - General: /health
      *    - Classes: /current-class, /all-classes, /class-source, etc.
-     *    - Methods: /method-by-name, /search-method
+     *    - Methods: /method-by-name
      *    - Xrefs: /xrefs-to-class, /xrefs-to-method, /xrefs-to-field
      *    - Resources: /manifest, /strings, /list-all-resource-files-names
      *    - Refactoring: /rename-class, /rename-method, /rename-field, /rename-package
@@ -407,6 +407,9 @@ public class PluginServer {
         // Passing 'mainWindow' and 'paginationUtils' to them so they can do their work
         GeneralRoutes generalRoutes = new GeneralRoutes(mainWindow, port, this);
         classRoutes = new ClassRoutes(mainWindow, paginationUtils);
+        SearchRoutes searchRoutes = classRoutes.getSearchRoutes();
+        BatchRoutes batchRoutes = new BatchRoutes(mainWindow, paginationUtils, searchRoutes);
+        DecompileRoutes decompileRoutes = new DecompileRoutes(mainWindow, searchRoutes);
         MethodRoutes methodRoutes = new MethodRoutes(mainWindow, paginationUtils);
         ResourceRoutes resourceRoutes = new ResourceRoutes(mainWindow);
         RefactoringRoutes refactoringRoutes = new RefactoringRoutes(mainWindow);
@@ -414,6 +417,7 @@ public class PluginServer {
 
         // --- General & Health ---
         app.get("/health", generalRoutes::handleHealth);
+        app.get("/index-stats", generalRoutes::handleIndexStats);
 
         // --- APK Info (for multi-instance management) ---
         if (plugin != null) {
@@ -432,22 +436,21 @@ public class PluginServer {
         app.get("/current-class", classRoutes::handleCurrentClass);
         app.get("/all-classes", classRoutes::handleAllClasses);
         app.get("/selected-text", classRoutes::handleSelectedText);
-        app.get("/class-source", classRoutes::handleClassSource);
-        app.get("/batch-class-source", classRoutes::handleBatchClassSource);
-        app.get("/smali-of-class", classRoutes::handleSmaliOfClass);
+        app.get("/class-source", decompileRoutes::handleClassSource);
+        app.get("/batch-class-source", batchRoutes::handleBatchClassSource);
+        app.get("/smali-of-class", decompileRoutes::handleSmaliOfClass);
         app.get("/methods-of-class", classRoutes::handleMethodsOfClass);
         app.get("/fields-of-class", classRoutes::handleFieldsOfClass);
-        app.get("/main-application-classes-code", classRoutes::handleMainApplicationClassesCode);
-        app.get("/main-application-classes-names", classRoutes::handleMainApplicationClassesNames);
-        app.get("/main-activity", classRoutes::handleMainActivity);
-        app.get("/search-classes-by-keyword", classRoutes::handleSearchClassesByKeyword);
+        app.get("/main-application-classes-code", batchRoutes::handleMainApplicationClassesCode);
+        app.get("/main-application-classes-names", batchRoutes::handleMainApplicationClassesNames);
+        app.get("/main-activity", batchRoutes::handleMainActivity);
+        app.get("/search-classes-by-keyword", searchRoutes::handleSearchClassesByKeyword);
         app.get("/class-info", classRoutes::handleClassInfo);
 
 
         // --- Methods ---
         app.get("/method-by-name", methodRoutes::handleMethodByName);
         app.get("/batch-method-by-name", methodRoutes::handleBatchMethodByName);
-        app.get("/search-method", methodRoutes::handleSearchMethod);
         app.get("/method-signature", methodRoutes::handleMethodSignature);
         app.get("/method-callees", methodRoutes::handleMethodCallees);
         app.get("/search-native-methods", methodRoutes::handleSearchNativeMethods);
@@ -772,25 +775,35 @@ public class PluginServer {
     );
 
     /**
-     * Predecompile the top-K most-referenced classes after the name-index has been built.
+     * Two-phase warmup that runs after the name-index is built.
+     *
+     * <h3>Phase 1 — Serial decompile under write-lock</h3>
+     * <p>JADX's {@code getCode()} is NOT thread-safe for concurrent callers; the write-lock
+     * comment in {@link com.zin.jadxaimcp.utils.JadxSearchLock} is definitive.  We therefore
+     * decompile top-K candidates serially: acquire write-lock, call {@code getCode()}, release.
+     * This serialises cleanly with concurrent API requests that also contend for the lock,
+     * giving those requests a fair shot at the lock between warmup classes.</p>
      *
      * <p>Reads {@code JADX_MCP_WARMUP_TOP_K} (default 100); set to 0 to disable entirely.
-     * Uses the shared {@link com.zin.jadxaimcp.server.routes.ClassRoutes#submitWarmupTask}
-     * so decompile tasks run on the same thread pool as search operations.</p>
+     * Also includes Android entry-point classes ({@code Activity}, {@code Service}, etc.).</p>
      *
-     * <p>Also decompiles any class whose superclass chain includes a known Android entry point
-     * ({@code Activity}, {@code Service}, {@code Application}, {@code BroadcastReceiver},
-     * {@code ContentProvider}).</p>
+     * <h3>Phase 2 — Parallel trigram index fill</h3>
+     * <p>After all decompiles finish, N worker threads iterate the candidate list and call
+     * {@link com.zin.jadxaimcp.utils.CodeContentIndex#tryIndexFromCache} for each class
+     * that has cached code but isn't yet in the trigram index.
+     * {@code CodeContentIndex} is fully thread-safe (ConcurrentHashMap + per-BitSet
+     * synchronisation), so this phase is truly parallel — no JADX lock needed.</p>
+     *
+     * <p>Reads {@code JADX_MCP_WARMUP_INDEX_WORKERS} (default 4) to tune parallelism.</p>
+     *
+     * <p>Emits a final summary log:
+     * "Warmup complete: %d classes decompiled, %d indexed, trigram coverage %.1f%%".</p>
      */
     private void runPredecompileWarmup() {
         try {
             int topK = parseEnvIntAllowZero("JADX_MCP_WARMUP_TOP_K", 100);
             if (topK == 0) {
                 logger.info("[JAI] Predecompile warmup disabled (JADX_MCP_WARMUP_TOP_K=0)");
-                return;
-            }
-            if (classRoutes == null) {
-                logger.warn("[JAI] Predecompile warmup skipped: classRoutes not available");
                 return;
             }
 
@@ -818,16 +831,12 @@ public class PluginServer {
 
             // Build candidate set: top-K by score + Android entry points
             java.util.LinkedHashSet<jadx.api.JavaClass> candidates = new java.util.LinkedHashSet<>();
-
-            // Top-K most-referenced
             int added = 0;
             for (jadx.api.JavaClass cls : allClasses) {
                 if (added >= topK) break;
                 candidates.add(cls);
                 added++;
             }
-
-            // Android entry-point classes (superclass chain check)
             for (jadx.api.JavaClass cls : allClasses) {
                 if (candidates.contains(cls)) continue;
                 String superClass = com.zin.jadxaimcp.utils.JadxApiAdapter.getSuperClass(cls);
@@ -836,22 +845,143 @@ public class PluginServer {
                 }
             }
 
-            logger.info("[JAI] Predecompile warmup: {} candidates (topK={} + entry-points)",
-                candidates.size(), topK);
+            java.util.List<jadx.api.JavaClass> candidateList = new java.util.ArrayList<>(candidates);
+            logger.info("[JAI] Warmup phase-1 start: {} candidates (topK={} + entry-points)",
+                candidateList.size(), topK);
 
-            int count = 0;
-            for (jadx.api.JavaClass cls : candidates) {
+            // ----------------------------------------------------------------
+            // Phase 1: Serial decompile under write-lock.
+            // JADX getCode() is NOT thread-safe; all callers must serialise via
+            // JadxSearchLock.  We acquire per-class with a 30s timeout so
+            // concurrent API requests can interleave between warmup steps.
+            // ----------------------------------------------------------------
+            // Per-class timeout: each class decompile runs in a dedicated daemon thread that
+            // owns the write lock. The warmup supervisor waits at most perClassTimeoutSec
+            // seconds per class. On timeout the daemon thread is interrupted and the
+            // executor is restarted so subsequent classes get a fresh thread.
+            // This prevents a single stuck class from holding the write lock indefinitely.
+            final int perClassTimeoutSec = parseEnvInt("JADX_MCP_WARMUP_PER_CLASS_TIMEOUT", 30);
+            long phase1Start = System.currentTimeMillis();
+            int decompiled = 0;
+            int lockSkipped = 0;
+
+            java.util.concurrent.ExecutorService decompileExecutor =
+                java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "jadx-warmup-decompile");
+                    t.setDaemon(true);
+                    return t;
+                });
+
+            for (jadx.api.JavaClass cls : candidateList) {
                 if (Thread.currentThread().isInterrupted()) {
+                    Thread.interrupted();
                     break;
                 }
-                classRoutes.submitWarmupTask(cls);
-                count++;
-                if (count % 10 == 0) {
-                    logger.info("[JAI] Predecompile warmup: submitted {}/{} tasks",
-                        count, candidates.size());
+                final String clsName = cls.getFullName();
+                java.util.concurrent.Future<Boolean> task = decompileExecutor.submit(() -> {
+                    if (!com.zin.jadxaimcp.utils.JadxSearchLock.tryAcquire(perClassTimeoutSec)) {
+                        return Boolean.FALSE;
+                    }
+                    try {
+                        cls.getCode();
+                        return Boolean.TRUE;
+                    } catch (Exception ignored) {
+                        return Boolean.FALSE;
+                    } finally {
+                        com.zin.jadxaimcp.utils.JadxSearchLock.release();
+                    }
+                });
+
+                try {
+                    if (Boolean.TRUE.equals(
+                            task.get(perClassTimeoutSec, java.util.concurrent.TimeUnit.SECONDS))) {
+                        decompiled++;
+                    } else {
+                        lockSkipped++;
+                    }
+                } catch (java.util.concurrent.TimeoutException te) {
+                    task.cancel(true);
+                    lockSkipped++;
+                    logger.warn("[JAI] Warmup: class {} exceeded {}s timeout, skipping. Recycling decompile thread.",
+                        clsName, perClassTimeoutSec);
+                    // Restart so the next class gets a clean thread.
+                    // The interrupted daemon eventually releases the lock in its finally block.
+                    decompileExecutor.shutdownNow();
+                    decompileExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                        Thread t = new Thread(r, "jadx-warmup-decompile");
+                        t.setDaemon(true);
+                        return t;
+                    });
+                } catch (java.util.concurrent.ExecutionException ee) {
+                    lockSkipped++;
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+
+                if (decompiled % 10 == 0 && decompiled > 0) {
+                    logger.info("[JAI] Warmup phase-1: {}/{} decompiled", decompiled, candidateList.size());
                 }
             }
-            logger.info("[JAI] Predecompile warmup: submitted all {} tasks", count);
+
+            decompileExecutor.shutdownNow();
+            long phase1Ms = System.currentTimeMillis() - phase1Start;
+            logger.info("[JAI] Warmup phase-1 done: {} decompiled, {} lock-skipped in {}ms",
+                decompiled, lockSkipped, phase1Ms);
+
+            // ----------------------------------------------------------------
+            // Phase 2: Parallel trigram index fill.
+            // Reads already-cached code only (no JADX lock needed).
+            // CodeContentIndex is thread-safe — this phase is truly parallel.
+            // ----------------------------------------------------------------
+            int indexWorkers = parseEnvInt("JADX_MCP_WARMUP_INDEX_WORKERS", 4);
+            int effectiveWorkers = Math.min(indexWorkers, Math.max(1, candidateList.size()));
+            java.util.concurrent.atomic.AtomicInteger indexed = new java.util.concurrent.atomic.AtomicInteger(0);
+            java.util.concurrent.atomic.AtomicInteger indexPos = new java.util.concurrent.atomic.AtomicInteger(0);
+            long phase2Start = System.currentTimeMillis();
+
+            java.util.concurrent.ExecutorService indexPool =
+                java.util.concurrent.Executors.newFixedThreadPool(effectiveWorkers);
+            java.util.concurrent.CountDownLatch latch =
+                new java.util.concurrent.CountDownLatch(effectiveWorkers);
+
+            for (int w = 0; w < effectiveWorkers; w++) {
+                indexPool.submit(() -> {
+                    try {
+                        int pos;
+                        while ((pos = indexPos.getAndIncrement()) < candidateList.size()) {
+                            jadx.api.JavaClass cls = candidateList.get(pos);
+                            // getCachedCodeDirect reads from ICodeCache without acquiring
+                            // JadxSearchLock — safe because phase-1 has already populated it.
+                            String code = ClassCacheManager.getCachedCodeDirect(cls);
+                            if (com.zin.jadxaimcp.utils.CodeContentIndex.tryIndexFromCache(cls, code)) {
+                                indexed.incrementAndGet();
+                            }
+                        }
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            try {
+                latch.await(120, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                indexPool.shutdownNow();
+            }
+
+            long phase2Ms = System.currentTimeMillis() - phase2Start;
+            int totalIndexed = com.zin.jadxaimcp.utils.CodeContentIndex.indexedClassCount();
+            int totalClasses = allClasses.size();
+            double coverage = totalClasses > 0 ? (100.0 * totalIndexed / totalClasses) : 0.0;
+
+            logger.info(String.format(
+                "[JAI] Warmup complete: %d classes decompiled, %d indexed, "
+                + "trigram coverage %.1f%% (%d/%d). Phase1=%dms phase2=%dms",
+                decompiled, indexed.get(), coverage, totalIndexed, totalClasses,
+                phase1Ms, phase2Ms));
 
         } catch (Exception e) {
             logger.warn("[JAI] Predecompile warmup failed (non-fatal): {}", e.getMessage());

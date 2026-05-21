@@ -3,6 +3,9 @@ package com.zin.jadxaimcp.server;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -168,5 +171,87 @@ class AuthConfigTest {
         assertNotNull(path);
         assertTrue(path.contains("jadx-ai-mcp"), "配置文件路径应包含 jadx-ai-mcp 目录名");
         assertTrue(path.endsWith("auth.properties"), "配置文件应以 auth.properties 结尾");
+    }
+
+    // -------------------------------------------------------------------------
+    // 文件挂载 (JADX_MCP_AUTH_TOKEN_FILE) 支持
+    // -------------------------------------------------------------------------
+
+    @Test
+    void fileMountHappyPath_readsAndTrimsToken(@TempDir Path tmpDir) throws IOException {
+        // 写入带尾部换行的 token（模拟 Docker secret 文件行为）
+        Path secretFile = tmpDir.resolve("jadx_token");
+        String expectedToken = "my-file-token-abc123";
+        Files.writeString(secretFile, expectedToken + "\n", StandardCharsets.UTF_8);
+
+        AuthConfig config = new AuthConfig(null, null, secretFile.toString());
+
+        assertEquals(expectedToken, config.getAuthToken(), "文件 token 应被读取并去除尾部换行");
+        assertTrue(config.isExternallyManaged(), "文件挂载时 isExternallyManaged 应为 true");
+    }
+
+    @Test
+    void fileMountUnreadablePath_throwsRuntimeException() {
+        String nonExistentPath = "/tmp/definitely-does-not-exist-jadx-test-token-file";
+        assertThrows(RuntimeException.class,
+            () -> new AuthConfig(null, null, nonExistentPath),
+            "不可读文件路径应抛出 RuntimeException（fast-fail）");
+    }
+
+    @Test
+    void fileMountRegenerateToken_rejected(@TempDir Path tmpDir) throws IOException {
+        Path secretFile = tmpDir.resolve("jadx_token");
+        Files.writeString(secretFile, "file-token-regen-test", StandardCharsets.UTF_8);
+
+        AuthConfig config = new AuthConfig(null, null, secretFile.toString());
+        String tokenBefore = config.getAuthToken();
+
+        boolean result = config.regenerateToken();
+
+        assertFalse(result, "外部管理时 regenerateToken 应返回 false");
+        assertEquals(tokenBefore, config.getAuthToken(), "外部管理时 token 不应被修改");
+    }
+
+    @Test
+    void fileMountSetAuthToken_rejected(@TempDir Path tmpDir) throws IOException {
+        Path secretFile = tmpDir.resolve("jadx_token");
+        Files.writeString(secretFile, "file-token-set-test", StandardCharsets.UTF_8);
+
+        AuthConfig config = new AuthConfig(null, null, secretFile.toString());
+        String tokenBefore = config.getAuthToken();
+
+        boolean result = config.setAuthToken("new-manual-token");
+
+        assertFalse(result, "外部管理时 setAuthToken 应返回 false");
+        assertEquals(tokenBefore, config.getAuthToken(), "外部管理时 token 不应被修改");
+    }
+
+    @Test
+    void isExternallyManaged_trueWhenFilePathSet(@TempDir Path tmpDir) throws IOException {
+        Path secretFile = tmpDir.resolve("jadx_token");
+        Files.writeString(secretFile, "check-external-token", StandardCharsets.UTF_8);
+
+        AuthConfig config = new AuthConfig(null, null, secretFile.toString());
+        assertTrue(config.isExternallyManaged(), "设置文件路径后 isExternallyManaged 应为 true");
+    }
+
+    @Test
+    void isExternallyManaged_falseWhenNoFilePath() {
+        AuthConfig config = new AuthConfig("some-env-token", null, null);
+        assertFalse(config.isExternallyManaged(), "未设置文件路径时 isExternallyManaged 应为 false");
+    }
+
+    @Test
+    void envPrecedence_fileOverEnvToken(@TempDir Path tmpDir) throws IOException {
+        // 文件 token 应优先于 env token
+        Path secretFile = tmpDir.resolve("jadx_token");
+        String fileToken = "token-from-file";
+        String envToken  = "token-from-env";
+        Files.writeString(secretFile, fileToken, StandardCharsets.UTF_8);
+
+        AuthConfig config = new AuthConfig(envToken, null, secretFile.toString());
+
+        assertEquals(fileToken, config.getAuthToken(), "_FILE 应优先于 _TOKEN env var");
+        assertTrue(config.isExternallyManaged());
     }
 }

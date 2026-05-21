@@ -1,6 +1,6 @@
 [project]
 name = "jadx-mcp-server"
-version = "6.3.0"
+version = "6.4.0"
 description = "MCP Server for JADX AI - Connect LLMs with JADX decompiler"
 readme = "README_SERVER.md"
 requires-python = ">=3.10"
@@ -13,6 +13,11 @@ dependencies = [
 [project.optional-dependencies]
 compression = [
     "brotli==1.1.0",
+]
+dev = [
+    "pytest>=7,<9",
+    "pytest-asyncio>=0.21,<1",
+    "respx==0.23.1",
 ]
 
 [build-system]

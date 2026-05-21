@@ -191,25 +191,6 @@ class TestAPKMethodAnalysis:
         method_names = [m.get("name", m) if isinstance(m, dict) else m for m in methods]
         assert "onCreate" in str(method_names), "Should have onCreate method"
 
-    async def test_search_method_by_name(self, jadx_base_url, http_client):
-        """User asks: Find all onCreate methods"""
-        resp = await http_client.get(
-            f"{jadx_base_url}/search-method",
-            params={"method_name": "onCreate", "count": 20}
-        )
-        assert resp.status_code == 200
-
-        data = resp.json()
-        methods = data.get("methods", [])
-
-        # STRICT: onCreate exists in our test APK
-        assert len(methods) >= 1, "Should find at least one onCreate method"
-
-        # Verify search result structure
-        for method in methods:
-            assert "class_name" in method or "method_name" in method, \
-                "Method result should have class_name or method_name"
-
     async def test_get_method_source(self, jadx_base_url, http_client):
         """User asks: Show me the onCreate method code"""
         resp = await http_client.get(
@@ -365,14 +346,3 @@ class TestAPKErrorHandling:
             # Should return data (possibly truncated)
             assert "classes" in data
 
-    async def test_invalid_method_search_returns_empty(self, jadx_base_url, http_client):
-        """Non-matching search should return empty results, not error"""
-        resp = await http_client.get(
-            f"{jadx_base_url}/search-method",
-            params={"method_name": "xyzDefinitelyNotExistingMethod123"}
-        )
-        assert resp.status_code == 200
-
-        data = resp.json()
-        methods = data.get("methods", [])
-        assert len(methods) == 0, "Should return empty list for no matches"

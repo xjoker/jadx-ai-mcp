@@ -55,7 +55,7 @@ RECOMMENDED WORKFLOW:
 
 SEARCH STRATEGY:
 - search_classes_by_keyword is the primary search tool — use it for everything
-- search_method_by_name is slower and unscoped; prefer search_in='method' instead
+- Use search_in='method' for method name searches (fast, uses metadata only)
 - Batch tools cap at 20 items — use create_transfer_token for larger downloads
 
 RENAME / REFACTOR:
@@ -104,6 +104,8 @@ from src.server.tools import (
     register_decompile_tools,
     register_scaling_tools,
     register_file_management_tools,
+    register_diagnostics_tools,
+    register_workflow_tools,
 )
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
@@ -152,6 +154,8 @@ register_dataflow_tools(mcp, with_busy_check)
 register_decompile_tools(mcp, with_busy_check)
 register_scaling_tools(mcp)
 register_file_management_tools(mcp, with_busy_check)
+register_diagnostics_tools(mcp, with_busy_check)
+register_workflow_tools(mcp, with_busy_check)
 
 # Load balancer status tool
 from src.server.load_balancer import register_loadbalancer_tools
@@ -278,13 +282,21 @@ def main():
     # ========== Multi-User Authentication Setup ==========
     from src.server.user_auth import UserAuthManager
     
-    # Get default JADX token from config or CLI
+    # Get default JADX token — priority: JADX_MCP_AUTH_TOKEN_FILE > --auth-token CLI > TOML jadx_token
+    import os as _os
     default_jadx_token = ""
     if loaded_config and loaded_config.defaults.jadx_token:
         default_jadx_token = loaded_config.defaults.jadx_token
     if args.auth_token:  # CLI overrides config
         default_jadx_token = args.auth_token
-    
+    # File-mount takes highest priority (Docker secrets pattern)
+    _token_file = _os.environ.get("JADX_MCP_AUTH_TOKEN_FILE")
+    if _token_file:
+        _file_token = config._load_token_from_file(_token_file)
+        if _file_token:
+            default_jadx_token = _file_token
+            print(f"[OK] JADX plugin token loaded from file: {_token_file}")
+
     # Set shared JADX token
     _default_tokens = {"admin-secret-token", "jadx-plugin-secret-token"}
     if default_jadx_token:

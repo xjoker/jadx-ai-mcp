@@ -544,7 +544,7 @@ batch_get_class_source(class_names=[
     - Check the `error` field for individual items that failed.
 
 5.  **Pagination for Large Results**:
-    - Tools like `search_method_by_name` support `offset` and `count` parameters.
+    - Tools like `search_classes_by_keyword` support `offset` and `count` parameters.
     - Use `has_more` and `next_offset` to paginate through large result sets.
 
 6.  **Chunking Support**:

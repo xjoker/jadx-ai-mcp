@@ -60,6 +60,22 @@ public final class JadxApiAdapter {
         }
     }
 
+    /**
+     * Return snapshot cache sizes for the /index-stats endpoint.
+     *
+     * @return map with method_snapshot_classes and field_snapshot_classes
+     */
+    public static java.util.Map<String, Object> getSnapshotCacheStats() {
+        java.util.Map<String, Object> stats = new java.util.LinkedHashMap<>();
+        synchronized (methodSnapshotCache) {
+            stats.put("method_snapshot_classes", methodSnapshotCache.size());
+        }
+        synchronized (fieldSnapshotCache) {
+            stats.put("field_snapshot_classes", fieldSnapshotCache.size());
+        }
+        return stats;
+    }
+
     public static String getClassAliasName(JavaClass cls) {
         return cls != null ? cls.getFullName() : null;
     }

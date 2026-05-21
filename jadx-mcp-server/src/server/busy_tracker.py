@@ -39,7 +39,6 @@ _SEARCH_IN_SPLIT_RE = re.compile(r"[,/]")
 
 METADATA_OPERATIONS = {
     "get_all_classes",
-    "search_method_by_name",
     "get_methods_of_class",
     "get_fields_of_class",
     "get_file_info",

@@ -1,0 +1,223 @@
+name: Integration Tests
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - "jadx-mcp-server/**"
+      - "src/**"
+      - "docker/**"
+      - "docker-compose.test.yaml"
+      - ".github/workflows/integration-tests.yml"
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      test_target:
+        description: "Fixture type to test against (jar | apk | both)"
+        required: false
+        default: "both"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+
+jobs:
+  build-test-image:
+    name: Build Test Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image (cache to /tmp)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: jadx-ai-mcp:test
+          build-args: |
+            DOCKER_PLATFORM=linux/amd64
+          outputs: type=docker,dest=/tmp/jadx-ai-mcp-test.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jadx-test-image
+          path: /tmp/jadx-ai-mcp-test.tar
+          retention-days: 1
+
+  integration-jar:
+    name: Integration Tests (JAR)
+    runs-on: ubuntu-latest
+    needs: build-test-image
+    timeout-minutes: 20
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration-test'))
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download test image
+        uses: actions/download-artifact@v4
+        with:
+          name: jadx-test-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load --input /tmp/jadx-ai-mcp-test.tar
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        working-directory: jadx-mcp-server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Start JADX container (JAR fixture)
+        run: |
+          TEST_TARGET=jar \
+          TEST_IMAGE=jadx-ai-mcp:test \
+          TEST_CONFIG_PATH=./jadx-mcp-server/data/config/test-config.toml \
+          docker compose -f docker-compose.test.yaml up -d
+
+      - name: Wait for container health check
+        run: |
+          echo "Waiting for container to be healthy..."
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' jadx-ai-mcp-integration 2>/dev/null || echo "missing")
+            echo "[$i/60] Health status: $status"
+            if [ "$status" = "healthy" ]; then
+              echo "Container is healthy."
+              break
+            fi
+            if [ "$i" = "60" ]; then
+              echo "Container did not become healthy in time."
+              docker logs jadx-ai-mcp-integration || true
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Run integration tests (JAR)
+        working-directory: jadx-mcp-server
+        env:
+          JADX_BASE_URL: http://127.0.0.1:8650
+          MCP_BASE_URL: http://127.0.0.1:8651
+        run: |
+          python -m pytest tests/integration \
+            -m integration \
+            --ignore=tests/integration/test_all_in_one_deployment.py \
+            --ignore=tests/integration/test_multi_client_deployment.py \
+            -q --tb=short \
+            --timeout=60
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs jadx-ai-mcp-integration || true
+
+      - name: Stop container
+        if: always()
+        run: docker compose -f docker-compose.test.yaml down --remove-orphans || true
+
+  integration-apk:
+    name: Integration Tests (APK)
+    runs-on: ubuntu-latest
+    needs: build-test-image
+    timeout-minutes: 20
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'integration-test'))
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download test image
+        uses: actions/download-artifact@v4
+        with:
+          name: jadx-test-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load --input /tmp/jadx-ai-mcp-test.tar
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        working-directory: jadx-mcp-server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Start JADX container (APK fixture)
+        run: |
+          TEST_TARGET=apk \
+          TEST_IMAGE=jadx-ai-mcp:test \
+          TEST_CONTAINER_NAME=jadx-ai-mcp-integration \
+          TEST_CONFIG_PATH=./jadx-mcp-server/data/config/test-config.toml \
+          docker compose -f docker-compose.test.yaml up -d
+
+      - name: Wait for container health check
+        run: |
+          echo "Waiting for container to be healthy..."
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' jadx-ai-mcp-integration 2>/dev/null || echo "missing")
+            echo "[$i/60] Health status: $status"
+            if [ "$status" = "healthy" ]; then
+              echo "Container is healthy."
+              break
+            fi
+            if [ "$i" = "60" ]; then
+              echo "Container did not become healthy in time."
+              docker logs jadx-ai-mcp-integration || true
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Run integration tests (APK)
+        working-directory: jadx-mcp-server
+        env:
+          JADX_BASE_URL: http://127.0.0.1:8650
+          MCP_BASE_URL: http://127.0.0.1:8651
+        run: |
+          python -m pytest tests/integration \
+            -m integration \
+            --ignore=tests/integration/test_all_in_one_deployment.py \
+            --ignore=tests/integration/test_multi_client_deployment.py \
+            -q --tb=short \
+            --timeout=60
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs jadx-ai-mcp-integration || true
+
+      - name: Stop container
+        if: always()
+        run: docker compose -f docker-compose.test.yaml down --remove-orphans || true

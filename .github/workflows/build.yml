@@ -66,7 +66,7 @@ jobs:
           VERSION=${{ steps.get_version.outputs.version }}
           # Get short commit SHA (7 chars)
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          
+
           # Update pom.xml - match any version (including -dev suffix) in the first occurrence
           sed -i "0,/<version>[0-9.]*[-a-zA-Z0-9]*<\/version>/s/<version>[0-9.]*[-a-zA-Z0-9]*<\/version>/<version>${VERSION}<\/version>/" pom.xml
           # Update Java banner - version
@@ -75,6 +75,32 @@ jobs:
           sed -i "s|BUILD_COMMIT = \".*\"|BUILD_COMMIT = \"${SHORT_SHA}\"|" src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java
           # Update Python banner
           sed -i "s|SERVER_VERSION = \".*\"|SERVER_VERSION = \"${VERSION}\"|" jadx-mcp-server/src/banner.py
+
+      - name: Verify version injection
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          JAVA_BANNER="src/main/java/com/zin/jadxaimcp/utils/JadxAIMCPBanner.java"
+          PYTHON_BANNER="jadx-mcp-server/src/banner.py"
+          FAIL=0
+
+          grep -q "VERSION = \"${VERSION}\"" "${JAVA_BANNER}" \
+            || { echo "ERROR: Java banner VERSION not updated (expected ${VERSION})"; FAIL=1; }
+          grep -q "BUILD_COMMIT = \"${SHORT_SHA}\"" "${JAVA_BANNER}" \
+            || { echo "ERROR: Java banner BUILD_COMMIT not updated (expected ${SHORT_SHA})"; FAIL=1; }
+          grep -q "SERVER_VERSION = \"${VERSION}\"" "${PYTHON_BANNER}" \
+            || { echo "ERROR: Python banner SERVER_VERSION not updated (expected ${VERSION})"; FAIL=1; }
+          grep -q "<version>${VERSION}</version>" pom.xml \
+            || { echo "ERROR: pom.xml version not updated (expected ${VERSION})"; FAIL=1; }
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo "--- Java banner content ---"
+            grep "VERSION\|BUILD_COMMIT" "${JAVA_BANNER}"
+            echo "--- Python banner content ---"
+            grep "SERVER_VERSION" "${PYTHON_BANNER}"
+            exit 1
+          fi
+          echo "Version injection verified: ${VERSION} (commit: ${SHORT_SHA})"
 
       - name: Build with Maven
         run: mvn clean package -DskipTests

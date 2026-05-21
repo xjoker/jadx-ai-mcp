@@ -45,6 +45,7 @@ public class SettingsDialog extends JDialog {
     private JTextField tokenField;
     private JButton copyTokenButton;
     private JButton regenerateButton;
+    private JLabel externalTokenHintLabel;
     
     public SettingsDialog(MainWindow mainWindow, JadxAIMCP plugin) {
         super(mainWindow, "JADX AI MCP Plugin Settings", true);
@@ -240,12 +241,20 @@ public class SettingsDialog extends JDialog {
         regenerateButton.addActionListener(e -> regenerateToken());
         panel.add(regenerateButton, gbc);
         
-        // Note
+        // Hint for file-managed tokens (hidden by default; shown in loadCurrentSettings)
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 4;
+        externalTokenHintLabel = new JLabel();
+        externalTokenHintLabel.setFont(externalTokenHintLabel.getFont().deriveFont(Font.PLAIN, 11f));
+        externalTokenHintLabel.setForeground(new Color(0, 102, 153));
+        externalTokenHintLabel.setVisible(false);
+        panel.add(externalTokenHintLabel, gbc);
+
+        // Note
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 4;
         JLabel noteLabel = new JLabel("<html><font color='gray'>Note: MCP Server requires --auth-token parameter with the same token</font></html>");
         noteLabel.setFont(noteLabel.getFont().deriveFont(Font.PLAIN, 11f));
         panel.add(noteLabel, gbc);
-        
+
         return panel;
     }
     
@@ -299,8 +308,21 @@ public class SettingsDialog extends JDialog {
         if (authConfig != null) {
             authEnabledCheckbox.setSelected(authConfig.isAuthEnabled());
             tokenField.setText(authConfig.getAuthToken());
+
+            if (authConfig.isExternallyManaged()) {
+                // File-mount mode: lock editing and show hint
+                String filePath = System.getenv("JADX_MCP_AUTH_TOKEN_FILE");
+                String hint = filePath != null
+                    ? "Token managed externally (JADX_MCP_AUTH_TOKEN_FILE=" + filePath + "); edit the file to change."
+                    : "Token managed externally (JADX_MCP_AUTH_TOKEN_FILE); edit the file to change.";
+                externalTokenHintLabel.setText("<html><font color='#006699'>" + hint + "</font></html>");
+                externalTokenHintLabel.setVisible(true);
+                tokenField.setEditable(false);
+                regenerateButton.setEnabled(false);
+                regenerateButton.setToolTipText("Token is managed externally; rotation disabled");
+            }
         }
-        
+
         updateAuthUI();
     }
     
@@ -335,13 +357,18 @@ public class SettingsDialog extends JDialog {
     }
     
     /**
-     * Update authentication UI state
+     * Update authentication UI state.
+     * When token is externally managed, token editing and regeneration remain locked
+     * regardless of the auth-enabled checkbox.
      */
     private void updateAuthUI() {
         boolean enabled = authEnabledCheckbox.isSelected();
-        tokenField.setEnabled(enabled);
+        AuthConfig authConfig = plugin.getAuthConfig();
+        boolean externallyManaged = authConfig != null && authConfig.isExternallyManaged();
+
+        tokenField.setEnabled(enabled && !externallyManaged);
         copyTokenButton.setEnabled(enabled);
-        regenerateButton.setEnabled(enabled);
+        regenerateButton.setEnabled(enabled && !externallyManaged);
     }
     
     /**
@@ -381,12 +408,19 @@ public class SettingsDialog extends JDialog {
      * Regenerate token
      */
     private void regenerateToken() {
+        AuthConfig authConfig = plugin.getAuthConfig();
+        if (authConfig != null && authConfig.isExternallyManaged()) {
+            JOptionPane.showMessageDialog(this,
+                "Token is managed externally via JADX_MCP_AUTH_TOKEN_FILE.\nEdit the secret file to change the token.",
+                "Not Available", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         int confirm = JOptionPane.showConfirmDialog(this,
             "Are you sure you want to regenerate the token?\nCurrent token will be invalidated, MCP client config needs update.",
             "Confirm", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        
+
         if (confirm == JOptionPane.YES_OPTION) {
-            AuthConfig authConfig = plugin.getAuthConfig();
             if (authConfig != null) {
                 authConfig.regenerateToken();
                 tokenField.setText(authConfig.getAuthToken());
@@ -437,7 +471,7 @@ public class SettingsDialog extends JDialog {
         AuthConfig authConfig = plugin.getAuthConfig();
         if (authConfig != null) {
             authConfig.setAuthEnabled(authEnabledCheckbox.isSelected());
-            // Manual token modification
+            // Manual token modification (no-op when externally managed — setAuthToken returns false)
             String newToken = tokenField.getText().trim();
             if (!newToken.isEmpty() && !newToken.equals(authConfig.getAuthToken())) {
                 authConfig.setAuthToken(newToken);

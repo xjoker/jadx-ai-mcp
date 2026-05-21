@@ -11,7 +11,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.zin.jadxaimcp.server.PluginServer;
+import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.CodeContentIndex;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
+import com.zin.jadxaimcp.utils.JadxApiAdapter;
 
 public class GeneralRoutes {
     private static final Logger logger = LoggerFactory.getLogger(GeneralRoutes.class);
@@ -75,5 +78,45 @@ public class GeneralRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Internal Error while trying to handle health ping request: " + e.getMessage(), e, logger);
         }
     }
-    
+
+    /**
+     * @name handleIndexStats
+     * @param ctx - The jadx plugin server context
+     * @return void
+     *
+     * Returns a unified health snapshot of all internal plugin indices:
+     * name indices (class/method/field), trigram content index, snapshot cache,
+     * and a summary of the upstream code cache delegation.
+     *
+     * Useful for AI clients to decide whether trigram-based code search is warm
+     * enough to use efficiently, or whether to fall back to metadata searches.
+     */
+    public void handleIndexStats(Context ctx) {
+        try {
+            Map<String, Object> response = new HashMap<>();
+
+            // --- Name indices (ClassCacheManager) ---
+            response.put("name_indices", ClassCacheManager.getNameIndexStats());
+
+            // --- Trigram content index (CodeContentIndex) ---
+            response.put("trigram_index", CodeContentIndex.getStats());
+
+            // --- Snapshot cache (JadxApiAdapter) ---
+            response.put("snapshot_cache", JadxApiAdapter.getSnapshotCacheStats());
+
+            // --- Code cache (ClassCacheManager facade over JADX ICodeCache) ---
+            Map<String, Object> codeCacheRaw = ClassCacheManager.getCodeCacheStats();
+            Map<String, Object> codeCache = new HashMap<>();
+            codeCache.put("class_index_size", codeCacheRaw.getOrDefault("class_index_size", 0));
+            codeCache.put("delegates_to_jadx_icodecache",
+                    codeCacheRaw.getOrDefault("delegates_to_jadx_icodecache", true));
+            response.put("code_cache", codeCache);
+
+            ctx.json(response);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx,
+                    "Internal Error while handling index-stats request: " + e.getMessage(), e, logger);
+        }
+    }
+
 }

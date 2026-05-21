@@ -58,58 +58,6 @@ async def get_method_by_name(
     return result
 
 
-async def search_method_by_name(
-    method_name: str,
-    offset: int = 0,
-    count: int = 50,
-    instance_id: Optional[str] = None
-) -> dict:
-    """
-    Search for a method name across all classes with pagination.
-
-    Args:
-        method_name: Method name to search for (partial matching supported)
-        offset: Starting index for pagination (default: 0)
-        count: Number of results to return (default: 50, max: 200)
-        instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
-    Returns:
-        dict: Paginated list of methods with has_more, next_offset for continuation
-
-    MCP Tool: search_method_by_name
-    Description: Finds all occurrences of a method name across the APK with pagination
-    """
-    logger.info(f"search_method_by_name: method={method_name}, offset={offset}, count={count}, instance={instance_id}")
-    try:
-        result = await get_from_jadx(
-            "search-method", 
-            {"method_name": method_name, "offset": offset, "count": count}, 
-            instance_id=instance_id
-        )
-        if "error" in result:
-            logger.warning(f"search_method_by_name error response: {result.get('error')}")
-            # Add recovery hints to error response
-            result["suggested_prompt"] = "search-code"
-            result["recovery_hint"] = (
-                "This global search may have timed out or crashed. "
-                "Try using search_classes_by_keyword(search_term='%s', search_in='method') instead." % method_name
-            )
-        else:
-            match_count = len(result.get("methods", result.get("classes", [])))
-            logger.info(f"search_method_by_name: found {match_count} matches, has_more={result.get('has_more')}")
-        return result
-    except Exception as e:
-        logger.error(f"search_method_by_name exception: {type(e).__name__}: {e}")
-        return {
-            "error": f"Unexpected error: {e}",
-            "suggested_prompt": "search-code",
-            "recovery_hint": (
-                "This global search failed. Consider using the safer alternative: "
-                "search_classes_by_keyword(search_term='%s', search_in='method')." % method_name
-            ),
-        }
-
-
 async def _execute_batch_method_request(methods: list[str], chunk: int, instance_id: Optional[str]) -> dict:
     """Execute the actual batch method request"""
     params = {"methods": ",".join(methods)}
@@ -375,24 +323,6 @@ def register_search_tools(mcp, with_busy_check):
         return await get_method_by_name(
             class_name, method_name, method_signature=method_signature, instance_id=instance_id
         )
-
-    @mcp.tool(name="search_method_by_name")
-    @with_busy_check
-    async def search_method_by_name_tool(
-        method_name: str,
-        offset: int = 0,
-        count: int = 50,
-        instance_id: Optional[str] = None
-    ) -> dict:
-        """Global method-name search across all classes. Prefer search_classes_by_keyword(search_in='method') — faster and safer.
-
-        Args:
-            method_name: Method name (partial match supported). offset: Pagination start.
-            count: Max results (default 50, max 200). instance_id: Target JADX instance name.
-        Returns:
-            dict: {methods: [...], has_more: bool}
-        """
-        return await search_method_by_name(method_name, offset, count, instance_id=instance_id)
 
     @mcp.tool(name="batch_get_method_by_name")
     @with_busy_check

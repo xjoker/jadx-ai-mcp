@@ -8,6 +8,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Properties;
@@ -17,6 +19,9 @@ import java.util.Properties;
  *
  * Handles generation, storage, and validation of API authentication tokens.
  * Tokens are stored in a secure properties file and validated on each request.
+ *
+ * Supports file-mount mode via JADX_MCP_AUTH_TOKEN_FILE environment variable,
+ * which is the recommended pattern for Docker secrets and container deployments.
  *
  * @author JADX AI MCP Team
  */
@@ -31,40 +36,78 @@ public class AuthConfig {
 
     private String authToken;
     private boolean authEnabled;
-    
+
     // Environment variable overrides (used in Docker deployments)
     private String envAuthToken = null;
     private Boolean envAuthEnabled = null;
+
+    // File-mount mode: token sourced from an external secret file
+    private boolean externallyManaged = false;
+    private String tokenFilePath = null;
 
     /**
      * Initializes authentication configuration.
      * Loads existing token or generates a new one if not present.
      */
     public AuthConfig() {
-        this(null, null);
+        this(null, null, null);
     }
-    
+
     /**
      * Initializes authentication configuration with optional environment overrides.
-     * 
+     *
      * @param envToken Authentication token from environment variable, or null
      * @param envEnabled Authentication enabled flag from environment, or null
      */
     public AuthConfig(String envToken, Boolean envEnabled) {
+        this(envToken, envEnabled, null);
+    }
+
+    /**
+     * Initializes authentication configuration with optional environment overrides
+     * and optional file-mount path.
+     *
+     * Priority (highest to lowest):
+     *   1. JADX_MCP_AUTH_TOKEN_FILE (file-mount / Docker secrets)
+     *   2. JADX_MCP_AUTH_TOKEN (env var)
+     *   3. Persisted ~/.jadx-ai-mcp/auth.properties
+     *   4. Generated random token
+     *
+     * When sourced from a file, token persistence and rotation are disabled.
+     *
+     * @param envToken     Authentication token from JADX_MCP_AUTH_TOKEN, or null
+     * @param envEnabled   Authentication enabled flag from JADX_MCP_AUTH_ENABLED, or null
+     * @param tokenFilePath Path from JADX_MCP_AUTH_TOKEN_FILE, or null
+     */
+    public AuthConfig(String envToken, Boolean envEnabled, String tokenFilePath) {
         this.envAuthToken = envToken;
         this.envAuthEnabled = envEnabled;
+        this.tokenFilePath = tokenFilePath;
         ensureConfigDirectory();
         loadOrGenerateToken();
-        
-        // Apply environment overrides after loading
+
+        // Apply environment overrides after loading (file-mount wins over env var)
         applyEnvironmentOverrides();
     }
-    
+
     /**
      * Applies environment variable overrides.
-     * Environment variables take precedence over stored configuration.
+     * File-mount token takes highest priority; plain env token is fallback.
      */
     private void applyEnvironmentOverrides() {
+        // Priority 1: file-mount token (Docker secrets pattern)
+        if (tokenFilePath != null && !tokenFilePath.isEmpty()) {
+            String fileToken = loadTokenFromFile(tokenFilePath);
+            // loadTokenFromFile throws/exits on error, so if we get here it's valid
+            authToken = fileToken;
+            externallyManaged = true;
+            logger.info("Using authentication token from file: " + tokenFilePath);
+            if (envAuthEnabled != null) {
+                authEnabled = envAuthEnabled;
+            }
+            return;
+        }
+        // Priority 2: env var token
         if (envAuthToken != null && !envAuthToken.isEmpty()) {
             authToken = envAuthToken;
             logger.info("Using authentication token from environment variable");
@@ -73,6 +116,43 @@ public class AuthConfig {
             authEnabled = envAuthEnabled;
             logger.info("Authentication " + (authEnabled ? "enabled" : "disabled") + " via environment variable");
         }
+    }
+
+    /**
+     * Reads and trims the token from the specified file.
+     * Fails fast (throws RuntimeException) if the file cannot be read,
+     * to prevent silent fallback to a weaker token source.
+     *
+     * @param filePath Path to the secret file
+     * @return Trimmed token string
+     */
+    private String loadTokenFromFile(String filePath) {
+        try {
+            byte[] bytes = Files.readAllBytes(Paths.get(filePath));
+            String token = new String(bytes, StandardCharsets.UTF_8).trim();
+            if (token.isEmpty()) {
+                String msg = "JADX_MCP_AUTH_TOKEN_FILE points to an empty file: " + filePath;
+                logger.error(msg);
+                throw new RuntimeException(msg);
+            }
+            return token;
+        } catch (IOException e) {
+            String msg = "JADX_MCP_AUTH_TOKEN_FILE is set but file cannot be read: " + filePath
+                       + " — " + e.getMessage();
+            logger.error(msg);
+            throw new RuntimeException(msg, e);
+        }
+    }
+
+    /**
+     * Returns true when the token was loaded from an external file
+     * (JADX_MCP_AUTH_TOKEN_FILE). In this mode, token rotation via the UI
+     * or API is disabled; edit the secret file externally to change the token.
+     *
+     * @return true if token is externally managed via file-mount
+     */
+    public boolean isExternallyManaged() {
+        return externallyManaged;
     }
 
     /**
@@ -147,8 +227,13 @@ public class AuthConfig {
 
     /**
      * Saves the authentication token to properties file.
+     * Skipped when token is sourced from an external file to avoid writing secrets to disk.
      */
     private void saveToken() {
+        if (externallyManaged) {
+            // Never persist externally-managed tokens back to disk
+            return;
+        }
         Properties props = new Properties();
         props.setProperty(TOKEN_KEY, authToken);
         props.setProperty(ENABLED_KEY, String.valueOf(authEnabled));
@@ -242,24 +327,40 @@ public class AuthConfig {
 
     /**
      * Regenerates the authentication token.
+     * Rejected when token is sourced from JADX_MCP_AUTH_TOKEN_FILE.
+     *
+     * @return true if token was regenerated, false if rejected (externally managed)
      */
-    public void regenerateToken() {
+    public boolean regenerateToken() {
+        if (externallyManaged) {
+            logger.warn("token sourced from JADX_MCP_AUTH_TOKEN_FILE; rotation disabled, edit the secret externally");
+            return false;
+        }
         authToken = generateSecureToken();
         saveToken();
         logger.info("Authentication token regenerated");
+        return true;
     }
 
     /**
      * Sets a custom authentication token.
+     * Rejected when token is sourced from JADX_MCP_AUTH_TOKEN_FILE.
      *
      * @param token The new authentication token
+     * @return true if token was set, false if rejected (externally managed or blank)
      */
-    public void setAuthToken(String token) {
+    public boolean setAuthToken(String token) {
+        if (externallyManaged) {
+            logger.warn("token sourced from JADX_MCP_AUTH_TOKEN_FILE; rotation disabled, edit the secret externally");
+            return false;
+        }
         if (token != null && !token.isEmpty()) {
             this.authToken = token;
             saveToken();
             logger.info("Authentication token updated manually");
+            return true;
         }
+        return false;
     }
 
     /**

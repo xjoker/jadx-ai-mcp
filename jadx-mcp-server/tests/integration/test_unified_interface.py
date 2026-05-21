@@ -112,17 +112,6 @@ class TestUnifiedSearchOperations:
     Verify search operations work for both file types.
     """
 
-    async def test_search_method_works(self, jadx_base_url, http_client):
-        """Method search should work for both file types"""
-        resp = await http_client.get(
-            f"{jadx_base_url}/search-method",
-            params={"method_name": "get", "count": 5}
-        )
-        assert resp.status_code == 200
-
-        data = resp.json()
-        assert "methods" in data, "Should have methods field"
-
     async def test_methods_of_class_works(self, jadx_base_url, http_client):
         """Getting methods of a class should work for both"""
         resp = await http_client.get(f"{jadx_base_url}/all-classes?count=1")
