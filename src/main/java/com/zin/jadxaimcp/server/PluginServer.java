@@ -35,6 +35,7 @@ public class PluginServer {
     private Thread.UncaughtExceptionHandler previousUncaughtExceptionHandler;
     private Thread.UncaughtExceptionHandler oomExceptionHandler;
     private volatile boolean isRunning = false;
+    private Thread lockWatchdogThread;
 
     /**
      * @param mainWindows - The main Jadx window context
@@ -180,6 +181,7 @@ public class PluginServer {
             setupCacheInvalidation();
 
             isRunning = true;
+            startLockWatchdog();
 
             // Log startup success and banner
             logger.info(JadxAIMCPBanner.banner);
@@ -278,6 +280,7 @@ public class PluginServer {
             }
             app = null;
             isRunning = false;
+            stopLockWatchdog();
             System.getProperties().remove(JVM_SERVER_KEY);
         }
     }
@@ -799,6 +802,45 @@ public class PluginServer {
      * <p>Emits a final summary log:
      * "Warmup complete: %d classes decompiled, %d indexed, trigram coverage %.1f%%".</p>
      */
+    /**
+     * Starts a daemon watchdog that force-releases the write lock if it has been held
+     * beyond JADX_MCP_LOCK_FORCE_RELEASE_SECONDS (default 90s).
+     *
+     * Background: JADX sometimes does not respond to Thread.interrupt() during decompilation
+     * of complex classes. ReentrantReadWriteLock cannot be released from another thread, but
+     * StampedLock.tryUnlockWrite() can. After the interrupt attempt at LOCK_TIMEOUT_SECONDS (60s),
+     * this watchdog force-releases at LOCK_FORCE_RELEASE_SECONDS (90s) so all blocked requests
+     * can recover instead of 503-ing indefinitely.
+     */
+    private void startLockWatchdog() {
+        final int forceReleaseSec = parseEnvInt("JADX_MCP_LOCK_FORCE_RELEASE_SECONDS", 90);
+        lockWatchdogThread = new Thread(() -> {
+            while (isRunning && !Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(5_000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                long heldSec = com.zin.jadxaimcp.utils.JadxSearchLock.getLockHeldSeconds();
+                if (heldSec >= forceReleaseSec) {
+                    com.zin.jadxaimcp.utils.JadxSearchLock.forceRelease(
+                        "held " + heldSec + "s >= force-release threshold " + forceReleaseSec + "s");
+                }
+            }
+        }, "jadx-lock-watchdog");
+        lockWatchdogThread.setDaemon(true);
+        lockWatchdogThread.start();
+        logger.info("[JAI] Lock watchdog started (force-release threshold: {}s)", forceReleaseSec);
+    }
+
+    private void stopLockWatchdog() {
+        if (lockWatchdogThread != null) {
+            lockWatchdogThread.interrupt();
+            lockWatchdogThread = null;
+        }
+    }
+
     private void runPredecompileWarmup() {
         try {
             int topK = parseEnvIntAllowZero("JADX_MCP_WARMUP_TOP_K", 100);

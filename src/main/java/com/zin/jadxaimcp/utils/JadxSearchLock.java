@@ -3,7 +3,7 @@ package com.zin.jadxaimcp.utils;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.StampedLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,50 +23,24 @@ import org.slf4j.LoggerFactory;
  *       concurrent readers allowed, but blocked while a writer holds the lock.</li>
  * </ul>
  *
- * Features:
- * - Write lock timeout detection: if held > 60s, interrupts holding thread
- * - Write lock hold time tracking for monitoring
- *
- * Usage (write lock, fast-fail pattern — for decompilation):
- * <pre>
- * if (!JadxSearchLock.tryAcquire()) {
- *     ctx.status(503).json(Map.of(
- *         "error", "Search operation in progress",
- *         "retry_after", 10
- *     ));
- *     return;
- * }
- * try {
- *     // decompilation/code search
- * } finally {
- *     JadxSearchLock.release();
- * }
- * </pre>
- *
- * Usage (read lock, fast-fail pattern — for metadata queries):
- * <pre>
- * if (!JadxSearchLock.tryAcquireRead()) {
- *     ctx.status(503).json(Map.of(
- *         "error", "Decompilation operation in progress",
- *         "retry_after", 5
- *     ));
- *     return;
- * }
- * try {
- *     // metadata-only read (ClassNode iteration, method listing, etc.)
- * } finally {
- *     JadxSearchLock.releaseRead();
- * }
- * </pre>
- *
- * @author JADX AI MCP Team
+ * <p>Uses {@link StampedLock} instead of {@link java.util.concurrent.locks.ReentrantReadWriteLock}
+ * because {@code StampedLock.tryUnlockWrite()} can be called from <em>any</em> thread. This
+ * enables {@link #forceRelease(String)} — called by the global watchdog in {@code PluginServer}
+ * after {@code JADX_MCP_LOCK_FORCE_RELEASE_SECONDS} — to break a lock held by a JADX thread
+ * that does not respond to {@code Thread.interrupt()}.</p>
  */
 public final class JadxSearchLock {
 
     private static final Logger logger = LoggerFactory.getLogger(JadxSearchLock.class);
 
-    // ReadWriteLock: multiple concurrent readers OR one exclusive writer
-    private static final ReentrantReadWriteLock RW_LOCK = new ReentrantReadWriteLock();
+    // StampedLock: tryUnlockWrite() can release from any thread (unlike ReentrantReadWriteLock)
+    private static final StampedLock STAMPED_LOCK = new StampedLock();
+
+    // Per-thread write stamp storage so release() knows which stamp to pass to unlockWrite()
+    private static final ThreadLocal<Long> writeStampTL = new ThreadLocal<>();
+
+    // Per-thread read stamp storage for releaseRead()
+    private static final ThreadLocal<Long> readStampTL = new ThreadLocal<>();
 
     // Track when the write lock was acquired (0 means not held)
     private static final AtomicLong lockAcquireTime = new AtomicLong(0);
@@ -77,66 +51,30 @@ public final class JadxSearchLock {
     // Recommended retry interval in seconds
     public static final int RETRY_AFTER_SECONDS = 10;
 
-    // Maximum write lock hold time before allowing new requests (60 seconds)
+    // Soft timeout: after this many seconds the holding thread is interrupted
     public static final int LOCK_TIMEOUT_SECONDS = 60;
 
-    private JadxSearchLock() {
-        // Prevent instantiation
-    }
+    private JadxSearchLock() {}
 
     // ========== Write Lock (exclusive — for decompilation operations) ==========
 
     /**
      * Try to acquire the write lock immediately (non-blocking).
-     * If the write lock has been held for more than LOCK_TIMEOUT_SECONDS,
-     * interrupts the holding thread and waits briefly for release.
+     * If the write lock has been held > LOCK_TIMEOUT_SECONDS, interrupts the holding thread.
      *
      * @return true if write lock acquired, false if busy
      */
     public static boolean tryAcquire() {
-        // Check for stale write lock (held too long) and interrupt the holding thread
-        long acquireTime = lockAcquireTime.get();
-        boolean interrupted = false;
-        if (acquireTime > 0 && RW_LOCK.isWriteLocked()) {
-            long heldSeconds = (System.currentTimeMillis() - acquireTime) / 1000;
-            if (heldSeconds > LOCK_TIMEOUT_SECONDS) {
-                Thread staleThread = holdingThread.get();
-                if (staleThread != null) {
-                    logger.warn("Write lock held for {}s (timeout: {}s), interrupting holding thread [{}]",
-                        heldSeconds, LOCK_TIMEOUT_SECONDS, staleThread.getName());
-                    staleThread.interrupt();
-                    interrupted = true;
-                } else {
-                    logger.warn("Write lock held for {}s (timeout: {}s), but holding thread unknown",
-                        heldSeconds, LOCK_TIMEOUT_SECONDS);
-                }
-                // Do NOT reset tracking here — only reset after successfully acquiring the lock.
-                // Resetting before acquire creates a window where tracking is inconsistent
-                // (lock still held by old thread, but tracking says "not held").
-            }
-        }
+        maybeSoftInterrupt();
 
-        // If we interrupted a stale thread, give it time to unwind and release the lock
-        if (interrupted) {
-            try {
-                boolean acquired = RW_LOCK.writeLock().tryLock(500, TimeUnit.MILLISECONDS);
-                if (acquired) {
-                    lockAcquireTime.set(System.currentTimeMillis());
-                    holdingThread.set(Thread.currentThread());
-                }
-                return acquired;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
-
-        boolean acquired = RW_LOCK.writeLock().tryLock();
-        if (acquired) {
+        long stamp = STAMPED_LOCK.tryWriteLock();
+        if (stamp != 0L) {
+            writeStampTL.set(stamp);
             lockAcquireTime.set(System.currentTimeMillis());
             holdingThread.set(Thread.currentThread());
+            return true;
         }
-        return acquired;
+        return false;
     }
 
     /**
@@ -147,12 +85,14 @@ public final class JadxSearchLock {
      */
     public static boolean tryAcquire(int timeoutSeconds) {
         try {
-            boolean acquired = RW_LOCK.writeLock().tryLock(timeoutSeconds, TimeUnit.SECONDS);
-            if (acquired) {
+            long stamp = STAMPED_LOCK.tryWriteLock(timeoutSeconds, TimeUnit.SECONDS);
+            if (stamp != 0L) {
+                writeStampTL.set(stamp);
                 lockAcquireTime.set(System.currentTimeMillis());
                 holdingThread.set(Thread.currentThread());
+                return true;
             }
-            return acquired;
+            return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
@@ -160,15 +100,47 @@ public final class JadxSearchLock {
     }
 
     /**
-     * Release the global write lock.
+     * Release the write lock held by the current thread.
      * Must be called in a finally block after tryAcquire().
      */
     public static void release() {
-        if (RW_LOCK.isWriteLockedByCurrentThread()) {
+        Long stamp = writeStampTL.get();
+        if (stamp != null && stamp != 0L) {
+            writeStampTL.remove();
             holdingThread.set(null);
             lockAcquireTime.set(0);
-            RW_LOCK.writeLock().unlock();
+            try {
+                STAMPED_LOCK.unlockWrite(stamp);
+            } catch (IllegalMonitorStateException e) {
+                // Stamp no longer valid — already force-released by watchdog; safe to ignore
+                logger.debug("release(): stamp no longer valid (already force-released)");
+            }
         }
+    }
+
+    /**
+     * Force-release the write lock from any thread, including a watchdog thread.
+     *
+     * <p>Called when the lock has been held beyond the hard timeout and the holding thread
+     * did not respond to {@link Thread#interrupt()}. Uses
+     * {@link StampedLock#tryUnlockWrite()} which is explicitly documented as safe to call
+     * from any thread for error recovery.</p>
+     *
+     * <p><b>Risk:</b> JADX may be in a partially-mutated state when this fires. The
+     * decompiled class may be incomplete or incorrect. Subsequent requests will re-trigger
+     * decompilation. This is preferable to leaving the entire system in a 503 state.</p>
+     *
+     * @param reason human-readable explanation logged at WARN level
+     */
+    public static void forceRelease(String reason) {
+        long heldSeconds = getLockHeldSeconds();
+        logger.warn("[JAI] Force-releasing write lock (held {}s): {}", heldSeconds, reason);
+        holdingThread.set(null);
+        lockAcquireTime.set(0);
+        // tryUnlockWrite() is documented as safe to call from any thread for error recovery.
+        // It returns false if the lock was not write-locked (no-op).
+        boolean released = STAMPED_LOCK.tryUnlockWrite();
+        logger.warn("[JAI] Force-release result: lock_was_held={}", released);
     }
 
     // ========== Read Lock (shared — for metadata-only operations) ==========
@@ -181,7 +153,12 @@ public final class JadxSearchLock {
      * @return true if read lock acquired, false if a write operation is in progress
      */
     public static boolean tryAcquireRead() {
-        return RW_LOCK.readLock().tryLock();
+        long stamp = STAMPED_LOCK.tryReadLock();
+        if (stamp != 0L) {
+            readStampTL.set(stamp);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -192,7 +169,12 @@ public final class JadxSearchLock {
      */
     public static boolean tryAcquireRead(int timeoutSeconds) {
         try {
-            return RW_LOCK.readLock().tryLock(timeoutSeconds, TimeUnit.SECONDS);
+            long stamp = STAMPED_LOCK.tryReadLock(timeoutSeconds, TimeUnit.SECONDS);
+            if (stamp != 0L) {
+                readStampTL.set(stamp);
+                return true;
+            }
+            return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
@@ -200,36 +182,31 @@ public final class JadxSearchLock {
     }
 
     /**
-     * Release the read lock.
+     * Release the read lock held by the current thread.
      * Must be called in a finally block after tryAcquireRead().
      */
     public static void releaseRead() {
-        // ReentrantReadWriteLock.readLock() does not expose isHeldByCurrentThread(),
-        // but unlock() on a lock not held by this thread throws IllegalMonitorStateException.
-        // We catch that to stay safe, matching the defensive pattern of release().
-        try {
-            RW_LOCK.readLock().unlock();
-        } catch (IllegalMonitorStateException e) {
-            // Current thread does not hold the read lock — nothing to release
-            logger.debug("releaseRead() called but current thread does not hold the read lock");
+        Long stamp = readStampTL.get();
+        if (stamp != null && stamp != 0L) {
+            readStampTL.remove();
+            try {
+                STAMPED_LOCK.unlockRead(stamp);
+            } catch (IllegalMonitorStateException e) {
+                logger.debug("releaseRead(): stamp no longer valid");
+            }
         }
     }
 
     // ========== Status / Monitoring ==========
 
-    /**
-     * Check if the write lock is currently held by any thread.
-     * Useful for status checking.
-     */
+    /** Check if the write lock is currently held by any thread. */
     public static boolean isBusy() {
-        return RW_LOCK.isWriteLocked();
+        return STAMPED_LOCK.isWriteLocked();
     }
 
-    /**
-     * Check if current thread holds the write lock.
-     */
+    /** Check if current thread holds the write lock. */
     public static boolean isHeldByCurrentThread() {
-        return RW_LOCK.isWriteLockedByCurrentThread();
+        return holdingThread.get() == Thread.currentThread();
     }
 
     /**
@@ -244,26 +221,45 @@ public final class JadxSearchLock {
         return (System.currentTimeMillis() - acquireTime) / 1000;
     }
 
-    /**
-     * Get the number of threads currently holding the read lock.
-     * Useful for monitoring concurrent metadata operations.
-     */
+    /** Get the number of threads currently holding the read lock. */
     public static int getReadLockCount() {
-        return RW_LOCK.getReadLockCount();
+        return STAMPED_LOCK.getReadLockCount();
     }
 
-    /**
-     * Get lock status information for monitoring.
-     */
+    /** Get lock status information for monitoring. */
     public static java.util.Map<String, Object> getStatus() {
         java.util.Map<String, Object> status = new java.util.HashMap<>();
-        status.put("write_locked", RW_LOCK.isWriteLocked());
-        status.put("read_lock_count", RW_LOCK.getReadLockCount());
+        status.put("write_locked", STAMPED_LOCK.isWriteLocked());
+        status.put("read_lock_count", STAMPED_LOCK.getReadLockCount());
         status.put("write_held_seconds", getLockHeldSeconds());
         status.put("timeout_seconds", LOCK_TIMEOUT_SECONDS);
         // Backward compatibility
-        status.put("locked", RW_LOCK.isWriteLocked());
+        status.put("locked", STAMPED_LOCK.isWriteLocked());
         status.put("held_seconds", getLockHeldSeconds());
         return status;
+    }
+
+    // ========== Internal helpers ==========
+
+    /**
+     * If the write lock has been held beyond LOCK_TIMEOUT_SECONDS, interrupt the holder.
+     * This is the "soft" first attempt before forceRelease() (the hard second attempt).
+     */
+    private static void maybeSoftInterrupt() {
+        long acquireTime = lockAcquireTime.get();
+        if (acquireTime > 0 && STAMPED_LOCK.isWriteLocked()) {
+            long heldSeconds = (System.currentTimeMillis() - acquireTime) / 1000;
+            if (heldSeconds > LOCK_TIMEOUT_SECONDS) {
+                Thread staleThread = holdingThread.get();
+                if (staleThread != null) {
+                    logger.warn("[JAI] Write lock held for {}s (timeout: {}s), interrupting holding thread [{}]",
+                        heldSeconds, LOCK_TIMEOUT_SECONDS, staleThread.getName());
+                    staleThread.interrupt();
+                } else {
+                    logger.warn("[JAI] Write lock held for {}s (timeout: {}s), holding thread unknown",
+                        heldSeconds, LOCK_TIMEOUT_SECONDS);
+                }
+            }
+        }
     }
 }
