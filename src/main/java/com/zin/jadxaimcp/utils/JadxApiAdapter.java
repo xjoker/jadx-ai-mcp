@@ -12,6 +12,7 @@ import jadx.core.dex.nodes.MethodNode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.WeakHashMap;
 
 /**
  * Centralizes all access to JADX internal node APIs.
@@ -22,6 +23,41 @@ import java.util.List;
  */
 public final class JadxApiAdapter {
     private JadxApiAdapter() {
+    }
+
+    // Per-ClassNode snapshot caches. WeakHashMap keys are JavaClass instances; when a class is
+    // garbage-collected the corresponding entry is automatically evicted, so we don't pin memory.
+    // Both maps are guarded by their own monitors (synchronised on the map itself) so concurrent
+    // reads from different threads don't corrupt state.
+    private static final WeakHashMap<JavaClass, List<MethodInfoSnapshot>> methodSnapshotCache =
+            new WeakHashMap<>();
+    private static final WeakHashMap<JavaClass, List<FieldInfoSnapshot>> fieldSnapshotCache =
+            new WeakHashMap<>();
+
+    /**
+     * Invalidates the snapshot cache entries for {@code cls} (both method and field lists).
+     * Call this whenever the class is renamed so subsequent callers get fresh data.
+     */
+    public static void invalidateSnapshots(JavaClass cls) {
+        if (cls == null) {
+            return;
+        }
+        synchronized (methodSnapshotCache) {
+            methodSnapshotCache.remove(cls);
+        }
+        synchronized (fieldSnapshotCache) {
+            fieldSnapshotCache.remove(cls);
+        }
+    }
+
+    /** Clears all snapshot cache entries (e.g. on full project reload). */
+    public static void clearAllSnapshotCaches() {
+        synchronized (methodSnapshotCache) {
+            methodSnapshotCache.clear();
+        }
+        synchronized (fieldSnapshotCache) {
+            fieldSnapshotCache.clear();
+        }
     }
 
     public static String getClassAliasName(JavaClass cls) {
@@ -173,6 +209,16 @@ public final class JadxApiAdapter {
     }
 
     public static List<MethodInfoSnapshot> getDeclaredMethodInfos(JavaClass cls) {
+        if (cls == null) {
+            return Collections.emptyList();
+        }
+        synchronized (methodSnapshotCache) {
+            List<MethodInfoSnapshot> cached = methodSnapshotCache.get(cls);
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         ClassNode classNode = getInternalClassNode(cls);
         if (classNode == null || classNode.getMethods() == null || classNode.getMethods().isEmpty()) {
             return Collections.emptyList();
@@ -182,10 +228,24 @@ public final class JadxApiAdapter {
         for (MethodNode methodNode : classNode.getMethods()) {
             methods.add(buildMethodInfo(methodNode));
         }
-        return methods;
+        List<MethodInfoSnapshot> immutable = Collections.unmodifiableList(methods);
+        synchronized (methodSnapshotCache) {
+            methodSnapshotCache.put(cls, immutable);
+        }
+        return immutable;
     }
 
     public static List<FieldInfoSnapshot> getDeclaredFieldInfos(JavaClass cls) {
+        if (cls == null) {
+            return Collections.emptyList();
+        }
+        synchronized (fieldSnapshotCache) {
+            List<FieldInfoSnapshot> cached = fieldSnapshotCache.get(cls);
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         ClassNode classNode = getInternalClassNode(cls);
         if (classNode == null || classNode.getFields() == null || classNode.getFields().isEmpty()) {
             return Collections.emptyList();
@@ -195,7 +255,11 @@ public final class JadxApiAdapter {
         for (FieldNode fieldNode : classNode.getFields()) {
             fields.add(buildFieldInfo(fieldNode));
         }
-        return fields;
+        List<FieldInfoSnapshot> immutable = Collections.unmodifiableList(fields);
+        synchronized (fieldSnapshotCache) {
+            fieldSnapshotCache.put(cls, immutable);
+        }
+        return immutable;
     }
 
     public static List<JavaMethod> getClassUseInMethods(JavaClass cls) {

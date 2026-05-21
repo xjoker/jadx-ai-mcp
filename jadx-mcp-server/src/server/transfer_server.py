@@ -144,7 +144,7 @@ async def _fetch_batch_classes(class_names: list, instance_id: Optional[str]) ->
     try:
         resp = await get_from_jadx(
             "batch-class-source",
-            {"class_names": ",".join(class_names)},
+            {"class_names": ",".join(class_names), "force_raw": "true"},
             instance_id=instance_id,
         )
 

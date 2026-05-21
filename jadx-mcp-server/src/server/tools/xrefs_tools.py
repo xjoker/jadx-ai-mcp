@@ -132,28 +132,14 @@ def register_xrefs_tools(mcp, with_busy_check):
         count: int = 20,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Unified cross-reference (xrefs) finder for classes, methods, and fields.
+        """Find cross-references to a class, method, or field.
 
         Args:
-            target_type: Type of target to find xrefs for: "class" | "method" | "field"
-            class_name: Fully qualified class name (e.g., 'com.example.Helper')
-            member_name: Method or field name (required for method/field, ignored for class)
-            offset: Pagination offset. Default: 0
-            count: Max results. Default: 20
-            instance_id: Target JADX instance name
-
+            target_type: class|method|field. class_name: Fully qualified class name.
+            member_name: Method or field name (required for method/field). offset/count: Pagination.
+            instance_id: Target JADX instance name.
         Returns:
-            dict: {xrefs: [{from_class, from_method, line}, ...], total: int}
-
-        Examples:
-            # Find references to a class
-            get_xrefs("class", "com.example.Helper")
-
-            # Find references to a method
-            get_xrefs("method", "com.example.MyClass", "myMethod")
-
-            # Find references to a field
-            get_xrefs("field", "com.example.MyClass", "myField")
+            dict: {xrefs: [{from_class, from_method, line}], total: int}
         """
         target_type_lower = target_type.lower()
 
@@ -173,10 +159,12 @@ def register_xrefs_tools(mcp, with_busy_check):
     @mcp.tool(name="batch_get_xrefs")
     @with_busy_check
     async def batch_get_xrefs_tool(targets: list[str], instance_id: Optional[str] = None) -> dict:
-        """Fetch cross-references for multiple targets in a single request.
+        """Fetch xrefs for multiple targets in one request (max 10). Format: "type:class[:member]".
 
         Args:
-            targets: List of "type:class[:member]" strings.
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            targets: e.g. ["class:com.example.Foo", "method:com.example.Bar:myMethod"]. Max 10.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {results: [{target, xrefs_count, xrefs}], total: int}
         """
         return await batch_get_xrefs(targets, instance_id=instance_id)

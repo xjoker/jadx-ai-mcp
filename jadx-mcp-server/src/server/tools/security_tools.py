@@ -285,16 +285,13 @@ def register_security_tools(mcp, with_busy_check):
         package: str = "",
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Run an automated security scan on the loaded APK/JAR.
-
-        Checks for hardcoded secrets, weak cryptography, insecure network
-        configuration, dangerous API usage, and data leakage patterns.
-        Returns structured findings with severity levels and recommendations.
+        """Automated security scan for hardcoded secrets, weak crypto, insecure network, dangerous APIs.
 
         Args:
-            scan_type: Scan scope — "full", "secrets", "crypto", "network", or "permissions".
-            package: Optional package prefix to narrow the search scope (e.g., "com.example.app").
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            scan_type: full|secrets|crypto|network|permissions. package: Scope filter.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {summary: {total_findings, high_severity, medium_severity}, findings: [{rule_id, severity, matches}]}
         """
         return await _run_security_scan(
             scan_type=scan_type, package=package, instance_id=instance_id

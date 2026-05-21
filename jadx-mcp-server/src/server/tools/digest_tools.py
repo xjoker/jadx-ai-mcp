@@ -391,15 +391,12 @@ def register_digest_tools(mcp, with_busy_check):
     @mcp.tool()
     @with_busy_check
     async def generate_apk_digest(instance_id: Optional[str] = None) -> dict:
-        """Generate a structured pre-analysis digest of the loaded APK/JAR file.
-
-        Produces a comprehensive summary including file info, manifest data,
-        class statistics, third-party SDK detection, obfuscation assessment,
-        and entry points. Use this as the first step when starting analysis
-        of an unknown APK or JAR.
+        """Generate a pre-analysis digest: file info, manifest, SDK detection, obfuscation assessment, entry points.
 
         Args:
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {file_type, package_name, class_stats, detected_sdks, obfuscation_level, analysis_tips}
         """
         return await _generate_apk_digest(instance_id=instance_id)
 

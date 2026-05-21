@@ -263,16 +263,13 @@ def register_scaling_tools(mcp):
         base_port: int = 8652,
         memory_limit: str = "4g",
     ) -> dict:
-        """Scale JADX Docker worker instances to the desired count (1-10).
-
-        Creates or removes containers named jadx-ai-mcp-worker-N.
-        Each maps host port (base_port + N) to container port 8651.
+        """Scale JADX Docker worker containers to desired count (1-10). Creates/removes jadx-ai-mcp-worker-N.
 
         Args:
-            desired_count: Target instance count (1-10).
-            image: Docker image name.
-            base_port: Host port base number.
+            desired_count: Target count (1-10). image: Docker image. base_port: Host port base.
             memory_limit: Docker memory limit (e.g., "4g").
+        Returns:
+            dict: {previous_count, current_count, created: [...], removed: [...], all_instances}
         """
         return await scale_instances(
             desired_count, image=image, base_port=base_port, memory_limit=memory_limit,
@@ -280,9 +277,10 @@ def register_scaling_tools(mcp):
 
     @mcp.tool()
     async def get_scaling_status_tool() -> dict:
-        """Report status of all JADX Docker worker containers.
+        """Get status of all JADX Docker worker containers (name, port, status, memory, uptime).
 
-        Returns name, status, port, memory, and uptime for each worker.
+        Returns:
+            dict: {total_workers: int, instances: [{name, port, status, memory_limit, started_at}]}
         """
         return await get_scaling_status()
 

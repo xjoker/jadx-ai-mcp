@@ -231,16 +231,14 @@ def register_session_tools(mcp, with_busy_check):
         context: dict,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Save the current AI analysis session context to a local file.
-
-        Persists analyzed classes, findings, notes, and next steps so you can
-        resume the analysis in a future session.
+        """Save AI analysis context to a local JSON file for later restoration.
 
         Args:
-            session_name: Session name (alphanumeric, hyphens, underscores; 1-100 chars)
-            context: Analysis context dict with keys: analyzed_classes, findings,
-                     notes, current_focus, next_steps
-            instance_id: Optional. Target JADX instance name
+            session_name: Name (alphanumeric, hyphens, underscores; 1-100 chars).
+            context: Dict with keys: analyzed_classes, findings, notes, current_focus, next_steps.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {success, session_name, saved_at, file_path}
         """
         return await _save_analysis_session(
             session_name, context, instance_id=instance_id,
@@ -254,16 +252,19 @@ def register_session_tools(mcp, with_busy_check):
         """Load a previously saved analysis session to restore context.
 
         Args:
-            session_name: Name of the session to load
+            session_name: Session name to load.
+        Returns:
+            dict: {metadata: {saved_at, file_info}, context: {...}} or SESSION_NOT_FOUND error.
         """
         return await _load_analysis_session(session_name)
 
     @mcp.tool()
     @with_busy_check
     async def list_analysis_sessions() -> dict:
-        """List all saved analysis sessions with summary info.
+        """List all saved analysis sessions with names, save times, and notes previews.
 
-        Returns session names, save times, file types, and notes previews.
+        Returns:
+            dict: {sessions: [{session_name, saved_at, file_type, notes_preview}], count}
         """
         return await _list_analysis_sessions()
 

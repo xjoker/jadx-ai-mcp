@@ -388,16 +388,13 @@ def register_dataflow_tools(mcp, with_busy_check):
         max_depth: int = 3,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Trace forward call chains from a method and detect sink patterns.
-
-        Performs BFS over method-callees and flags known Android sinks
-        (network, storage, IPC, logging, crypto).
+        """Trace forward call chains via BFS and flag Android sinks (network, storage, IPC, crypto).
 
         Args:
-            source_class: Fully qualified class name of the starting method
-            source_method: Method name to start tracing from
-            max_depth: Maximum BFS depth (1-5, default 3)
-            instance_id: Optional. Target JADX instance name
+            source_class: Fully qualified class name. source_method: Starting method name.
+            max_depth: BFS depth 1-5 (default 3). instance_id: Target JADX instance name.
+        Returns:
+            dict: {call_tree, sinks_found: [{method, sink_type, path}], stats}
         """
         return await _trace_data_flow(
             source_class=source_class,
@@ -414,16 +411,13 @@ def register_dataflow_tools(mcp, with_busy_check):
         max_depth: int = 3,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Trace backward caller chains to a method and detect input-source patterns.
-
-        Performs BFS over xrefs-to-method and flags known Android input sources
-        (user input, network input, storage input).
+        """Trace backward caller chains via xrefs BFS and flag input sources (user input, network, storage).
 
         Args:
-            target_class: Fully qualified class name of the target method
-            target_method: Target method name
-            max_depth: Maximum BFS depth (1-5, default 3)
-            instance_id: Optional. Target JADX instance name
+            target_class: Fully qualified class name. target_method: Target method name.
+            max_depth: BFS depth 1-5 (default 3). instance_id: Target JADX instance name.
+        Returns:
+            dict: {caller_tree, sources_found: [{method, source_type, path}], stats}
         """
         return await _find_callers_chain(
             target_class=target_class,

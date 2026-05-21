@@ -252,24 +252,15 @@ def register_refactor_tools(mcp, with_busy_check):
         ssa: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Rename a local variable inside a method.
-
-        Uses JADX's SSA variable tracking to locate and rename the variable.
-        If the method's SSA variables are not yet populated, the class is
-        force-reloaded once to trigger full processing.
+        """Rename a local variable inside a method using JADX SSA tracking.
 
         Args:
-            class_name: Fully qualified class name (e.g., com.example.MainActivity)
-            method_name: Method name (signature will be stripped automatically)
-            variable_name: Current variable name to rename
-            new_name: New variable name
-            reg: Optional register number to disambiguate variables with the same name
-            ssa: Optional SSA version number for further disambiguation
-            instance_id: Target JADX instance name. Uses default if not specified.
-
+            class_name: Fully qualified class name. method_name: Method name.
+            variable_name: Current variable name. new_name: New name.
+            reg: Register number (disambiguation). ssa: SSA version (disambiguation).
+            instance_id: Target JADX instance name.
         Returns:
-            dict: {"result": "Renamed variable <old> to <new>"} on success,
-                  or {"error": ..., "status": 404} if the variable is not found.
+            dict: {result: str} on success or {error: str, status: 404} if not found.
         """
         return await rename_variable(
             class_name=class_name,
@@ -286,17 +277,12 @@ def register_refactor_tools(mcp, with_busy_check):
     async def export_rename_mappings_tool(
         instance_id: Optional[str] = None
     ) -> dict:
-        """Export all user-applied rename mappings from the current JADX session.
-
-        Returns a JSON array of {type, original_name, new_name, class_context} entries
-        covering every class, method, and field that has been renamed.
-        Use this to back up or transfer rename work between sessions.
+        """Export all rename mappings (classes, methods, fields) from the current JADX session.
 
         Args:
-            instance_id: Target JADX instance name. Uses default if not specified.
-
+            instance_id: Target JADX instance name.
         Returns:
-            dict: {mappings: list[dict], total: int}
+            dict: {mappings: [{type, original_name, new_name, class_context}], total: int}
         """
         return await export_rename_mappings(instance_id=instance_id)
 
@@ -306,25 +292,13 @@ def register_refactor_tools(mcp, with_busy_check):
         mappings: list,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Batch-apply rename mappings to the current JADX session.
-
-        Accepts the same format produced by export_rename_mappings.
-        Each entry must have: type ("class"|"method"|"field"), original_name,
-        new_name, and class_context (required for method/field entries).
+        """Batch-apply rename mappings (same format as export_rename_mappings output).
 
         Args:
-            mappings: List of rename mapping dicts.
-            instance_id: Target JADX instance name. Uses default if not specified.
-
+            mappings: List of {type, original_name, new_name, class_context} dicts.
+            instance_id: Target JADX instance name.
         Returns:
-            dict: {success: bool, total: int, applied: int, failed: int, errors: list[str]}
-
-        Examples:
-            import_rename_mappings_tool([
-                {"type": "class", "original_name": "a.b.c", "new_name": "UserService", "class_context": ""},
-                {"type": "method", "original_name": "a", "new_name": "fetchUser",
-                 "class_context": "UserService"},
-            ])
+            dict: {success: bool, total: int, applied: int, failed: int, errors: [str]}
         """
         return await import_rename_mappings(mappings=mappings, instance_id=instance_id)
 
@@ -339,45 +313,14 @@ def register_refactor_tools(mcp, with_busy_check):
         dry_run: bool = False,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Unified rename tool for classes, methods, fields, and packages.
+        """Unified rename for classes, methods, fields, and packages. Triggers 30s cache cooldown.
 
         Args:
-            target_type: Type of target to rename: "class" | "method" | "field" | "package"
-            old_name: Current name (fully qualified for class/package, simple name for method/field)
-            new_name: New name (simple name)
-            class_name: Required for method/field - the class containing the member
-            method_signature: Optional JVM short descriptor to disambiguate overloaded methods,
-                e.g. 'parse(Ljava/lang/String;)V'. Only used when target_type is "method".
-            dry_run: If True, verify the target exists and return impact preview without renaming
-            instance_id: Target JADX instance name
-
+            target_type: class|method|field|package. old_name: Current name. new_name: New name.
+            class_name: Required for method/field. method_signature: JVM descriptor for overloads.
+            dry_run: Preview without renaming. instance_id: Target JADX instance name.
         Returns:
-            dict: {success: bool, message: str, renamed_count: int (for package only)}
-            dry_run: {dry_run: true, target_exists: bool, target_info: {...}}
-
-        Examples:
-            # Preview rename
-            rename("class", "com.example.OldClass", "NewClass", dry_run=True)
-
-            # Rename class
-            rename("class", "com.example.OldClass", "NewClass")
-
-            # Rename method (no overloads)
-            rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
-
-            # Rename specific overload
-            rename("method", "parse", "parseString",
-                   class_name="com.example.Parser",
-                   method_signature="parse(Ljava/lang/String;)V")
-
-            # Rename field
-            rename("field", "oldField", "newField", class_name="com.example.MyClass")
-
-            # Rename package
-            rename("package", "com.example.old", "com.example.new")
-
-        Note:
-            Triggers 30s class cache cooldown (skipped for dry_run).
+            dict: {success: bool, message: str} or dry_run: {target_exists: bool, target_info: {...}}
         """
         target_type_lower = target_type.lower()
 

@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,6 +35,23 @@ public class ClassCacheManager {
     private static final Logger logger = LoggerFactory.getLogger(ClassCacheManager.class);
     
     private static final AtomicReference<Map<String, JavaClass>> classCache = new AtomicReference<>();
+    /** Secondary index keyed by getRawName() so alias-miss lookups avoid a linear scan. */
+    private static final AtomicReference<Map<String, JavaClass>> rawNameCache = new AtomicReference<>();
+
+    /**
+     * Name indices built at cache-load time for O(1) exact-match lookup.
+     * Each map key is lowercase; value is an immutable snapshot list of matching classes.
+     * <ul>
+     *   <li>classNameIndex  — keyed by the simple (last-segment) class name</li>
+     *   <li>methodNameIndex — keyed by declared method short name; buckets = classes that have
+     *       at least one method with that name</li>
+     *   <li>fieldNameIndex  — same shape, for field names</li>
+     * </ul>
+     */
+    private static final AtomicReference<Map<String, List<JavaClass>>> classNameIndex = new AtomicReference<>();
+    private static final AtomicReference<Map<String, List<JavaClass>>> methodNameIndex = new AtomicReference<>();
+    private static final AtomicReference<Map<String, List<JavaClass>>> fieldNameIndex = new AtomicReference<>();
+
     private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
     private static final AtomicReference<CompletableFuture<Void>> initFuture = new AtomicReference<>();
     private static final AtomicLong generationToken = new AtomicLong(0);
@@ -74,25 +93,95 @@ public class ClassCacheManager {
                     registerUpstreamCodeCache(allClasses);
                     
                     Map<String, JavaClass> temp = new HashMap<>();
+                    Map<String, JavaClass> rawTemp = new HashMap<>();
+                    // Name-index builder maps: key=lowercase name, value=mutable list (frozen after loop)
+                    Map<String, List<JavaClass>> clsNameIdx = new HashMap<>();
+                    Map<String, List<JavaClass>> mthNameIdx = new HashMap<>();
+                    Map<String, List<JavaClass>> fldNameIdx = new HashMap<>();
+
                     for (JavaClass cls : allClasses) {
                         if (isLoadStale(generation)) {
                             logger.info("[JAI] Discarding stale class cache load for generation {}", generation);
                             return;
                         }
                         temp.put(cls.getFullName(), cls);
+                        // Populate secondary raw-name index. In the rare case of a collision
+                        // (two classes share the same rawName), keep the alphabetically first
+                        // full-name entry so behaviour is deterministic, and log a warning once.
+                        String rawName = JadxApiAdapter.getClassRawName(cls);
+                        if (rawName != null && !rawName.isEmpty()) {
+                            JavaClass existing = rawTemp.get(rawName);
+                            if (existing == null) {
+                                rawTemp.put(rawName, cls);
+                            } else if (cls.getFullName().compareTo(existing.getFullName()) < 0) {
+                                logger.warn("[JAI] Raw-name collision for '{}': keeping '{}', ignoring '{}'",
+                                        rawName, cls.getFullName(), existing.getFullName());
+                                rawTemp.put(rawName, cls);
+                            } else {
+                                logger.warn("[JAI] Raw-name collision for '{}': keeping '{}', ignoring '{}'",
+                                        rawName, existing.getFullName(), cls.getFullName());
+                            }
+                        }
+
+                        // --- Build name indices ---
+                        // 1. Simple class name (last segment after '.', lowercased)
+                        String simpleName = cls.getName();
+                        if (simpleName != null && !simpleName.isEmpty()) {
+                            clsNameIdx.computeIfAbsent(simpleName.toLowerCase(), k -> new ArrayList<>()).add(cls);
+                        }
+                        // 2. Method name index: each declared method short name → classes declaring it
+                        for (JadxApiAdapter.MethodInfoSnapshot m : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                            String mName = m.getName();
+                            if (mName != null && !mName.isEmpty()) {
+                                mthNameIdx.computeIfAbsent(mName.toLowerCase(), k -> new ArrayList<>()).add(cls);
+                            }
+                            // Also index by alias name when it differs
+                            String mAlias = m.getAliasName();
+                            if (mAlias != null && !mAlias.isEmpty() && !mAlias.equals(mName)) {
+                                mthNameIdx.computeIfAbsent(mAlias.toLowerCase(), k -> new ArrayList<>()).add(cls);
+                            }
+                        }
+                        // 3. Field name index
+                        for (JadxApiAdapter.FieldInfoSnapshot f : JadxApiAdapter.getDeclaredFieldInfos(cls)) {
+                            String fName = f.getName();
+                            if (fName != null && !fName.isEmpty()) {
+                                fldNameIdx.computeIfAbsent(fName.toLowerCase(), k -> new ArrayList<>()).add(cls);
+                            }
+                            String fAlias = f.getAliasName();
+                            if (fAlias != null && !fAlias.isEmpty() && !fAlias.equals(fName)) {
+                                fldNameIdx.computeIfAbsent(fAlias.toLowerCase(), k -> new ArrayList<>()).add(cls);
+                            }
+                        }
                     }
 
                     if (isLoadStale(generation)) {
                         logger.info("[JAI] Discarding stale class cache result for generation {}", generation);
                         return;
                     }
-                    
+
+                    // Freeze list values so callers cannot mutate index buckets
+                    for (Map.Entry<String, List<JavaClass>> e : clsNameIdx.entrySet()) {
+                        e.setValue(Collections.unmodifiableList(e.getValue()));
+                    }
+                    for (Map.Entry<String, List<JavaClass>> e : mthNameIdx.entrySet()) {
+                        e.setValue(Collections.unmodifiableList(e.getValue()));
+                    }
+                    for (Map.Entry<String, List<JavaClass>> e : fldNameIdx.entrySet()) {
+                        e.setValue(Collections.unmodifiableList(e.getValue()));
+                    }
+
                     classCache.set(temp);
+                    rawNameCache.set(rawTemp);
+                    classNameIndex.set(clsNameIdx);
+                    methodNameIndex.set(mthNameIdx);
+                    fieldNameIndex.set(fldNameIdx);
                     completionTime.set(System.currentTimeMillis());
                     currentPhase.set("READY");
-                    
+
                     long duration = (completionTime.get() - startTime.get()) / 1000;
-                    logger.info("[JAI] Class cache loaded: {} classes in {}s", temp.size(), duration);
+                    logger.info("[JAI] Class cache loaded: {} classes, {} simple-name buckets, "
+                            + "{} method-name buckets, {} field-name buckets in {}s",
+                            temp.size(), clsNameIdx.size(), mthNameIdx.size(), fldNameIdx.size(), duration);
                 } catch (Exception e) {
                     if (isLoadStale(generation)) {
                         logger.info("[JAI] Ignoring stale class cache failure for generation {}", generation);
@@ -136,30 +225,186 @@ public class ClassCacheManager {
     }
 
     /**
-     * Resolve a class by either its current alias name or its raw/original name.
+     * Resolve a class by either its current alias (full) name or its raw/original name.
+     *
+     * <p>Lookup order:
+     * <ol>
+     *   <li>Primary map keyed by {@link JavaClass#getFullName()} — O(1) hash lookup.</li>
+     *   <li>Secondary map keyed by {@link JavaClass#getRawName()} — O(1) hash lookup.</li>
+     * </ol>
+     * The former linear-scan fallback has been removed; if neither map produces a hit the
+     * class is genuinely not indexed and {@code null} is returned.
+     * </p>
      */
     public static JavaClass findClass(Map<String, JavaClass> classMap, String className) {
         if (classMap == null || className == null || className.isEmpty()) {
             return null;
         }
 
+        // 1. Primary: full-name / alias lookup
         JavaClass directMatch = classMap.get(className);
         if (directMatch != null) {
             return directMatch;
         }
 
-        for (JavaClass cls : classMap.values()) {
-            if (JadxApiAdapter.matchesClassName(cls, className)) {
-                return cls;
+        // 2. Secondary: raw-name lookup (avoids O(N) linear scan)
+        Map<String, JavaClass> rawMap = rawNameCache.get();
+        if (rawMap != null) {
+            JavaClass rawMatch = rawMap.get(className);
+            if (rawMatch != null) {
+                return rawMatch;
             }
         }
+
         return null;
     }
 
     public static boolean containsClass(Map<String, JavaClass> classMap, String className) {
         return findClass(classMap, className) != null;
     }
-    
+
+    /**
+     * Exact-match lookup against the pre-built name indices.
+     *
+     * <p>Returns the (possibly empty) bucket for the given lowercased term from the
+     * requested index. Callers must NOT mutate the returned list.</p>
+     *
+     * @param kind one of {@code "class"}, {@code "method"}, or {@code "field"}
+     * @param term the search term (will be lowercased internally)
+     * @return matching class list, or {@code null} if the index is not yet available
+     */
+    public static List<JavaClass> findByExactName(String kind, String term) {
+        if (term == null || term.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String lower = term.toLowerCase();
+        switch (kind) {
+            case "class": {
+                Map<String, List<JavaClass>> idx = classNameIndex.get();
+                if (idx == null) return null;
+                List<JavaClass> bucket = idx.get(lower);
+                return bucket != null ? bucket : Collections.emptyList();
+            }
+            case "method": {
+                Map<String, List<JavaClass>> idx = methodNameIndex.get();
+                if (idx == null) return null;
+                List<JavaClass> bucket = idx.get(lower);
+                return bucket != null ? bucket : Collections.emptyList();
+            }
+            case "field": {
+                Map<String, List<JavaClass>> idx = fieldNameIndex.get();
+                if (idx == null) return null;
+                List<JavaClass> bucket = idx.get(lower);
+                return bucket != null ? bucket : Collections.emptyList();
+            }
+            default:
+                return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Re-index a single class after a rename event.
+     *
+     * <p>Removes the class from all name-index buckets it currently occupies, then
+     * re-adds it under its current (post-rename) names. This is cheaper than
+     * rebuilding the full index and keeps equality lookups accurate immediately
+     * after a rename.</p>
+     *
+     * <p>If the indices have not been built yet (cache still loading) this is a no-op —
+     * the correct data will appear when the initial build completes.</p>
+     */
+    public static void reindex(JavaClass cls) {
+        if (cls == null) {
+            return;
+        }
+        // Invalidate the content index: after a rename the decompiled source changes,
+        // so remove the stale trigram entries; they will be rebuilt on next code access.
+        CodeContentIndex.invalidate(cls);
+
+        Map<String, List<JavaClass>> clsIdx = classNameIndex.get();
+        Map<String, List<JavaClass>> mthIdx = methodNameIndex.get();
+        Map<String, List<JavaClass>> fldIdx = fieldNameIndex.get();
+        if (clsIdx == null || mthIdx == null || fldIdx == null) {
+            return; // Index not built yet; initial build will include current names
+        }
+
+        // Remove cls from every bucket that contains it
+        removeFromIndex(clsIdx, cls);
+        removeFromIndex(mthIdx, cls);
+        removeFromIndex(fldIdx, cls);
+
+        // Re-add under current names (post-rename)
+        String simpleName = cls.getName();
+        if (simpleName != null && !simpleName.isEmpty()) {
+            addToIndex(clsIdx, simpleName.toLowerCase(), cls);
+        }
+        for (JadxApiAdapter.MethodInfoSnapshot m : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+            String mName = m.getName();
+            if (mName != null && !mName.isEmpty()) {
+                addToIndex(mthIdx, mName.toLowerCase(), cls);
+            }
+            String mAlias = m.getAliasName();
+            if (mAlias != null && !mAlias.isEmpty() && !mAlias.equals(mName)) {
+                addToIndex(mthIdx, mAlias.toLowerCase(), cls);
+            }
+        }
+        for (JadxApiAdapter.FieldInfoSnapshot f : JadxApiAdapter.getDeclaredFieldInfos(cls)) {
+            String fName = f.getName();
+            if (fName != null && !fName.isEmpty()) {
+                addToIndex(fldIdx, fName.toLowerCase(), cls);
+            }
+            String fAlias = f.getAliasName();
+            if (fAlias != null && !fAlias.isEmpty() && !fAlias.equals(fName)) {
+                addToIndex(fldIdx, fAlias.toLowerCase(), cls);
+            }
+        }
+    }
+
+    /** Removes {@code cls} from all bucket lists in {@code index}. */
+    private static void removeFromIndex(Map<String, List<JavaClass>> index, JavaClass cls) {
+        for (Map.Entry<String, List<JavaClass>> entry : index.entrySet()) {
+            List<JavaClass> bucket = entry.getValue();
+            if (bucket instanceof java.util.ArrayList) {
+                bucket.remove(cls);
+            } else {
+                // Bucket was frozen as unmodifiableList — replace with mutable copy minus cls
+                boolean present = false;
+                for (JavaClass c : bucket) {
+                    if (c == cls) {
+                        present = true;
+                        break;
+                    }
+                }
+                if (present) {
+                    List<JavaClass> mutable = new ArrayList<>(bucket);
+                    mutable.remove(cls);
+                    entry.setValue(Collections.unmodifiableList(mutable));
+                }
+            }
+        }
+    }
+
+    /** Adds {@code cls} to the bucket for {@code key} in {@code index}, creating if absent. */
+    private static void addToIndex(Map<String, List<JavaClass>> index, String key, JavaClass cls) {
+        List<JavaClass> existing = index.get(key);
+        if (existing == null) {
+            List<JavaClass> newBucket = new ArrayList<>();
+            newBucket.add(cls);
+            index.put(key, Collections.unmodifiableList(newBucket));
+        } else if (existing instanceof java.util.ArrayList) {
+            if (!existing.contains(cls)) {
+                existing.add(cls);
+            }
+        } else {
+            // Unmodifiable — replace with mutable copy + cls
+            if (!existing.contains(cls)) {
+                List<JavaClass> mutable = new ArrayList<>(existing);
+                mutable.add(cls);
+                index.put(key, Collections.unmodifiableList(mutable));
+            }
+        }
+    }
+
     /**
      * Get cache status
      */
@@ -211,6 +456,35 @@ public class ClassCacheManager {
     }
 
     /**
+     * Retrieve the decompiled code for a {@link JavaClass} — triggering decompilation if needed —
+     * and opportunistically populate the {@link CodeContentIndex} with the result.
+     *
+     * <p>This is the preferred hook point for content searches: callers pass the
+     * {@link JavaClass} directly so the index can store the class reference without
+     * an extra name-to-class resolution step.</p>
+     *
+     * @param cls the class whose code to retrieve
+     * @return decompiled source (lowercased), or {@code null} if decompilation failed
+     */
+    public static String getCodeAndIndex(JavaClass cls) {
+        if (cls == null) {
+            return null;
+        }
+        registerUpstreamCodeCache(cls);
+        try {
+            String code = cls.getCode();
+            if (code == null || code.isEmpty()) {
+                return null;
+            }
+            String lower = code.toLowerCase();
+            CodeContentIndex.index(cls, lower);
+            return lower;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * Compatibility no-op.
      *
      * <p>Once {@link JavaClass#getCode()} returns, JADX has already stored the full
@@ -223,9 +497,15 @@ public class ClassCacheManager {
 
     /**
      * Invalidate cached upstream code for a single class (for example after rename).
+     * Also removes the class from the trigram content index so stale code is not
+     * returned by code-search queries; the index entry is rebuilt on next decompile.
      */
     public static void invalidateCode(String className) {
         removeCachedCodeFromJadx(className);
+        JavaClass cls = resolveIndexedClass(className);
+        if (cls != null) {
+            CodeContentIndex.invalidate(cls);
+        }
     }
 
     /**
@@ -416,6 +696,7 @@ public class ClassCacheManager {
         lastClearTime.set(System.currentTimeMillis());
         if (evictCodeCache) {
             clearCodeCache();
+            CodeContentIndex.clear();
         }
         long generation = generationToken.incrementAndGet();
         CompletableFuture<Void> future = initFuture.getAndSet(null);
@@ -423,6 +704,10 @@ public class ClassCacheManager {
             future.cancel(true);
         }
         classCache.set(null);
+        rawNameCache.set(null);
+        classNameIndex.set(null);
+        methodNameIndex.set(null);
+        fieldNameIndex.set(null);
         upstreamCodeCacheRef.set(null);
         cacheOwnerKey.set("");
         isInitialized.set(false);

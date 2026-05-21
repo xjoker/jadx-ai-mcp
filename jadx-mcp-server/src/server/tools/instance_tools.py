@@ -68,52 +68,10 @@ def register_instance_tools(mcp):
     
     @mcp.tool()
     async def list_jadx_instances() -> dict:
-        """
-        List all registered JADX instances and their current status.
-
-        USE THIS TOOL WHEN the user asks:
-        - "which instances are open/running/available"
-        - "show me all JADX instances"
-        - "what JADX connections do I have"
-        - any question about instance status, count, or availability
-
-        This tool does NOT require a connected instance — it reads from the
-        local registry and always succeeds.
-
-        TIP: When multiple instances are running, you can pass instance_id to
-        other tools using any of: instance name, APK package name (e.g.,
-        "com.xingin.xhs"), or partial match (e.g., "xhs"). The system will
-        fuzzy-match to the correct connected instance.
-
-        Returns instances visible to the current user:
-        - Shared/static instances (from config file)
-        - Dynamic instances owned by the current user
-        - Admin users can see ALL instances
-
-        Each instance includes: name, host, port, url, status
-        (connected/pending/disconnected/degraded/error/auth_failed),
-        is_default, owner, is_dynamic, apk_info, last_health_check,
-        error_message (non-empty when status is error or auth_failed).
+        """List all registered JADX instances with connection status. Does not require a connected instance.
 
         Returns:
-            {
-                "instances": [
-                    {
-                        "name": "xhs-v8",
-                        "host": "192.168.1.10",
-                        "port": 8650,
-                        "url": "http://192.168.1.10:8650",
-                        "status": "connected",
-                        "is_default": true,
-                        "owner": null,
-                        "is_dynamic": false,
-                        "apk_info": {...}
-                    }
-                ],
-                "count": 1,
-                "default_instance": "xhs-v8",
-                "current_user": "alice"
-            }
+            dict: {instances: [{name, host, port, status, is_default, apk_info}], count, default_instance}
         """
         # Get current user from auth context
         user = UserAuthManager.get_current_user()
@@ -138,31 +96,13 @@ def register_instance_tools(mcp):
         name: str = "",
         token: str = ""
     ) -> dict:
-        """
-        Dynamically add a new JADX instance connection.
-        
-        After adding, it will automatically try to connect and fetch APK info.
-        If this is the first instance added, it will be set as default.
-        
-        The instance will be owned by the current user (dynamic instance).
-        Other users will not see this instance (except admins).
-        
-        NOTE: This operation requires permission. Admin users can add instances by default.
-        Regular users need `can_add_instances: true` in their config, and
-        `security.allow_dynamic_instances` must be enabled globally.
-        
+        """Dynamically register a new JADX instance. Requires can_add_instances permission for non-admin users.
+
         Args:
-            host: JADX instance IP address (e.g., "192.168.1.10" or "localhost")
-            port: JADX instance port number (e.g., 8650)
-            name: Optional custom name. Leave empty to auto-generate from APK name+version
-            token: Optional JADX plugin authentication token. Required for non-local hosts.
-            
+            host: IP address (e.g., "192.168.1.10"). port: Port number (e.g., 8650).
+            name: Custom name (auto-generated if empty). token: Auth token (required for non-local hosts).
         Returns:
-            {
-                "success": true,
-                "instance": {...},
-                "message": "Successfully added instance 'xhs-v8'"
-            }
+            dict: {success: bool, instance: {...}, message: str}
         """
         # Get current user from auth context
         user = UserAuthManager.get_current_user()
@@ -238,20 +178,12 @@ def register_instance_tools(mcp):
     
     @mcp.tool()
     async def remove_jadx_instance(name: str) -> dict:
-        """
-        Remove specified JADX instance connection.
-        
-        If removing the default instance, another available instance will be set as new default.
-        Users can only remove their own dynamic instances. Admins can remove any instance.
-        
+        """Remove a JADX instance. Users may only remove their own dynamic instances; admins can remove any.
+
         Args:
-            name: Name of the instance to remove
-            
+            name: Instance name to remove.
         Returns:
-            {
-                "success": true,
-                "message": "Removed instance 'xhs-v8'"
-            }
+            dict: {success: bool, message: str}
         """
         # Get current user from auth context
         user = UserAuthManager.get_current_user()
@@ -277,19 +209,12 @@ def register_instance_tools(mcp):
     
     @mcp.tool()
     async def set_default_jadx_instance(name: str) -> dict:
-        """
-        Set the default JADX instance.
-        
-        Subsequent tool calls without instance_id will use this instance.
-        
+        """Set the default JADX instance for tool calls that omit instance_id.
+
         Args:
-            name: Name of the instance to set as default
-            
+            name: Instance name to set as default.
         Returns:
-            {
-                "success": true,
-                "message": "Default instance set to 'xhs-v8'"
-            }
+            dict: {success: bool, message: str}
         """
         # Get current user from auth context
         user = UserAuthManager.get_current_user()
@@ -300,29 +225,12 @@ def register_instance_tools(mcp):
     
     @mcp.tool()
     async def get_jadx_instance_info(name: str) -> dict:
-        """
-        Get detailed information about a specific instance.
-        
-        Includes connection status, APK metadata (package, version, SDK, etc.), 
-        and last health check time.
-        
+        """Get detailed info about a specific JADX instance: status, APK metadata, last health check.
+
         Args:
-            name: Instance name
-            
+            name: Instance name.
         Returns:
-            {
-                "name": "xhs-v8",
-                "host": "192.168.1.10",
-                "port": 8650,
-                "status": "connected",
-                "apk_info": {
-                    "apk_package": "com.xingin.xhs",
-                    "version_name": "8.35.0",
-                    "version_code": 8350100,
-                    ...
-                },
-                "last_health_check": "2026-01-12T10:00:00"
-            }
+            dict: {name, host, port, status, apk_info: {apk_package, version_name, ...}, last_health_check}
         """
         # Get current user from auth context
         user = UserAuthManager.get_current_user()
@@ -343,49 +251,21 @@ def register_instance_tools(mcp):
     
     @mcp.tool()
     async def health_check_jadx_instances() -> dict:
-        """
-        Check health status of all JADX instances.
-        
-        Performs health check on each registered instance and updates connection status.
-        
+        """Perform health checks on all registered JADX instances and update their connection status.
+
         Returns:
-            {
-                "total": 3,
-                "healthy": 2,
-                "instances": [
-                    {"name": "xhs-v8", "status": "connected"},
-                    {"name": "xhs-v9", "status": "disconnected"}
-                ]
-            }
+            dict: {total: int, healthy: int, instances: [{name, status}]}
         """
         return await InstanceRegistry.health_check_all()
 
     @mcp.tool()
     async def clear_class_cache(instance_id: str = None) -> dict:
-        """
-        Manually clear the ClassCacheManager cache on the JADX plugin.
-        
-        IMPORTANT: All cache clear operations share a global 30-second cooldown.
-        This includes:
-        - rename_class, rename_method, rename_field, rename_package (automatic)
-        - This manual clear_class_cache tool
-        
-        If called within 30 seconds of the last cache clear, the request will be
-        debounced and return the remaining cooldown time.
-        
-        Use this tool when:
-        - You suspect stale cache data
-        - After manually modifying the APK in JADX
-        - After bulk operations that may have affected class data
-        
+        """Manually clear the JADX class cache. Subject to 30s global cooldown shared with all rename operations.
+
         Args:
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
-            
+            instance_id: Target JADX instance name (uses default if omitted).
         Returns:
-            Success:
-                {"success": true, "message": "Class cache cleared successfully", "cooldown_seconds": 30}
-            Debounced:
-                {"success": false, "message": "Cache clear debounced (30s global cooldown)", "cooldown_remaining_seconds": 25}
+            dict: {success: bool, message: str, cooldown_remaining_seconds: int if debounced}
         """
         if instance_id:
             instance = InstanceRegistry.get_instance(instance_id)

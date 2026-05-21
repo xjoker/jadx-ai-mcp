@@ -312,15 +312,13 @@ def register_decompile_tools(mcp, with_busy_check):
         priority: str = "normal",
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Batch-decompile classes with priority-based concurrency control.
-
-        Concurrency tiers: high=5, normal=3, low=1 concurrent requests.
-        Tracks per-class timing, cache hits, and failures.
+        """Batch-decompile classes with concurrency control (high=5, normal=3, low=1 concurrent).
 
         Args:
-            class_names: Fully qualified class names to decompile.
-            priority: "high", "normal", or "low" concurrency tier.
-            instance_id: Optional target JADX instance name.
+            class_names: Fully qualified class names. priority: high|normal|low concurrency tier.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {succeeded, failed, already_cached, results: [{class_name, status, time_ms}]}
         """
         return await _smart_decompile(
             class_names, priority=priority, instance_id=instance_id,
@@ -333,14 +331,13 @@ def register_decompile_tools(mcp, with_busy_check):
         package: str = "",
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Rank uncached classes by importance to guide decompilation order.
-
-        Uses heuristics: Android components > app package > obfuscated names > SDKs.
+        """Rank uncached classes by importance: Android components > app package > obfuscated > SDKs.
 
         Args:
-            analysis_goal: Optional hint like "find network APIs" (for logging).
-            package: App package prefix to boost own classes (e.g., "com.example.app").
-            instance_id: Optional target JADX instance name.
+            analysis_goal: Optional hint for logging (e.g. "find network APIs").
+            package: App package prefix to boost own-package classes. instance_id: Target JADX instance.
+        Returns:
+            dict: {priority_list: [{class_name, priority, reason}], suggested_batch_size}
         """
         return await _get_decompile_priority_list(
             analysis_goal=analysis_goal, package=package, instance_id=instance_id,

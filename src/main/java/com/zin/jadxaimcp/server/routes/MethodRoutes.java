@@ -86,20 +86,35 @@ public class MethodRoutes {
                 return;
             }
 
-            if (!tryAcquireDecompileLock(ctx)) {
+            // Metadata walk (class iteration, name matching) only reads ClassNode metadata —
+            // no decompilation. Use read lock to allow concurrent metadata queries.
+            // The actual decompile call (getCodeStr via returnMethodResult) requires a
+            // write lock; we release the read lock first, then acquire the write lock,
+            // because ReentrantReadWriteLock does not support atomic read→write upgrade.
+            if (!JadxSearchLock.tryAcquireRead()) {
+                Map<String, Object> busyResponse = new HashMap<>();
+                busyResponse.put("error", "Decompilation operation in progress");
+                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                busyResponse.put("busy", true);
+                ctx.status(503).json(busyResponse);
                 return;
             }
+            JavaClass foundCls = null;
+            JavaMethod foundMethod = null;
+            Map<String, Object> earlyError = null;
             try {
                 // Case 1: Search in all classes if no class name provided
                 // Use adapter-backed metadata lookup to avoid triggering decompilation.
                 if (className == null || className.isEmpty()) {
+                    outer1:
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                         for (JadxApiAdapter.MethodInfoSnapshot methodInfo : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
                             if (matchesMethodName(methodInfo, methodName)) {
                                 JavaMethod method = findMethodByNameAndDescriptor(cls, methodName, methodSignature);
                                 if (method != null) {
-                                    returnMethodResult(ctx, cls, method);
-                                    return;
+                                    foundCls = cls;
+                                    foundMethod = method;
+                                    break outer1;
                                 }
                             }
                         }
@@ -119,24 +134,29 @@ public class MethodRoutes {
                             if (methodSignature != null) {
                                 for (JavaMethod candidate : candidates) {
                                     if (JadxApiAdapter.matchesMethodDescriptor(candidate, methodSignature)) {
-                                        returnMethodResult(ctx, cls, candidate);
-                                        return;
+                                        foundCls = cls;
+                                        foundMethod = candidate;
+                                        break;
                                     }
                                 }
-                                // Descriptor supplied but no match
-                                List<String> available = collectDescriptors(candidates);
-                                Map<String, Object> err = new HashMap<>();
-                                err.put("error", "No overload of " + methodName + " matches descriptor '"
-                                    + methodSignature + "' in class " + cls.getFullName());
-                                err.put("available_descriptors", available);
-                                ctx.status(404).json(err);
-                                return;
+                                if (foundMethod == null) {
+                                    // Descriptor supplied but no match — build error response
+                                    List<String> available = collectDescriptors(candidates);
+                                    Map<String, Object> err = new HashMap<>();
+                                    err.put("error", "No overload of " + methodName + " matches descriptor '"
+                                        + methodSignature + "' in class " + cls.getFullName());
+                                    err.put("available_descriptors", available);
+                                    earlyError = err;
+                                    earlyError.put("__status", 404);
+                                }
+                                break;
                             }
 
-                            // No descriptor: if exactly one match, return it; otherwise require disambiguation
+                            // No descriptor: if exactly one match, use it; otherwise require disambiguation
                             if (candidates.size() == 1) {
-                                returnMethodResult(ctx, cls, candidates.get(0));
-                                return;
+                                foundCls = cls;
+                                foundMethod = candidates.get(0);
+                                break;
                             }
 
                             // Multiple overloads — tell the caller which descriptors are available
@@ -146,13 +166,34 @@ public class MethodRoutes {
                                 + " has " + candidates.size()
                                 + " overloads. Provide 'method_signature' to select one.");
                             err.put("available_descriptors", available);
-                            ctx.status(300).json(err);
-                            return;
+                            earlyError = err;
+                            earlyError.put("__status", 300);
+                            break;
                         }
                     }
                 }
             } finally {
-                JadxSearchLock.release();
+                JadxSearchLock.releaseRead();
+            }
+
+            // Dispatch early errors (no decompilation needed)
+            if (earlyError != null) {
+                int errStatus = ((Number) earlyError.remove("__status")).intValue();
+                ctx.status(errStatus).json(earlyError);
+                return;
+            }
+
+            // Decompile the found method under an exclusive write lock
+            if (foundCls != null && foundMethod != null) {
+                if (!tryAcquireDecompileLock(ctx)) {
+                    return;
+                }
+                try {
+                    returnMethodResult(ctx, foundCls, foundMethod);
+                } finally {
+                    JadxSearchLock.release();
+                }
+                return;
             }
 
             // if execution reaches here, it means that method has not been found
@@ -243,27 +284,40 @@ public class MethodRoutes {
                 return;
             }
 
-            if (!tryAcquireDecompileLock(ctx)) {
+            // Phase 1: Metadata scan under read lock.
+            // Class lookup and method-name matching only read ClassNode metadata —
+            // no decompilation. Multiple concurrent metadata queries are allowed.
+            // getCodeStr() is deferred to Phase 2 (write lock) because it triggers
+            // JADX decompilation which is not thread-safe under concurrent writes.
+            if (!JadxSearchLock.tryAcquireRead()) {
+                Map<String, Object> busyResponse = new HashMap<>();
+                busyResponse.put("error", "Decompilation operation in progress");
+                busyResponse.put("retry_after", JadxSearchLock.RETRY_AFTER_SECONDS);
+                busyResponse.put("busy", true);
+                ctx.status(503).json(busyResponse);
                 return;
             }
-            try {
-                // Get the cached class map
-                Map<String, JavaClass> classMap = ClassCacheManager.getCache();
 
-                List<Map<String, Object>> results = new ArrayList<>();
-                int foundCount = 0;
+            // Intermediate: collect located methods and their pre-built metadata
+            // (everything except the code string, which requires decompilation)
+            List<Map<String, Object>> results = new ArrayList<>();
+            // Parallel list: non-null entry means this result slot needs getCodeStr()
+            List<JavaMethod> methodsToDecompile = new ArrayList<>();
+
+            try {
+                Map<String, JavaClass> classMap = ClassCacheManager.getCache();
 
                 for (String pair : methodPairs) {
                     String trimmedPair = pair.trim();
                     Map<String, Object> methodResult = new HashMap<>();
 
-                    // Parse class_name:method_name format
                     int colonIndex = trimmedPair.lastIndexOf(':');
                     if (colonIndex == -1) {
                         methodResult.put("input", trimmedPair);
                         methodResult.put("found", false);
                         methodResult.put("error", "Invalid format. Use class_name:method_name");
                         results.add(methodResult);
+                        methodsToDecompile.add(null);
                         continue;
                     }
 
@@ -278,63 +332,86 @@ public class MethodRoutes {
                         methodResult.put("found", false);
                         methodResult.put("error", "Class not found");
                         results.add(methodResult);
+                        methodsToDecompile.add(null);
                         continue;
                     }
 
-                    // Find method in class
-                    boolean methodFound = false;
                     JavaMethod method = findMethodByName(cls, methodName);
                     if (method != null) {
-                        try {
-                            methodResult.put("class_name", cls.getFullName());
-                            methodResult.put("raw_class_name", cls.getRawName());
-                            methodResult.put("method_name", method.getName());
-                            methodResult.put("raw_method_name", JadxApiAdapter.getMethodRawName(method));
-                            methodResult.put("raw_method_full_id", JadxApiAdapter.getMethodRawFullId(method));
-                            methodResult.put("found", true);
-                            methodResult.put("decl", String.valueOf(method.getCodeNodeRef()));
-                            methodResult.put("code", method.getCodeStr());
-                            foundCount++;
-                            methodFound = true;
-                        } catch (Exception e) {
-                            methodResult.put("found", true);
-                            methodResult.put("error", "Failed to get code: " + e.getMessage());
-                            methodFound = true;
-                        }
-                    }
-
-                    if (!methodFound && !methodResult.containsKey("found")) {
+                        // Populate all metadata fields that don't require decompilation
+                        methodResult.put("class_name", cls.getFullName());
+                        methodResult.put("raw_class_name", cls.getRawName());
+                        methodResult.put("method_name", method.getName());
+                        methodResult.put("raw_method_name", JadxApiAdapter.getMethodRawName(method));
+                        methodResult.put("raw_method_full_id", JadxApiAdapter.getMethodRawFullId(method));
+                        methodResult.put("found", true);
+                        methodResult.put("decl", String.valueOf(method.getCodeNodeRef()));
+                        // code field deferred to Phase 2
+                        results.add(methodResult);
+                        methodsToDecompile.add(method);
+                    } else {
                         methodResult.put("found", false);
                         methodResult.put("error", "Method not found in class");
+                        results.add(methodResult);
+                        methodsToDecompile.add(null);
                     }
-                    results.add(methodResult);
                 }
+            } finally {
+                JadxSearchLock.releaseRead();
+            }
 
-                Map<String, Object> response = new HashMap<>();
-                response.put("methods", results);
-                response.put("total", methodPairs.length);
-                response.put("found", foundCount);
-
-                // Serialize and apply SmartChunker to prevent large response truncation
-                com.google.gson.Gson gson = new com.google.gson.Gson();
-                String responseJson = gson.toJson(response);
-
-                // Apply chunking (auto-chunks if response > 8KB)
-                Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
-                    responseJson,
-                    chunk,
-                    "batch_result"
-                );
-
-                if (chunkedResponse.containsKey("error")) {
-                    ctx.status(400).json(chunkedResponse);
+            // Phase 2: Decompile under exclusive write lock.
+            // Only acquired if at least one method needs getCodeStr().
+            int foundCount = 0;
+            boolean needsDecompile = methodsToDecompile.stream().anyMatch(m -> m != null);
+            if (needsDecompile) {
+                if (!tryAcquireDecompileLock(ctx)) {
                     return;
                 }
-
-                ctx.json(chunkedResponse);
-            } finally {
-                JadxSearchLock.release();
+                try {
+                    for (int i = 0; i < methodsToDecompile.size(); i++) {
+                        JavaMethod method = methodsToDecompile.get(i);
+                        if (method == null) continue;
+                        Map<String, Object> methodResult = results.get(i);
+                        try {
+                            methodResult.put("code", method.getCodeStr());
+                            foundCount++;
+                        } catch (Exception e) {
+                            methodResult.put("error", "Failed to get code: " + e.getMessage());
+                        }
+                    }
+                } finally {
+                    JadxSearchLock.release();
+                }
+            } else {
+                // All results are metadata-only (class/method not found cases)
+                for (Map<String, Object> r : results) {
+                    if (Boolean.TRUE.equals(r.get("found"))) foundCount++;
+                }
             }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("methods", results);
+            response.put("total", methodPairs.length);
+            response.put("found", foundCount);
+
+            // Serialize and apply SmartChunker to prevent large response truncation
+            com.google.gson.Gson gson = new com.google.gson.Gson();
+            String responseJson = gson.toJson(response);
+
+            // Apply chunking (auto-chunks if response > 8KB)
+            Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
+                responseJson,
+                chunk,
+                "batch_result"
+            );
+
+            if (chunkedResponse.containsKey("error")) {
+                ctx.status(400).json(chunkedResponse);
+                return;
+            }
+
+            ctx.json(chunkedResponse);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving batch methods: " + e.getMessage(), e, logger);
         }

@@ -363,19 +363,14 @@ def register_search_tools(mcp, with_busy_check):
         method_signature: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Fetch the source code of a method from a specific class.
-
-        When the class has overloaded methods with the same name, use
-        ``method_signature`` (JVM short descriptor) to select the exact overload.
-        If omitted and multiple overloads exist, the response contains an
-        ``available_descriptors`` list; pick one and call again.
+        """Fetch source code of a specific method. Use method_signature (JVM descriptor) to pick an overload.
 
         Args:
-            class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-            method_name: Method name to search for (e.g., 'process').
-            method_signature: Optional JVM short descriptor to disambiguate overloads,
-                e.g. 'process(Ljava/lang/String;I)Z' or 'process(I)V'.
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            class_name: Fully qualified class name. method_name: Method name.
+            method_signature: JVM short descriptor, e.g. 'process(Ljava/lang/String;I)Z' (optional).
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {code: str} or {available_descriptors: [...]} if overloads exist.
         """
         return await get_method_by_name(
             class_name, method_name, method_signature=method_signature, instance_id=instance_id
@@ -389,20 +384,13 @@ def register_search_tools(mcp, with_busy_check):
         count: int = 50,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Search for a method name across all classes in the APK.
-
-        PREFER search_classes_by_keyword(search_term=..., search_in='method') instead!
-        That tool is faster, safer, and supports package filtering.
-
-        This tool performs an unscoped global search and may timeout or crash
-        on large/obfuscated APKs. Only use this if search_classes_by_keyword
-        does not return the results you need.
+        """Global method-name search across all classes. Prefer search_classes_by_keyword(search_in='method') — faster and safer.
 
         Args:
-            method_name: Method name to search for (partial matching supported).
-            offset: Starting index for pagination. Default: 0
-            count: Number of results to return. Default: 50, max: 200
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            method_name: Method name (partial match supported). offset: Pagination start.
+            count: Max results (default 50, max 200). instance_id: Target JADX instance name.
+        Returns:
+            dict: {methods: [...], has_more: bool}
         """
         return await search_method_by_name(method_name, offset, count, instance_id=instance_id)
 
@@ -414,31 +402,13 @@ def register_search_tools(mcp, with_busy_check):
         force: bool = False,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Fetch multiple method sources in a single request with intelligent size management.
-
-        SMART BATCHING: Automatically estimates response size and provides optimization guidance.
-        - Small batches (<20KB): Execute directly
-        - Large batches (20-50KB): Execute with performance warning
-        - Very large batches (>50KB): Returns BATCH_TOO_LARGE error with method summaries
-
-        CHUNKING: Large responses (>8KB) are automatically chunked. If response contains
-        `_chunking.has_more=true`, call again with chunk=N to get remaining content.
-
-        TIERED STRATEGY:
-        1. Continuation requests (chunk>0): Execute immediately
-        2. Very large requests (>50KB estimated): Pre-flight check fails, returns optimization suggestions
-        3. Large requests (20-50KB): Execute with performance warning
-        4. Normal requests (<20KB): Execute directly
+        """Fetch multiple method sources in one request using "class:method" format. Auto size-managed.
 
         Args:
-            methods: List of "class_name:method_name" pairs (e.g., ['com.example.A:methodA', 'com.example.B:methodB']). Max 20.
-            chunk: Chunk number for continuation (0=first request, 1-N=subsequent chunks). Default: 0
-            force: Force execution even for very large requests (bypasses size check). Default: False
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
+            methods: List of "class_name:method_name" strings (max 20). chunk: 0=first, N=continue.
+            force: Bypass size guard. instance_id: Target JADX instance name.
         Returns:
-            Success: {methods: [{class_name, method_name, code, found}, ...], total, found_count}
-            BATCH_TOO_LARGE error: {error, estimated_size_kb, method_summaries, suggestions}
+            dict: {methods: [{class_name, method_name, code, found}]} or BATCH_TOO_LARGE error.
         """
         return await batch_get_method_by_name(
             methods, chunk=chunk, force=force, instance_id=instance_id
@@ -455,29 +425,12 @@ def register_search_tools(mcp, with_busy_check):
         count: int = 20,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """PRIMARY search tool — find classes, methods, fields, or code by keyword.
-
-        USE THIS TOOL for any search task. It replaces search_method_by_name for
-        method searches (use search_in='method') and is faster and safer.
-
-        Speed guide for search_in values:
-        - 'class': <100ms, always fast — match class names
-        - 'method': <100ms, always fast — match method names
-        - 'field': <100ms, always fast — match field names
-        - 'code': 1-60s, requires decompilation — match inside source code
-        - 'comment': similar to code — match inside comments
-
-        Call get_decompile_status() first if using search_in='code'.
+        """Search classes by keyword across class/method/field/code/comment scopes.
 
         Args:
-            search_term: Keyword to search for.
-            package: Package filter (e.g., 'com.example'). Strongly recommended!
-            exclude: Comma-separated package prefixes to exclude.
-            search_in: Scope: class|method|field|code|comment. Default: code
-            offset: Pagination offset. Default: 0
-            count: Max results (max: 200). Default: 20
+            search_term: Keyword. package: Package filter (recommended). exclude: Comma-separated exclusions.
+            search_in: class|method|field|code|comment (class/method/field fast; code needs cache). count: Max results.
             instance_id: Target JADX instance name.
-
         Returns:
             dict: {classes: [...], total: int, has_more: bool}
         """
@@ -488,26 +441,26 @@ def register_search_tools(mcp, with_busy_check):
     @mcp.tool(name="get_method_signature")
     @with_busy_check
     async def get_method_signature_tool(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
-        """Get structured method signature with Frida-compatible type information.
-
-        Returns frida_overload string for each method overload.
+        """Get structured method signatures with Frida-compatible types and frida_overload strings.
 
         Args:
-            class_name: Fully qualified class name (e.g., com.example.MainActivity)
-            method_name: Method name to get signature for
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            class_name: Fully qualified class name. method_name: Method name.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {signatures: [{return_type, parameters, frida_overload, ...}], overloads: int}
         """
         return await get_method_signature(class_name, method_name, instance_id=instance_id)
 
     @mcp.tool(name="get_method_callees")
     @with_busy_check
     async def get_method_callees_tool(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
-        """Get methods called by the specified method (callees analysis).
+        """Get methods called by the specified method (pattern-based callee analysis).
 
         Args:
-            class_name: Fully qualified class name (e.g., com.example.MainActivity)
-            method_name: Method name to analyze
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            class_name: Fully qualified class name. method_name: Method name.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {callees: [str, ...], callees_count: int}
         """
         return await get_method_callees(class_name, method_name, instance_id=instance_id)
 
@@ -519,15 +472,12 @@ def register_search_tools(mcp, with_busy_check):
         count: int = 50,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Search for all native methods across the APK (metadata-only, fast).
-
-        Native methods are the bridge between Java and native code (JNI).
-        This operation does NOT trigger decompilation - it reads DEX metadata directly.
+        """Find all native (JNI) methods across the APK — reads DEX metadata, no decompilation needed.
 
         Args:
-            package: Optional package filter (e.g., 'com.xingin')
-            offset: Pagination offset. Default: 0
-            count: Max results (max: 200). Default: 50
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            package: Optional package filter. offset: Pagination start.
+            count: Max results (max 200, default 50). instance_id: Target JADX instance name.
+        Returns:
+            dict: {native_methods: [{class_name, method_name, param_types_frida}], has_more: bool}
         """
         return await search_native_methods(package, offset, count, instance_id=instance_id)

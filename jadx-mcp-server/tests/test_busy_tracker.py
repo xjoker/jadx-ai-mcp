@@ -38,7 +38,8 @@ def test_policy_mapping_for_code_read_and_exclusive_operations():
     assert get_operation_policy("get_method_by_name").lane == LANE_CODE_READ
     assert get_operation_policy("get_class_source").active_limit == DEFAULT_CODE_READ_ACTIVE_LIMIT
     assert get_operation_policy("rename").lane == LANE_EXCLUSIVE
-    assert get_operation_policy("batch_get_class_source").lane == LANE_EXCLUSIVE
+    assert get_operation_policy("batch_get_class_source").lane == LANE_CODE_READ
+    assert get_operation_policy("batch_get_method_by_name").lane == LANE_CODE_READ
     assert get_operation_policy("search_classes_by_keyword", {"search_in": "code"}).lane == LANE_EXCLUSIVE
     assert get_operation_policy("search_classes_by_keyword", {"search_in": "class/comment"}).lane == LANE_EXCLUSIVE
 

@@ -113,7 +113,21 @@ async def _execute_batch_request(class_names: list[str], chunk: int, instance_id
 
     result = await get_from_jadx("batch-class-source", params, instance_id=instance_id)
 
-    # If chunking metadata is present, add AI-friendly instruction
+    # Handle threshold-routing response: Java server signals payload exceeds inline limit.
+    # Surface transfer-token instructions to the AI caller automatically.
+    if result.get("response_too_large"):
+        size_kb = round(result.get("size_bytes", 0) / 1024, 1)
+        result["_ai_instruction"] = (
+            f"The batch response is {size_kb} KB which exceeds the inline threshold. "
+            "To retrieve the full payload:\n"
+            "1. token_result = await create_transfer_token(resource_type='batch_classes')\n"
+            f"2. GET {{token_result['transfer_url']}}/download/batch-classes"
+            f"?classes={','.join(class_names)}&token={{token_result['token']}}&format=json\n"
+            "3. Parse the JSON response (same shape as a normal batch result)."
+        )
+        return result
+
+    # If chunking metadata is present, add AI-friendly instruction (legacy force_chunk path)
     if "_chunking" in result and result["_chunking"].get("has_more"):
         chunk_info = result["_chunking"]
         result["_ai_instruction"] = (
@@ -511,25 +525,26 @@ def register_class_tools(mcp, with_busy_check):
     @mcp.tool()
     @with_busy_check
     async def get_all_classes(offset: int = 0, count: int = 0, instance_id: Optional[str] = None) -> dict:
-        """Returns a list of all classes in the project with pagination support.
+        """List all classes in the project with pagination support.
 
         Args:
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            offset: Pagination start index. count: Max results (0=all).
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {classes: [str, ...], total: int}
         """
         return await _get_all_classes(offset, count, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check
     async def get_class_source(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-        """Fetch the Java source of a specific class.
-
-        CHUNKING: Large classes (>8KB) are automatically chunked. If response contains
-        `_chunking.has_more=true`, call again with chunk=N to get remaining content.
+        """Fetch decompiled Java source of a class. Large classes are auto-chunked (>8KB).
 
         Args:
-            class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-            chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            class_name: Fully qualified class name. chunk: 0=first, N=continue chunked response.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {response: str, _chunking: {...}} — call again with chunk=N if has_more=true.
         """
         return await _get_class_source(class_name, chunk=chunk, instance_id=instance_id)
 
@@ -541,33 +556,13 @@ def register_class_tools(mcp, with_busy_check):
         force: bool = False,
         instance_id: Optional[str] = None
     ) -> dict:
-        """Fetch 2-20 class sources in a single request with intelligent size management.
-
-        For a SINGLE class, use get_class_source instead — it is simpler and faster.
-
-        SMART BATCHING: Automatically estimates response size and provides optimization guidance.
-        - Small batches (<20KB): Execute directly
-        - Large batches (20-50KB): Execute with performance warning
-        - Very large batches (>50KB): Returns BATCH_TOO_LARGE error with class summaries
-
-        CHUNKING: Large responses (>8KB) are automatically chunked. If response contains
-        `_chunking.has_more=true`, call again with chunk=N to get remaining content.
-
-        TIERED STRATEGY:
-        1. Continuation requests (chunk>0): Execute immediately
-        2. Very large requests (>50KB estimated): Pre-flight check fails, returns optimization suggestions
-        3. Large requests (20-50KB): Execute with performance warning
-        4. Normal requests (<20KB): Execute directly
+        """Fetch 2-20 class sources in one request with auto size-management. Use get_class_source for a single class.
 
         Args:
-            class_names: List of fully qualified class names (e.g., ['com.example.A', 'com.example.B']). Max 20.
-            chunk: Chunk number for continuation (0=first request, 1-N=subsequent chunks). Default: 0
-            force: Force execution even for very large requests (bypasses size check). Default: False
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
+            class_names: List of fully qualified class names (max 20). chunk: 0=first, N=continue.
+            force: Bypass size guard. instance_id: Target JADX instance name.
         Returns:
-            Success: {classes: [{class_name, content, found}, ...], total, found_count}
-            BATCH_TOO_LARGE error: {error, estimated_size_kb, class_summaries, suggestions}
+            dict: {classes: [{class_name, content, found}]} or BATCH_TOO_LARGE error with suggestions.
         """
         return await _batch_get_class_source(
             class_names, chunk=chunk, force=force, instance_id=instance_id
@@ -576,109 +571,84 @@ def register_class_tools(mcp, with_busy_check):
     @mcp.tool()
     @with_busy_check
     async def get_methods_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
-        """List all method names in a class with Frida-friendly metadata.
-
-        Returns structured JSON with is_static, is_native, overload_count for each method.
+        """List all methods of a class with Frida-friendly metadata (is_static, overload_count, etc.).
 
         Args:
-            class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            class_name: Fully qualified class name. instance_id: Target JADX instance name.
+        Returns:
+            dict: {methods: [{name, is_static, is_native, overload_count, return_type, ...}], count}
         """
         return await _get_methods_of_class(class_name, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check
     async def get_fields_of_class(class_name: str, instance_id: Optional[str] = None) -> dict:
-        """List all field names in a class with Frida-compatible type information.
-
-        Returns structured JSON with type_frida field for each field.
+        """List all fields of a class with Frida-compatible type information (type_frida).
 
         Args:
-            class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            class_name: Fully qualified class name. instance_id: Target JADX instance name.
+        Returns:
+            dict: {fields: [{name, type, type_frida, is_static, is_final, modifiers}], count}
         """
         return await _get_fields_of_class(class_name, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check
     async def get_smali_of_class(class_name: str, chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-        """Fetch the smali (Dalvik bytecode) representation of a class.
-
-        CHUNKING: Large Smali output (>8KB) is automatically chunked. Classes with 40+ methods
-        often produce >40KB Smali. If response contains `_chunking.has_more=true`, call again
-        with chunk=N to get remaining content.
+        """Fetch Dalvik smali bytecode of a class. Auto-chunked for large output (>8KB).
 
         Args:
-            class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-            chunk: Chunk number (0=first chunk with metadata, 1-N=specific chunk). Default: 0
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            class_name: Fully qualified class name (use $ for inner classes). chunk: 0=first, N=continue.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {response: str, _chunking: {...}} — call again with chunk=N if has_more=true.
         """
         return await _get_smali_of_class(class_name, chunk=chunk, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check
     async def get_main_activity_class(chunk: int = 0, instance_id: Optional[str] = None) -> dict:
-        """Fetch the main activity class name from AndroidManifest.xml.
-
-        CHUNKING: Large activity classes (>8KB) auto-chunked. If `_chunking.has_more=true`, call with chunk=N.
+        """Fetch the app entry-point Activity class as defined in AndroidManifest.xml.
 
         Args:
-            chunk: Chunk number (0=first chunk, 1-N=specific chunk). Default: 0
-            instance_id: Target JADX instance name.
+            chunk: 0=first, N=continue chunked response. instance_id: Target JADX instance name.
+        Returns:
+            dict: {content: str, _chunking: {...}} — call again with chunk=N if has_more=true.
         """
         return await _get_main_activity_class(chunk=chunk, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check
     async def get_class_info(class_name: str, instance_id: Optional[str] = None) -> dict:
-        """Get structured information about a class including inheritance, interfaces, and members.
+        """Get structured class metadata: inheritance, interfaces, method/field names, native methods.
 
         Args:
-            class_name: Fully qualified class name (e.g., com.example.MainActivity)
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
+            class_name: Fully qualified class name. instance_id: Target JADX instance name.
         Returns:
-            dict with: class_name, package, super_class, interfaces, is_abstract,
-                       method_count, field_count, method_names, field_names
+            dict: {class_name, package, super_class, interfaces, method_names, field_names, native_count}
         """
         return await _get_class_info(class_name, instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check
     async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
-        """Check JADX runtime health: decompilation progress, memory, and lock state.
-
-        NOT the same as get_file_info (which returns APK/JAR metadata like package
-        name and class count). This tool returns live runtime metrics.
-
-        Call this BEFORE resource-intensive operations like search_in='code':
-        - `cached_percentage` < 20%: Avoid search_in='code', use 'class'/'method' instead
-        - `memory.usage_percentage` > 85%: Reduce batch sizes, avoid smali
-        - `search_lock.locked` = true: Wait and retry, another search is running
+        """Check live JADX runtime state: decompile progress, memory usage, and search lock.
 
         Args:
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {cached_percentage, memory.usage_percentage, search_lock.locked, status}
         """
         return await _get_decompile_status(instance_id=instance_id)
 
     @mcp.tool()
     @with_busy_check
     async def list_packages(instance_id: Optional[str] = None) -> dict:
-        """List all packages in the loaded APK/JAR sorted by class count.
-
-        Returns a flat list of packages with their class counts and a library-detection
-        flag based on well-known namespace prefixes (androidx., kotlin., com.google.,
-        retrofit2., okhttp3., etc.). Useful for quickly orienting in large APKs:
-        start analysis in packages with the most classes that are NOT likely libraries.
+        """List all packages in the APK/JAR sorted by class count with library-detection flags.
 
         Args:
-            instance_id: Optional. Target JADX instance name. Uses default if not specified.
-
+            instance_id: Target JADX instance name.
         Returns:
-            dict: {
-                total_classes: int,
-                total_packages: int,
-                packages: list of {name: str, class_count: int, is_likely_library: bool}
-            }
+            dict: {total_classes, total_packages, packages: [{name, class_count, is_likely_library}]}
         """
         return await _list_packages(instance_id=instance_id)

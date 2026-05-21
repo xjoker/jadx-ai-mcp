@@ -101,17 +101,13 @@ def register_file_management_tools(mcp, with_busy_check):
         recursive: bool = False,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """List loadable files inside the JADX file sandbox.
-
-        Use this before load_file to discover what APK/JAR/AAR/DEX/CLASS
-        files are available. Returns paths relative to the sandbox root that
-        can be passed directly to load_file.
+        """List APK/JAR/AAR/DEX files available in the JADX sandbox. Use before load_file.
 
         Args:
-            subdir: Optional sub-path under the root to scope the listing.
-            pattern: Glob, e.g. "*.apk". Default "*".
-            recursive: Recurse into subdirectories. Default false.
-            instance_id: Target JADX instance; omit for the default.
+            subdir: Optional sub-path to scope listing. pattern: Glob like "*.apk" (default "*").
+            recursive: Recurse into subdirs. instance_id: Target JADX instance.
+        Returns:
+            dict: {root, files: [{path, size_bytes, extension, loadable}], count}
         """
         return await list_available_files(
             subdir=subdir,
@@ -129,18 +125,12 @@ def register_file_management_tools(mcp, with_busy_check):
         mode: str = "replace",
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Load an APK/JAR/AAR/DEX/CLASS into the running JADX instance.
-
-        Switches what JADX is analyzing without touching the GUI. The plugin
-        validates the path against its sandbox (JADX_FILE_ROOT / /apks).
-        Decompilation continues asynchronously — poll get_decompile_status to
-        know when analysis is ready.
+        """Load an APK/JAR/AAR/DEX into JADX without touching the GUI. Poll get_decompile_status after loading.
 
         Args:
-            path: Path under the sandbox root (relative or absolute that
-                  canonicalizes inside the root).
-            mode: "replace" (close & open) or "append" (merge into current
-                  project; for APK + dependency JARs only).
-            instance_id: Target JADX instance; omit for the default.
+            path: Sandbox-relative path (e.g. "target.apk"). mode: replace|append.
+            instance_id: Target JADX instance.
+        Returns:
+            dict: {dispatched: bool, mode, path, ready: false, poll_with: "get_decompile_status"}
         """
         return await load_file(path=path, mode=mode, instance_id=instance_id)

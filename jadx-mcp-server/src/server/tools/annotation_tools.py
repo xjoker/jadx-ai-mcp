@@ -390,17 +390,13 @@ def register_annotation_tools(mcp, with_busy_check):
         apk_hash: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Add persistent text annotations to decompiled code elements (class/method/field).
-
-        Annotations are stored in a local SQLite database and persist across sessions.
+        """Add a persistent text annotation to a class/method/field (stored in local SQLite).
 
         Args:
-            target_type: Target type: "class", "method", or "field"
-            target_name: Fully qualified target name (e.g. "com.example.MainActivity")
-            content: Annotation content
-            author: Author name (default "anonymous")
-            apk_hash: APK hash (leave empty to auto-use the currently open APK)
-            instance_id: Optional. Target JADX instance name
+            target_type: class|method|field. target_name: Fully qualified name. content: Annotation text.
+            author: Author name. apk_hash: Leave empty to use currently open APK. instance_id: Target JADX instance.
+        Returns:
+            dict: {success, id, target_type, target_name, apk_hash}
         """
         return await _add_annotation(
             target_type, target_name, content,
@@ -415,13 +411,13 @@ def register_annotation_tools(mcp, with_busy_check):
         apk_hash: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Query the annotation list for the current APK, with optional filtering by target_type or target_name.
+        """Query annotations for the current APK with optional filters.
 
         Args:
-            target_type: Filter by target type (optional)
-            target_name: Filter by target name (optional)
-            apk_hash: Filter by APK hash (leave empty to use the currently open APK)
-            instance_id: Optional. Target JADX instance name
+            target_type: Filter by type. target_name: Filter by name. apk_hash: Filter by APK hash.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {annotations: [...], count}
         """
         return await _get_annotations(
             target_type=target_type, target_name=target_name,
@@ -434,11 +430,12 @@ def register_annotation_tools(mcp, with_busy_check):
         annotation_id: int,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Delete an annotation by its ID.
+        """Delete an annotation by its numeric ID (from get_annotations).
 
         Args:
-            annotation_id: The numeric ID of the annotation to delete (from get_annotations results)
-            instance_id: Optional. Target JADX instance name
+            annotation_id: Numeric annotation ID. instance_id: Target JADX instance name.
+        Returns:
+            dict: {success, deleted_id}
         """
         return await _delete_annotation(annotation_id, instance_id=instance_id)
 
@@ -453,18 +450,13 @@ def register_annotation_tools(mcp, with_busy_check):
         apk_hash: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Create persistent labeled bookmarks for important code locations.
-
-        Bookmarks are stored in a local SQLite database and persist across sessions.
+        """Create a labeled bookmark for an important code location (stored in local SQLite).
 
         Args:
-            target_type: Target type: "class", "method", or "field"
-            target_name: Fully qualified target name
-            label: Bookmark label, e.g. "entry point", "crypto logic", "suspicious code"
-            note: Optional note description
-            author: Author name (default "anonymous")
-            apk_hash: APK hash (leave empty to auto-use the currently open APK)
-            instance_id: Optional. Target JADX instance name
+            target_type: class|method|field. target_name: Fully qualified name. label: e.g. "crypto logic".
+            note: Optional description. author: Author name. apk_hash: APK hash. instance_id: Target JADX instance.
+        Returns:
+            dict: {success, id, label, target_type, target_name, apk_hash}
         """
         return await _add_bookmark(
             target_type, target_name, label,
@@ -479,13 +471,13 @@ def register_annotation_tools(mcp, with_busy_check):
         apk_hash: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """List all bookmarks for the current APK, with optional filtering by target_type or target_name.
+        """List bookmarks for the current APK with optional filters.
 
         Args:
-            target_type: Filter by target type (optional)
-            target_name: Filter by target name (optional)
-            apk_hash: Filter by APK hash (leave empty to use the currently open APK)
-            instance_id: Optional. Target JADX instance name
+            target_type: Filter by type. target_name: Filter by name. apk_hash: Filter by APK hash.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {bookmarks: [...], count}
         """
         return await _list_bookmarks(
             target_type=target_type, target_name=target_name,
@@ -498,11 +490,12 @@ def register_annotation_tools(mcp, with_busy_check):
         bookmark_id: int,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Delete a bookmark by its ID.
+        """Delete a bookmark by its numeric ID (from list_bookmarks).
 
         Args:
-            bookmark_id: The numeric ID of the bookmark to delete (from list_bookmarks results)
-            instance_id: Optional. Target JADX instance name
+            bookmark_id: Numeric bookmark ID. instance_id: Target JADX instance name.
+        Returns:
+            dict: {success, deleted_id}
         """
         return await _delete_bookmark(bookmark_id, instance_id=instance_id)
 
@@ -516,17 +509,13 @@ def register_annotation_tools(mcp, with_busy_check):
         apk_hash: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Add classification tags to code elements, supporting multi-dimensional code organization.
-
-        Tags are stored in a local SQLite database and persist across sessions.
+        """Add a classification tag to a code element (stored in local SQLite).
 
         Args:
-            target_type: Target type: "class", "method", or "field"
-            target_name: Fully qualified target name
-            tag: Tag string, e.g. "crypto", "network", "entry-point", "obfuscated"
-            author: Author name (default "anonymous")
-            apk_hash: APK hash (leave empty to auto-use the currently open APK)
-            instance_id: Optional. Target JADX instance name
+            target_type: class|method|field. target_name: Fully qualified name. tag: e.g. "crypto", "network".
+            author: Author name. apk_hash: APK hash. instance_id: Target JADX instance name.
+        Returns:
+            dict: {success, id, tag, target_type, target_name, apk_hash}
         """
         return await _add_tag(
             target_type, target_name, tag,
@@ -541,13 +530,13 @@ def register_annotation_tools(mcp, with_busy_check):
         apk_hash: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Query the tag list for the current APK, with optional filtering by target_type or target_name.
+        """Query classification tags for the current APK with optional filters.
 
         Args:
-            target_type: Filter by target type (optional)
-            target_name: Filter by target name (optional)
-            apk_hash: Filter by APK hash (leave empty to use the currently open APK)
-            instance_id: Optional. Target JADX instance name
+            target_type: Filter by type. target_name: Filter by name. apk_hash: Filter by APK hash.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {tags: [...], count}
         """
         return await _get_tags(
             target_type=target_type, target_name=target_name,
@@ -560,11 +549,12 @@ def register_annotation_tools(mcp, with_busy_check):
         tag_id: int,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Delete a tag by its ID.
+        """Delete a tag by its numeric ID (from get_tags).
 
         Args:
-            tag_id: The numeric ID of the tag to delete (from get_tags results)
-            instance_id: Optional. Target JADX instance name
+            tag_id: Numeric tag ID. instance_id: Target JADX instance name.
+        Returns:
+            dict: {success, deleted_id}
         """
         return await _delete_tag(tag_id, instance_id=instance_id)
 
@@ -574,15 +564,11 @@ def register_annotation_tools(mcp, with_busy_check):
         apk_hash: Optional[str] = None,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Retrieve the complete analysis record (annotations + bookmarks + tags) for the current APK.
-
-        Useful for restoring previous analysis context in one call at the start of a new analysis session.
+        """Get all annotations + bookmarks + tags for the current APK in one call. Use to restore analysis context.
 
         Args:
-            apk_hash: APK hash (leave empty to use the currently open APK)
-            instance_id: Optional. Target JADX instance name
-
+            apk_hash: APK hash (leave empty for currently open APK). instance_id: Target JADX instance name.
         Returns:
-            dict with: apk_hash, annotations, bookmarks, tags, and respective counts
+            dict: {apk_hash, annotations, bookmarks, tags, annotations_count, bookmarks_count, tags_count}
         """
         return await _get_analysis_summary(apk_hash=apk_hash, instance_id=instance_id)

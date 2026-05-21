@@ -258,16 +258,13 @@ def register_diff_tools(mcp, with_busy_check):
         package: str = "",
         include_code_diff: bool = False,
     ) -> dict:
-        """Compare two JADX instances (old vs new APK) and produce a structured diff report.
-
-        Both instances must be running with their respective APK/JAR loaded.
-        Use 'package' to restrict comparison to application code and skip library classes.
+        """Compare two loaded JADX instances (old vs new APK) and produce a class/method diff report.
 
         Args:
-            old_instance_id: Instance name for the older APK version
-            new_instance_id: Instance name for the newer APK version
-            package: Package prefix filter (strongly recommended, e.g. "com.example.app")
-            include_code_diff: Include unified diffs of method source (slow, default False)
+            old_instance_id: Older APK instance name. new_instance_id: Newer APK instance name.
+            package: Package filter (strongly recommended). include_code_diff: Unified method diffs (slow).
+        Returns:
+            dict: {summary: {classes_added, removed, modified}, added_classes, removed_classes, modified_classes}
         """
         return await _compare_versions(
             old_instance_id=old_instance_id,

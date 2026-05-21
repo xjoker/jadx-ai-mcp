@@ -68,12 +68,12 @@ CODE_READ_OPERATIONS = {
     "get_strings",
     "get_config_strings",
     "get_method_callees",
+    "batch_get_class_source",
+    "batch_get_method_by_name",
 }
 
 EXCLUSIVE_OPERATIONS = {
     "rename",
-    "batch_get_class_source",
-    "batch_get_method_by_name",
 }
 
 

@@ -221,13 +221,17 @@ public class PluginServer {
                     Thread.sleep(2000); // Wait 2s for server to fully stabilize
                     logger.info("[JAI] Starting background cache warmup...");
 
-                    // Warmup class cache
+                    // Warmup class cache (name indices are built inside initCache)
                     try {
                         ClassCacheManager.initCache(mainWindow.getWrapper());
                         logger.info("[JAI] Class cache warmup initiated");
                     } catch (Exception e) {
                         logger.warn("[JAI] Failed to warmup class cache: " + e.getMessage());
                     }
+
+                    // Predecompile top-K most-referenced classes
+                    runPredecompileWarmup();
+
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -649,11 +653,28 @@ public class PluginServer {
             if (affectedClass != null) {
                 logger.info("[JAI] Rename detected for class '{}', invalidating code cache entry", affectedClass);
                 ClassCacheManager.invalidateCode(affectedClass);
+                // Also invalidate the per-class method/field snapshot caches so that
+                // subsequent getDeclaredMethodInfos / getDeclaredFieldInfos calls see
+                // the updated alias names.
+                try {
+                    java.util.Map<String, jadx.api.JavaClass> cache = ClassCacheManager.getCache();
+                    jadx.api.JavaClass cls = ClassCacheManager.findClass(cache, affectedClass);
+                    if (cls != null) {
+                        com.zin.jadxaimcp.utils.JadxApiAdapter.invalidateSnapshots(cls);
+                        // Rebuild name-index buckets for this class so subsequent
+                        // exact-match searches reflect the new alias.
+                        ClassCacheManager.reindex(cls);
+                    }
+                } catch (Exception ignored) {
+                    // getCache() may throw if still initializing; snapshot staleness is
+                    // acceptable in that case — they'll be rebuilt on next access.
+                }
             } else {
                 // Unknown node type (e.g. variable/package rename) — invalidate index only,
                 // which is cheap and avoids dumping the entire decompiled code cache.
                 logger.info("[JAI] Rename detected (unknown node type), clearing class index");
                 ClassCacheManager.clearCache();
+                com.zin.jadxaimcp.utils.JadxApiAdapter.clearAllSnapshotCaches();
             }
             // NOTE: CodeSearchCoordinator.clearCache() is deliberately NOT called here.
             // See Javadoc above for the rationale.
@@ -739,6 +760,105 @@ public class PluginServer {
     }
 
     /**
+     * Android entry-point superclass names used to identify high-priority classes
+     * that the AI always probes first.
+     */
+    private static final java.util.Set<String> ANDROID_ENTRY_POINT_SUPERS = java.util.Set.of(
+        "android.app.Activity",
+        "android.app.Service",
+        "android.app.Application",
+        "android.content.BroadcastReceiver",
+        "android.content.ContentProvider"
+    );
+
+    /**
+     * Predecompile the top-K most-referenced classes after the name-index has been built.
+     *
+     * <p>Reads {@code JADX_MCP_WARMUP_TOP_K} (default 100); set to 0 to disable entirely.
+     * Uses the shared {@link com.zin.jadxaimcp.server.routes.ClassRoutes#submitWarmupTask}
+     * so decompile tasks run on the same thread pool as search operations.</p>
+     *
+     * <p>Also decompiles any class whose superclass chain includes a known Android entry point
+     * ({@code Activity}, {@code Service}, {@code Application}, {@code BroadcastReceiver},
+     * {@code ContentProvider}).</p>
+     */
+    private void runPredecompileWarmup() {
+        try {
+            int topK = parseEnvIntAllowZero("JADX_MCP_WARMUP_TOP_K", 100);
+            if (topK == 0) {
+                logger.info("[JAI] Predecompile warmup disabled (JADX_MCP_WARMUP_TOP_K=0)");
+                return;
+            }
+            if (classRoutes == null) {
+                logger.warn("[JAI] Predecompile warmup skipped: classRoutes not available");
+                return;
+            }
+
+            // Wait for the class cache to be ready (it was just initiated, may still be loading)
+            java.util.Map<String, jadx.api.JavaClass> cacheMap;
+            try {
+                cacheMap = ClassCacheManager.getCache();
+            } catch (Exception e) {
+                logger.warn("[JAI] Predecompile warmup skipped: cache not ready — {}", e.getMessage());
+                return;
+            }
+
+            java.util.List<jadx.api.JavaClass> allClasses = new java.util.ArrayList<>(cacheMap.values());
+            if (allClasses.isEmpty()) {
+                logger.info("[JAI] Predecompile warmup skipped: no classes in cache");
+                return;
+            }
+
+            // Score each class by the number of methods that reference it (useInMth)
+            allClasses.sort((a, b) -> {
+                int aScore = com.zin.jadxaimcp.utils.JadxApiAdapter.getClassUseInMethods(a).size();
+                int bScore = com.zin.jadxaimcp.utils.JadxApiAdapter.getClassUseInMethods(b).size();
+                return Integer.compare(bScore, aScore); // descending
+            });
+
+            // Build candidate set: top-K by score + Android entry points
+            java.util.LinkedHashSet<jadx.api.JavaClass> candidates = new java.util.LinkedHashSet<>();
+
+            // Top-K most-referenced
+            int added = 0;
+            for (jadx.api.JavaClass cls : allClasses) {
+                if (added >= topK) break;
+                candidates.add(cls);
+                added++;
+            }
+
+            // Android entry-point classes (superclass chain check)
+            for (jadx.api.JavaClass cls : allClasses) {
+                if (candidates.contains(cls)) continue;
+                String superClass = com.zin.jadxaimcp.utils.JadxApiAdapter.getSuperClass(cls);
+                if (superClass != null && ANDROID_ENTRY_POINT_SUPERS.contains(superClass)) {
+                    candidates.add(cls);
+                }
+            }
+
+            logger.info("[JAI] Predecompile warmup: {} candidates (topK={} + entry-points)",
+                candidates.size(), topK);
+
+            int count = 0;
+            for (jadx.api.JavaClass cls : candidates) {
+                if (Thread.currentThread().isInterrupted()) {
+                    break;
+                }
+                classRoutes.submitWarmupTask(cls);
+                count++;
+                if (count % 10 == 0) {
+                    logger.info("[JAI] Predecompile warmup: submitted {}/{} tasks",
+                        count, candidates.size());
+                }
+            }
+            logger.info("[JAI] Predecompile warmup: submitted all {} tasks", count);
+
+        } catch (Exception e) {
+            logger.warn("[JAI] Predecompile warmup failed (non-fatal): {}", e.getMessage());
+        }
+    }
+
+    /**
      * Installs a global UncaughtExceptionHandler that detects OutOfMemoryError.
      * Sets a JVM-global sticky flag so the /health endpoint can report it,
      * even across classloader reloads.
@@ -810,6 +930,26 @@ public class PluginServer {
                     return val;
                 }
                 logger.warn("[JAI] Env var {} must be > 0 (got {}), using default {}", envVar, raw, defaultValue);
+            } catch (NumberFormatException e) {
+                logger.warn("[JAI] Env var {} is not a valid integer (got '{}'), using default {}", envVar, raw, defaultValue);
+            }
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Like {@link #parseEnvInt} but accepts 0 as a valid value (used for "disabled" flags).
+     * Falls back to {@code defaultValue} only if the variable is unset, empty, or non-numeric.
+     */
+    private static int parseEnvIntAllowZero(String envVar, int defaultValue) {
+        String raw = System.getenv(envVar);
+        if (raw != null && !raw.isEmpty()) {
+            try {
+                int val = Integer.parseInt(raw.trim());
+                if (val >= 0) {
+                    return val;
+                }
+                logger.warn("[JAI] Env var {} must be >= 0 (got {}), using default {}", envVar, raw, defaultValue);
             } catch (NumberFormatException e) {
                 logger.warn("[JAI] Env var {} is not a valid integer (got '{}'), using default {}", envVar, raw, defaultValue);
             }

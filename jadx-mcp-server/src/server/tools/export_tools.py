@@ -313,17 +313,13 @@ def register_export_tools(mcp, with_busy_check):
         include_tags: bool = True,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Export analysis results (annotations, bookmarks, tags) as a structured report.
-
-        Supports Markdown (human-readable), JSON (structured), and SARIF 2.1.0
-        (security tooling standard) output formats.
+        """Export annotations, bookmarks, and tags as a formatted report.
 
         Args:
-            format: Output format - "markdown", "json", or "sarif"
-            include_annotations: Include annotations in the report (default True)
-            include_bookmarks: Include bookmarks in the report (default True)
-            include_tags: Include tags in the report (default True)
-            instance_id: Optional. Target JADX instance name
+            format: markdown|json|sarif. include_annotations/bookmarks/tags: Toggle sections.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {format, report: str, stats: {annotations, bookmarks, tags}, generated_at}
         """
         return await _export_analysis_report(
             format=format,

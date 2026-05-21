@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import javax.swing.*;
 import java.awt.*;
 import java.io.ByteArrayInputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.ArrayList;
@@ -49,6 +50,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -58,12 +60,44 @@ import com.zin.jadxaimcp.utils.PaginationUtils.PaginationException;
 import com.zin.jadxaimcp.utils.JadxAIMCPPluginError;
 import com.zin.jadxaimcp.utils.JadxSearchLock;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
+import com.zin.jadxaimcp.utils.CodeContentIndex;
 import com.zin.jadxaimcp.utils.CodeSearchCoordinator;
 import com.zin.jadxaimcp.utils.JadxApiAdapter;
 import com.zin.jadxaimcp.utils.SmartChunker;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 public class ClassRoutes {
     private static final Logger logger = LoggerFactory.getLogger(ClassRoutes.class);
+
+    // Threshold for inline JSON response vs. transfer-token redirect.
+    // Configurable via JADX_MCP_INLINE_RESPONSE_MAX_BYTES env var (default 32768).
+    private static final int INLINE_RESPONSE_MAX_BYTES;
+    static {
+        int threshold = 32768;
+        String envVal = System.getenv("JADX_MCP_INLINE_RESPONSE_MAX_BYTES");
+        if (envVal != null && !envVal.isEmpty()) {
+            try {
+                threshold = Integer.parseInt(envVal.trim());
+            } catch (NumberFormatException ignored) {
+                logger.warn("Invalid JADX_MCP_INLINE_RESPONSE_MAX_BYTES='{}', using default 32768", envVal);
+            }
+        }
+        INLINE_RESPONSE_MAX_BYTES = threshold;
+    }
+
+    // Shared Jackson mapper for size-estimation serialization.
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    // JsonFactory for streaming JSON output in handleMainApplicationClassesCode.
+    private static final JsonFactory JSON_FACTORY = new JsonFactory();
+
+    // Flush the JsonGenerator every N classes during streaming to bound
+    // the write-buffer size. With ~10 KB/class, 16 classes ≈ 160 KB buffered
+    // at any instant vs. the previous ~5-20 MB for a full page.
+    private static final int STREAM_FLUSH_EVERY = 16;
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
     
@@ -116,6 +150,23 @@ public class ClassRoutes {
 
     public void shutdownSearchExecutor() {
         searchExecutor.shutdownNow();
+    }
+
+    /**
+     * Submits a single warmup decompile task to the shared search executor pool.
+     * The task calls {@link JavaClass#getCode()} which populates JADX's upstream
+     * {@link jadx.api.ICodeCache}. Exceptions are swallowed to keep warmup resilient.
+     *
+     * @return a Future that completes when the class has been decompiled (or fails silently)
+     */
+    public Future<?> submitWarmupTask(JavaClass cls) {
+        return searchExecutor.submit(() -> {
+            try {
+                cls.getCode();
+            } catch (Exception ignored) {
+                // Warmup decompile failures are non-fatal
+            }
+        });
     }
 
     // ------------------------------- Request Handlers --------------------------
@@ -506,18 +557,79 @@ public class ClassRoutes {
             response.put("total", classNames.length);
             response.put("found", foundCount);
 
-            // Serialize and apply SmartChunker to prevent large response truncation
-            com.google.gson.Gson gson = new com.google.gson.Gson();
-            String responseJson = gson.toJson(response);
+            // --- Threshold routing (eliminates Gson → SmartChunker O(N²) path) ---
+            // force_chunk=true : legacy chunked path (backward compat)
+            // force_raw=true   : bypass threshold; always return raw JSON
+            //                    (used by the Python transfer-server's internal call)
+            boolean forceChunk = "true".equalsIgnoreCase(ctx.queryParam("force_chunk"));
+            boolean forceRaw   = "true".equalsIgnoreCase(ctx.queryParam("force_raw"));
 
-            // Apply chunking (auto-chunks if response > 8KB)
-            Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
-                responseJson,
-                chunk,
-                "batch_result"
-            );
+            if (forceChunk) {
+                // Legacy: caller explicitly wants SmartChunker-chunked output
+                com.google.gson.Gson gson = new com.google.gson.Gson();
+                String responseJson = gson.toJson(response);
+                Map<String, Object> chunkedResponse = SmartChunker.chunkResponse(
+                    responseJson, chunk, "batch_result");
+                ctx.json(chunkedResponse);
+                return;
+            }
 
-            ctx.json(chunkedResponse);
+            if (forceRaw) {
+                // Internal transfer-server call: always return raw data, no threshold check
+                ctx.json(response);
+                return;
+            }
+
+            // Estimate serialized size cheaply: sum all content string lengths
+            // (each char ≤ 4 bytes UTF-8; add overhead for JSON structure).
+            int estimatedBytes = 512;
+            for (Map<String, Object> cls : results) {
+                Object content = cls.get("content");
+                if (content instanceof String) {
+                    estimatedBytes += ((String) content).length();
+                }
+                Object err = cls.get("error");
+                if (err instanceof String) {
+                    estimatedBytes += ((String) err).length();
+                }
+                Object name = cls.get("name");
+                if (name instanceof String) {
+                    estimatedBytes += ((String) name).length() + 32; // keys + booleans
+                }
+            }
+
+            if (estimatedBytes <= INLINE_RESPONSE_MAX_BYTES) {
+                // Small response: single Jackson serialization via ctx.json()
+                ctx.json(response);
+            } else {
+                // Estimate exceeded; do one accurate serialization to confirm actual size
+                int actualBytes;
+                try {
+                    actualBytes = OBJECT_MAPPER.writeValueAsBytes(response).length;
+                } catch (Exception serEx) {
+                    logger.warn("Size check serialization failed, falling back to inline: {}", serEx.getMessage());
+                    ctx.json(response);
+                    return;
+                }
+
+                if (actualBytes <= INLINE_RESPONSE_MAX_BYTES) {
+                    ctx.json(response);
+                } else {
+                    // Direct caller to transfer-token API for large payloads
+                    Map<String, Object> transferHint = new HashMap<>();
+                    transferHint.put("response_too_large", true);
+                    transferHint.put("size_bytes", actualBytes);
+                    transferHint.put("items_count", classNames.length);
+                    transferHint.put("found", foundCount);
+                    transferHint.put("transfer_endpoint", "/transfer/download/batch-classes");
+                    transferHint.put("transfer_format", "json");
+                    transferHint.put("message",
+                        "Response exceeds inline threshold (" + INLINE_RESPONSE_MAX_BYTES + " bytes). "
+                        + "Call create_transfer_token(resource_type='batch_classes') then GET "
+                        + "/transfer/download/batch-classes?classes=<names>&token=<token>&force_raw=true");
+                    ctx.json(transferHint);
+                }
+            }
 
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error retrieving batch class sources: " + e.getMessage(), e, logger);
@@ -527,7 +639,7 @@ public class ClassRoutes {
     /**
      * @param Context
      * @return void
-     * 
+     *
      *         This routing method handles the /methods-of-class endpoint.
      *         First it checks whether the 'class_name' parameter is present or not
      *         in http request
@@ -1148,48 +1260,112 @@ public class ClassRoutes {
 
             PaginationWindow paginationWindow = resolvePaginationWindow(ctx, matchedClasses.size());
 
-            // Build list of class info maps only for the requested page
-            List<Map<String, Object>> classInfoList = new ArrayList<>();
+            // --- Backward-compat: force_chunk=true bypasses streaming and uses the
+            //     full-buffer path (pre-Wave-3 behaviour). Useful for debugging or
+            //     when a downstream client cannot handle a streaming response. ---
+            boolean forceChunk = "true".equalsIgnoreCase(ctx.queryParam("force_chunk"));
+            if (forceChunk) {
+                handleMainApplicationClassesCodeBuffered(ctx, matchedClasses, paginationWindow);
+                return;
+            }
+
+            // --- Streaming path (Option B: Jackson JsonGenerator -> ctx.outputStream()) ---
+            //
+            // Memory-pressure design:
+            //   Phase 1 (under lock): decompile all page classes, store results in a
+            //     compact String[] array. Lock released before any network I/O begins.
+            //   Phase 2 (lock-free): stream JSON directly to the servlet output stream
+            //     via Jackson JsonGenerator. Flush every STREAM_FLUSH_EVERY entries so
+            //     at most STREAM_FLUSH_EVERY * ~10 KB sits in the write buffer at once.
+            //
+            // Heap savings estimate for a 20-class page (~250 KB/class avg):
+            //   Old path: List<Map> holding all sources ~5 MB live at serialise time.
+            //   New path: same String[] data, but JSON serialisation flushes every 16
+            //     entries => live JSON buffer ~160 KB peak; after flush only next batch
+            //     + socket buffer (~256 KB) remain. Working set ~256 KB vs ~5-20 MB.
+            //
+            // Each entry in decompiledPage: index 0=fullName, 1=rawName, 2=content
+            List<String[]> decompiledPage = new ArrayList<>();
             if (paginationWindow.hasResults()) {
                 if (!JadxSearchLock.tryAcquire()) {
                     sendSearchDecompilationBusyResponse(ctx);
                     return;
                 }
-
                 try {
                     for (JavaClass cls : matchedClasses.subList(
                             paginationWindow.getStartIndex(),
                             paginationWindow.getEndIndex())) {
-                        Map<String, Object> classInfo = new HashMap<>();
-                        classInfo.put("name", cls.getFullName());
-                        classInfo.put("raw_name", JadxApiAdapter.getClassRawName(cls));
-                        classInfo.put("type", "code/java");
+                        String fullName = cls.getFullName();
+                        String rawName = JadxApiAdapter.getClassRawName(cls);
+                        String content;
                         try {
-                            String code = cls.getCode();
-                            classInfo.put("content", code);
-                            logger.debug("JADX AI MCP: Successfully got code for " + cls.getFullName() +
-                                    " (length: " + code.length() + ")");
+                            content = cls.getCode();
+                            logger.debug("JADX AI MCP: Decompiled {} ({} chars)", fullName, content.length());
                         } catch (Exception e) {
-                            logger.warn("Failed to decompile class " + cls.getFullName() + ": " + e.getMessage());
-                            classInfo.put("content", "// Error decompiling class: " + e.getMessage());
+                            logger.warn("Failed to decompile class {}: {}", fullName, e.getMessage());
+                            content = "// Error decompiling class: " + e.getMessage();
                         }
-                        classInfoList.add(classInfo);
+                        decompiledPage.add(new String[]{fullName, rawName, content});
                     }
                 } finally {
+                    // Release lock BEFORE any network I/O begins.
                     JadxSearchLock.release();
                 }
             }
 
-            logger.info("JADX AI MCP: Built " + classInfoList.size() + " class info objects");
+            logger.info("JADX AI MCP: Streaming {} decompiled class entries", decompiledPage.size());
 
-            Map<String, Object> result = buildPaginatedResponse(
-                    classInfoList,
-                    matchedClasses.size(),
-                    paginationWindow,
-                    "application-classes",
-                    "classes");
+            // Phase 2: stream JSON to the response output stream, fully lock-free.
+            ctx.contentType("application/json");
+            OutputStream out = ctx.outputStream();
+            try (JsonGenerator gen = JSON_FACTORY.createGenerator(out)) {
+                gen.writeStartObject();
 
-            ctx.json(result);
+                // pagination envelope – mirrors buildPaginatedResponse shape exactly
+                gen.writeStringField("type", "application-classes");
+                gen.writeNumberField("requested_count", paginationWindow.getRequestedLimit());
+
+                gen.writeObjectFieldStart("pagination");
+                gen.writeNumberField("total", matchedClasses.size());
+                gen.writeNumberField("offset", paginationWindow.getOffset());
+                gen.writeNumberField("limit", paginationWindow.getLimit());
+                gen.writeNumberField("count", decompiledPage.size());
+                gen.writeBooleanField("has_more", paginationWindow.hasMore());
+                if (paginationWindow.hasMore()) {
+                    gen.writeNumberField("next_offset", paginationWindow.getNextOffset());
+                }
+                if (paginationWindow.getOffset() > 0) {
+                    int prevOffset = Math.max(0, paginationWindow.getOffset() - paginationWindow.getLimit());
+                    gen.writeNumberField("prev_offset", prevOffset);
+                }
+                if (paginationWindow.getLimit() > 0) {
+                    int currentPage = (paginationWindow.getOffset() / paginationWindow.getLimit()) + 1;
+                    int totalPages = (int) Math.ceil((double) matchedClasses.size() / paginationWindow.getLimit());
+                    gen.writeNumberField("current_page", currentPage);
+                    gen.writeNumberField("total_pages", totalPages);
+                    gen.writeNumberField("page_size", paginationWindow.getLimit());
+                }
+                gen.writeEndObject(); // pagination
+
+                gen.writeArrayFieldStart("classes");
+                int written = 0;
+                for (String[] entry : decompiledPage) {
+                    gen.writeStartObject();
+                    gen.writeStringField("name", entry[0]);
+                    gen.writeStringField("raw_name", entry[1]);
+                    gen.writeStringField("type", "code/java");
+                    gen.writeStringField("content", entry[2]);
+                    gen.writeEndObject();
+                    written++;
+                    if (written % STREAM_FLUSH_EVERY == 0) {
+                        gen.flush();
+                    }
+                }
+                gen.writeEndArray(); // classes
+
+                gen.writeEndObject(); // root
+            }
+            // ctx.outputStream() lifecycle is managed by Javalin; do not close it here.
         } catch (PaginationException e) {
             JadxAIMCPPluginError.handleError(ctx,
                     "Internal error while generating pagination result for handleMainApplicationClassesCode: "
@@ -1203,9 +1379,104 @@ public class ClassRoutes {
     }
 
     /**
+     * Legacy full-buffer path for {@link #handleMainApplicationClassesCode}.
+     * Activated by {@code ?force_chunk=true}. Preserves pre-Wave-3 threshold
+     * routing (inline JSON vs. transfer-token hint) exactly as before.
+     *
+     * <p>Heap cost for a 20-class page: up to 5-20 MB (all decompiled sources
+     * held simultaneously before serialisation). Use only for debugging or when
+     * a client cannot consume streaming responses.
+     */
+    private void handleMainApplicationClassesCodeBuffered(
+            Context ctx,
+            List<JavaClass> matchedClasses,
+            PaginationWindow paginationWindow) {
+
+        List<Map<String, Object>> classInfoList = new ArrayList<>();
+        if (paginationWindow.hasResults()) {
+            if (!JadxSearchLock.tryAcquire()) {
+                sendSearchDecompilationBusyResponse(ctx);
+                return;
+            }
+            try {
+                for (JavaClass cls : matchedClasses.subList(
+                        paginationWindow.getStartIndex(),
+                        paginationWindow.getEndIndex())) {
+                    Map<String, Object> classInfo = new HashMap<>();
+                    classInfo.put("name", cls.getFullName());
+                    classInfo.put("raw_name", JadxApiAdapter.getClassRawName(cls));
+                    classInfo.put("type", "code/java");
+                    try {
+                        String code = cls.getCode();
+                        classInfo.put("content", code);
+                        logger.debug("JADX AI MCP: Got code for {} (length: {})", cls.getFullName(), code.length());
+                    } catch (Exception e) {
+                        logger.warn("Failed to decompile class {}: {}", cls.getFullName(), e.getMessage());
+                        classInfo.put("content", "// Error decompiling class: " + e.getMessage());
+                    }
+                    classInfoList.add(classInfo);
+                }
+            } finally {
+                JadxSearchLock.release();
+            }
+        }
+
+        logger.info("JADX AI MCP: Built {} class info objects (buffered path)", classInfoList.size());
+
+        Map<String, Object> result = buildPaginatedResponse(
+                classInfoList,
+                matchedClasses.size(),
+                paginationWindow,
+                "application-classes",
+                "classes");
+
+        // Cheap size estimate from content fields
+        int estimatedBytes = 512;
+        for (Map<String, Object> cls : classInfoList) {
+            Object content = cls.get("content");
+            if (content instanceof String) {
+                estimatedBytes += ((String) content).length();
+            }
+            Object name = cls.get("name");
+            if (name instanceof String) {
+                estimatedBytes += ((String) name).length() + 32;
+            }
+        }
+
+        if (estimatedBytes <= INLINE_RESPONSE_MAX_BYTES) {
+            ctx.json(result);
+        } else {
+            int actualBytes;
+            try {
+                actualBytes = OBJECT_MAPPER.writeValueAsBytes(result).length;
+            } catch (Exception serEx) {
+                logger.warn("Size check serialization failed, falling back to inline: {}", serEx.getMessage());
+                ctx.json(result);
+                return;
+            }
+
+            if (actualBytes <= INLINE_RESPONSE_MAX_BYTES) {
+                ctx.json(result);
+            } else {
+                Map<String, Object> transferHint = new HashMap<>();
+                transferHint.put("response_too_large", true);
+                transferHint.put("size_bytes", actualBytes);
+                transferHint.put("items_count", classInfoList.size());
+                transferHint.put("total_classes", matchedClasses.size());
+                transferHint.put("transfer_endpoint", "/transfer/download/batch-classes");
+                transferHint.put("transfer_format", "json");
+                transferHint.put("message",
+                    "Response exceeds inline threshold (" + INLINE_RESPONSE_MAX_BYTES + " bytes). "
+                    + "Use pagination (smaller count) or call create_transfer_token(resource_type='batch_classes').");
+                ctx.json(transferHint);
+            }
+        }
+    }
+
+    /**
      * @return void
      * @param Context
-     * 
+     *
      *                This method handles the call for /search-classes-by-keyword
      *                mcp tool.
      * 
@@ -1280,6 +1551,17 @@ public class ClassRoutes {
                 return;
             }
 
+            // Fast-path: attempt O(1) exact-match lookup via pre-built name indices.
+            // Conditions: single metadata-only search location, and no substring/regex
+            // indicators (no wildcards, no spaces). Package/exclude post-filtering is
+            // applied after bucket lookup when filters are present.
+            CodeSearchCoordinator.SearchResult indexResult = tryExactNameIndexSearch(
+                searchTerm, searchLocations, packageFilter, excludePrefixes, allClasses);
+            if (indexResult != null) {
+                ctx.json(buildSearchResponse(indexResult, offset, count));
+                return;
+            }
+
             SearchExecution searchExecution = executeSearch(
                 wrapper,
                 allClasses,
@@ -1294,6 +1576,92 @@ public class ClassRoutes {
             JadxAIMCPPluginError.handleError(ctx,
                     "Internal error in search: " + e.getMessage(), e, logger);
         }
+    }
+
+    /**
+     * Attempts an O(1) exact-name lookup via the pre-built name indices in
+     * {@link ClassCacheManager}.
+     *
+     * <p>Returns a {@link CodeSearchCoordinator.SearchResult} when the index is available AND
+     * the search term is a plain exact name (no wildcards / spaces / regex syntax).
+     * Returns {@code null} to signal that the caller should fall back to the normal
+     * full-scan path.</p>
+     *
+     * <p>For searches that include package or exclude filters the bucket is post-filtered
+     * before returning; if no matching index kind is found (e.g. multi-location or CODE),
+     * returns {@code null}.</p>
+     */
+    private CodeSearchCoordinator.SearchResult tryExactNameIndexSearch(
+        String searchTerm,
+        Set<SearchLocation> searchLocations,
+        String packageFilter,
+        List<String> excludePrefixes,
+        List<JavaClass> allClasses
+    ) {
+        // Exact-match only: reject terms that look like substrings or regex
+        if (searchTerm == null || searchTerm.isEmpty()
+                || searchTerm.contains("*") || searchTerm.contains("?")
+                || searchTerm.contains(" ") || searchTerm.contains(".")) {
+            return null;
+        }
+        // Only handle single-location metadata searches
+        if (searchLocations.size() != 1) {
+            return null;
+        }
+        SearchLocation loc = searchLocations.iterator().next();
+        String kind;
+        switch (loc) {
+            case CLASS_NAME:  kind = "class";  break;
+            case METHOD_NAME: kind = "method"; break;
+            case FIELD_NAME:  kind = "field";  break;
+            default: return null; // CODE / COMMENT — skip
+        }
+
+        List<JavaClass> bucket = ClassCacheManager.findByExactName(kind, searchTerm);
+        if (bucket == null) {
+            return null; // Index not ready yet — fall back to scan
+        }
+
+        // Apply package / exclude filters if present
+        List<String> matchedNames = new ArrayList<>();
+        boolean applyPackage = packageFilter != null && !packageFilter.isEmpty();
+        Set<JavaClass> allClassesSet = applyPackage ? new HashSet<>(allClasses) : null;
+        for (JavaClass cls : bucket) {
+            if (applyPackage && (allClassesSet == null || !allClassesSet.contains(cls))) {
+                continue;
+            }
+            if (applyPackage && !matchesPackageFilter(cls, packageFilter)) {
+                continue;
+            }
+            if (!excludePrefixes.isEmpty()) {
+                boolean excluded = false;
+                for (String prefix : excludePrefixes) {
+                    if (cls.getFullName().startsWith(prefix)) {
+                        excluded = true;
+                        break;
+                    }
+                }
+                if (excluded) {
+                    continue;
+                }
+            }
+            matchedNames.add(cls.getFullName());
+        }
+
+        Map<String, Object> searchInfo = new HashMap<>();
+        searchInfo.put("total_found", matchedNames.size());
+        searchInfo.put("total_classes", allClasses.size());
+        searchInfo.put("filtered_classes", matchedNames.size());
+        searchInfo.put("elapsed_seconds", 0L);
+        searchInfo.put("timed_out", false);
+        searchInfo.put("parallel_batches", 0);
+        searchInfo.put("search_locations", searchLocations.toString());
+        searchInfo.put("index_hit", true);
+
+        logger.debug("[JAI] Name-index exact hit: kind={} term='{}' → {} classes",
+            kind, searchTerm, matchedNames.size());
+
+        return new CodeSearchCoordinator.SearchResult(matchedNames, searchInfo);
     }
 
     private void handleCoordinatedCodeSearch(
@@ -1457,6 +1825,34 @@ public class ClassRoutes {
         int batchCount = 0;
         boolean requiresContentSearch = requiresContentSearch(searchLocations);
 
+        // --- Trigram pre-filter ---
+        // If the content index has entries for all trigrams of the search term, we
+        // can restrict the content-search candidate set to only those classes that
+        // contain every 3-gram, reducing cls.getCode() calls by 10-100×.
+        // A null BitSet means the index cannot help (disabled / term too short / miss).
+        final Set<JavaClass> trigramCandidates;
+        if (requiresContentSearch && searchLocations.contains(SearchLocation.CODE)) {
+            BitSet candidateBits = CodeContentIndex.candidatesForTerm(term);
+            if (candidateBits != null && !candidateBits.isEmpty()) {
+                Set<JavaClass> tc = new HashSet<>();
+                for (int bit = candidateBits.nextSetBit(0); bit >= 0; bit = candidateBits.nextSetBit(bit + 1)) {
+                    JavaClass resolved = CodeContentIndex.resolveClass(bit);
+                    if (resolved != null) {
+                        tc.add(resolved);
+                    }
+                }
+                trigramCandidates = tc.isEmpty() ? null : tc;
+                if (trigramCandidates != null) {
+                    logger.debug("[JAI] Trigram pre-filter: '{}' → {} candidates (down from {} filtered)",
+                            term, trigramCandidates.size(), filteredClasses.size());
+                }
+            } else {
+                trigramCandidates = null;
+            }
+        } else {
+            trigramCandidates = null;
+        }
+
         if (collectAllResults && filteredClasses.size() > 100) {
             List<JavaClass> topClasses = new ArrayList<>();
             for (JavaClass cls : filteredClasses) {
@@ -1535,6 +1931,12 @@ public class ClassRoutes {
                         cancelled.set(true);
                         break;
                     }
+                    // Trigram pre-filter: skip classes not in the candidate set.
+                    // trigramCandidates is null when the index cannot narrow the set,
+                    // so we always fall back to the full scan in that case.
+                    if (trigramCandidates != null && !trigramCandidates.contains(cls)) {
+                        continue;
+                    }
                     if (classMatchesAnyContentLocation(cls, term, searchLocations)
                             && matchedClasses.add(cls.getFullName())) {
                         int total = totalMatches.incrementAndGet();
@@ -1555,8 +1957,20 @@ public class ClassRoutes {
                     break;
                 }
                 boolean metadataMatched = classMatchesAnyMetadataLocation(cls, term, searchLocations);
-                if (metadataMatched || (requiresContentSearch && classMatchesAnyContentLocation(cls, term, searchLocations))) {
+                if (metadataMatched) {
                     if (matchedClasses.add(cls.getFullName())) {
+                        int total = totalMatches.incrementAndGet();
+                        if (!collectAllResults && total >= resultsNeeded) {
+                            cancelled.set(true);
+                        }
+                    }
+                } else if (requiresContentSearch) {
+                    // Apply trigram pre-filter before triggering decompilation.
+                    if (trigramCandidates != null && !trigramCandidates.contains(cls)) {
+                        continue;
+                    }
+                    if (classMatchesAnyContentLocation(cls, term, searchLocations)
+                            && matchedClasses.add(cls.getFullName())) {
                         int total = totalMatches.incrementAndGet();
                         if (!collectAllResults && total >= resultsNeeded) {
                             cancelled.set(true);
@@ -1575,6 +1989,11 @@ public class ClassRoutes {
         searchInfo.put("timed_out", timedOut);
         searchInfo.put("parallel_batches", batchCount);
         searchInfo.put("search_locations", searchLocations.toString());
+        if (requiresContentSearch && trigramCandidates != null) {
+            searchInfo.put("trigram_pre_filter_candidates", trigramCandidates.size());
+        }
+        searchInfo.put("trigram_index_size", CodeContentIndex.trigramCount());
+        searchInfo.put("trigram_indexed_classes", CodeContentIndex.indexedClassCount());
 
         CodeSearchCoordinator.SearchResult result = new CodeSearchCoordinator.SearchResult(
             buildOrderedMatchList(filteredClasses, matchedClasses),
@@ -1731,18 +2150,31 @@ public class ClassRoutes {
         }
 
         try {
-            String code = cls.getCode();
-            if (code == null) {
+            // getCodeAndIndex decompiles the class (if not already cached), then
+            // feeds the result into CodeContentIndex so future queries are faster.
+            // It returns the code already lowercased.
+            String normalizedCode = ClassCacheManager.getCodeAndIndex(cls);
+            if (normalizedCode == null) {
                 return false;
             }
 
-            String normalizedCode = code.toLowerCase();
             if (searchLocations.contains(SearchLocation.CODE) && normalizedCode.contains(term)) {
                 return true;
             }
-            // Pass original code (not lowercased) so comment regex can work on
-            // unmodified source; matchesCommentSearch/CodeSearchCoordinator handles case-folding.
-            return searchLocations.contains(SearchLocation.COMMENT) && matchesCommentSearch(code, term);
+            // For comment matching we need the original (non-lowercased) source.
+            // Re-fetch from cache — it is already materialized by getCodeAndIndex so
+            // this second call is a cheap cache hit, not a second decompile.
+            if (searchLocations.contains(SearchLocation.COMMENT)) {
+                try {
+                    String originalCode = cls.getCode();
+                    if (originalCode != null) {
+                        return matchesCommentSearch(originalCode, term);
+                    }
+                } catch (Exception ignored) {
+                    // Fall through
+                }
+            }
+            return false;
         } catch (Exception e) {
             return false;
         }

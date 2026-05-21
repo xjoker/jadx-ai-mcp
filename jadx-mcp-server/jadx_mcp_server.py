@@ -30,12 +30,12 @@ from src.server.mcp_auth import (
 MCP_INSTRUCTIONS = """
 JADX AI MCP Server - Android APK Reverse Engineering Tools
 
-IMPORTANT: Before using any resource-intensive operation, always call get_decompile_status() first!
+IMPORTANT: Call get_decompile_status() before any resource-intensive operation.
 
-DECISION GUIDE based on get_decompile_status() response:
-- If cached_percentage < 20%: Use search_in='class' or 'method' only (avoid 'code')
-- If memory.usage_percentage > 85%: Reduce batch size to 5, avoid get_smali_of_class
-- If search_lock.locked = true: Wait 5 seconds and retry
+DECISION GUIDE (from get_decompile_status response):
+- cached_percentage < 20%  → use search_in='class'/'method' only (avoid 'code')
+- memory.usage_percentage > 85%  → reduce batch size to ≤5, avoid get_smali_of_class
+- search_lock.locked = true  → wait 5s and retry
 
 PERFORMANCE EXPECTATIONS:
 | Operation              | Expected Time | Notes                          |
@@ -46,17 +46,32 @@ PERFORMANCE EXPECTATIONS:
 | batch_get_*            | <3s          | Up to 20 items per batch       |
 
 RECOMMENDED WORKFLOW:
-1. Call get_decompile_status() to check system status
-2. Use metadata searches first (class, method, field)
-3. Use code search only when cache is ready (cached_percentage > 50%)
-4. Use package filter to narrow search scope for better performance
+1. Call get_file_info() once to identify file type and available tools
+2. Call get_decompile_status() to check cache and memory
+3. Use metadata searches first: search_in='class'/'method'/'field' (always fast)
+4. Use search_in='code' only when cached_percentage > 50%
+5. Always pass package= filter to narrow scope and avoid library noise
+6. For large APKs (>50k classes): use list_packages() first to orient analysis
 
-TRANSFER API - Bypass MCP Size Limits:
-When batch operations might exceed MCP message limits (~16KB):
-1. Call create_transfer_token(resource_type="batch_classes")
-2. Use HTTP client to download directly from transfer_url
+SEARCH STRATEGY:
+- search_classes_by_keyword is the primary search tool — use it for everything
+- search_method_by_name is slower and unscoped; prefer search_in='method' instead
+- Batch tools cap at 20 items — use create_transfer_token for larger downloads
+
+RENAME / REFACTOR:
+- All rename operations (rename_class/method/field) trigger a 30s global cache cooldown
+- Use rename(dry_run=True) to preview impact before committing
+
+TRANSFER API (bypass MCP 16KB message limit):
+1. token = create_transfer_token(resource_type="batch_classes")
+2. GET {token.transfer_url}/download/batch-classes?classes=A,B&token={token.token}&format=json
 3. Supports JSON and ZIP formats, Brotli/GZIP compression
-4. Example: GET {transfer_url}/download/batch-classes?classes=A,B&token=xxx&format=zip
+4. Call revoke_transfer_token(token) after download to free resources
+
+MULTI-INSTANCE TIPS:
+- Pass instance_id as name, APK package, or partial match — fuzzy-matched automatically
+- Use health_check_jadx_instances() when a connection seems stale
+- scale_instances() manages Docker workers (requires docker package)
 
 For detailed guidance, use the 'status-check' or 'search-code' prompts.
 """

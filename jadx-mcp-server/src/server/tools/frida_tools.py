@@ -152,20 +152,14 @@ def register_frida_tools(mcp, with_busy_check):
         hook_type: str = "both",
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Generate a ready-to-run Frida hook script with overload support and correct type conversion.
-
-        Available hook_type values:
-          - method_enter  — Record entry arguments only
-          - method_exit   — Record return value only
-          - both          — Entry + return value (default)
-          - constructor   — Hook all constructors
-          - all_methods   — Hook all methods in the class
+        """Generate a ready-to-run Frida hook script with overload support. Omit method_name to use all_methods.
 
         Args:
-            class_name: Fully qualified class name (e.g. 'com.example.MainActivity')
-            method_name: Method name; if omitted, all_methods mode is used automatically
-            hook_type: Hook type (see above), default 'both'
-            instance_id: Optional. Target JADX instance name
+            class_name: Fully qualified class name. method_name: Method name (optional).
+            hook_type: method_enter|method_exit|both|constructor|all_methods (default: both).
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {script: str, class_name, method_name, hook_type}
         """
         return await _generate_frida_hook(
             class_name,
@@ -181,12 +175,13 @@ def register_frida_tools(mcp, with_busy_check):
         include_subclasses: bool = False,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Generate a class-level Frida tracing script that records entry arguments and return values for all method calls.
+        """Generate a Frida tracing script that logs all method calls on a class with args and return values.
 
         Args:
-            class_name: Fully qualified class name (e.g. 'com.example.NetworkManager')
-            include_subclasses: Whether to also trace direct subclasses. Default: False
-            instance_id: Optional. Target JADX instance name
+            class_name: Fully qualified class name. include_subclasses: Also trace direct subclasses.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {script: str, class_name, include_subclasses}
         """
         return await _generate_frida_trace(
             class_name,
@@ -200,12 +195,11 @@ def register_frida_tools(mcp, with_busy_check):
         class_name: str,
         instance_id: Optional[str] = None,
     ) -> dict:
-        """Generate a Frida script for enumerating class instances and static members, suitable for extracting runtime configuration and constants.
-
-        Generated content: static field reads, static method calls, enum values(), Java.choose() instance enumeration.
+        """Generate a Frida script to enumerate class instances, static fields, and enum constants at runtime.
 
         Args:
-            class_name: Fully qualified class name (e.g. 'com.example.Config')
-            instance_id: Optional. Target JADX instance name
+            class_name: Fully qualified class name. instance_id: Target JADX instance name.
+        Returns:
+            dict: {script: str, class_name}
         """
         return await _generate_frida_enum(class_name, instance_id=instance_id)
