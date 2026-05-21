@@ -16,6 +16,7 @@ import com.zin.jadxaimcp.utils.JadxAIMCPBanner;
 import com.zin.jadxaimcp.utils.PaginationUtils;
 import com.zin.jadxaimcp.utils.ClassCacheManager;
 import com.zin.jadxaimcp.utils.CodeSearchCoordinator;
+import com.zin.jadxaimcp.utils.FilePathSandbox;
 import com.zin.jadxaimcp.server.routes.*; // MCP tool call's request handlers
 
 public class PluginServer {
@@ -106,14 +107,40 @@ public class PluginServer {
             // Register global OOM detection handler
             installOomHandler();
 
-            // Configure and start Javalin
+            // Configure and start Javalin with a bounded Jetty QueuedThreadPool.
+            // Hard cap prevents unbounded thread creation under load; the bounded queue
+            // causes the server to reject with a visible 503 rather than silently queuing
+            // requests until OOM.  Both limits are tunable via env vars.
+            int maxThreads = parseEnvInt("JADX_MCP_MAX_THREADS", 64);
+            int queueCapacity = parseEnvInt("JADX_MCP_QUEUE_SIZE", 64);
+            org.eclipse.jetty.util.thread.QueuedThreadPool threadPool =
+                    new org.eclipse.jetty.util.thread.QueuedThreadPool(
+                            maxThreads, /* maxThreads */
+                            8,          /* minThreads */
+                            60_000,     /* idleTimeout ms */
+                            new java.util.concurrent.LinkedBlockingQueue<>(queueCapacity));
+            threadPool.setName("jadx-ai-mcp-qtp");
+            logger.info("[JAI] Jetty QTP: maxThreads={}, queueCapacity={}", maxThreads, queueCapacity);
+
             app = Javalin.create(config -> {
                 config.showJavalinBanner = false;
+                config.jetty.threadPool = threadPool;
                 config.jetty.defaultHost = bindAddress;
             }).start(port);
 
             // Add authentication middleware (runs before all routes)
             app.before(ctx -> {
+                // OOM circuit-breaker: refuse all non-health requests when heap is exhausted.
+                // /health is kept alive so monitoring continues to poll.
+                if (isOomDetected() && !ctx.path().equals("/health")) {
+                    ctx.status(503).json(java.util.Map.of(
+                        "error", "oom_detected",
+                        "message", "JVM heap exhaustion detected; container restart required",
+                        "restart_required", true
+                    ));
+                    return;
+                }
+
                 // Skip auth for health check endpoint
                 if (ctx.path().equals("/health")) {
                     return;
@@ -391,6 +418,12 @@ public class PluginServer {
             app.get("/file-info", apkInfoRoutes::handleFileInfo);
         }
 
+        // --- File Management (sandboxed list + dynamic load) ---
+        FilePathSandbox sandbox = FilePathSandbox.fromEnvironment();
+        FileManagementRoutes fileManagementRoutes = new FileManagementRoutes(mainWindow, sandbox);
+        app.get("/list-available-files", fileManagementRoutes::handleListAvailableFiles);
+        app.post("/load-file", fileManagementRoutes::handleLoadFile);
+
         // --- Class & Code Navigation ---
         app.get("/current-class", classRoutes::handleCurrentClass);
         app.get("/all-classes", classRoutes::handleAllClasses);
@@ -438,6 +471,7 @@ public class PluginServer {
         // --- Unified Interface (APK + JAR) ---
         app.get("/config-strings", resourceRoutes::handleConfigStrings);
         app.get("/package-classes", classRoutes::handlePackageClasses);
+        app.get("/package-tree", classRoutes::handleGetPackageTree);
 
         // --- Frida Hook Generation ---
         FridaRoutes fridaRoutes = new FridaRoutes(mainWindow);
@@ -450,6 +484,7 @@ public class PluginServer {
         app.post("/rename-method", refactoringRoutes::handleRenameMethod);
         app.post("/rename-field", refactoringRoutes::handleRenameField);
         app.post("/rename-package", refactoringRoutes::handleRenamePackage);
+        app.post("/rename-variable", refactoringRoutes::handleRenameVariable);
 
         // --- Rename Mappings Import/Export ---
         app.get("/export-rename-mappings", refactoringRoutes::handleExportRenameMappings);
@@ -556,8 +591,7 @@ public class PluginServer {
         app.post("/cache/clear", ctx -> {
             try {
                 CodeSearchCoordinator.clearCache();
-                ClassCacheManager.clearCodeCache();
-                boolean cleared = ClassCacheManager.clearCache();
+                boolean cleared = ClassCacheManager.clearCacheIncludingDecompiled();
                 if (cleared) {
                     logger.info("[JAI] Class cache and code search cache cleared manually via API");
                     ctx.json(java.util.Map.of(
@@ -586,19 +620,113 @@ public class PluginServer {
     
     /**
      * Setup cache invalidation listener for rename operations.
-     * Automatically clears ClassCacheManager when any rename event occurs.
+     *
+     * <p>On each {@link NodeRenamedByUser} event we perform a <em>scalpel</em> invalidation:
+     * only the upstream decompiled code for the affected class is evicted, not the entire
+     * code cache.  The class-index ({@link ClassCacheManager}) is also invalidated so a
+     * fresh lookup will occur on the next request.</p>
+     *
+     * <p>We intentionally do <strong>not</strong> call
+     * {@code CodeSearchCoordinator.clearCache()} here: cancelling in-flight search
+     * futures every time a user or AI renames a node causes a request-cancellation storm
+     * (503 cascade).  Search results that pre-date the rename will be slightly stale at
+     * worst; callers can always re-search if needed.</p>
+     *
+     * <p>Manual repro for the old storm: open a large APK, trigger a code search that
+     * takes &gt;2 s, then rename any class via the GUI — the search future was cancelled,
+     * producing an immediate 503 for the in-flight MCP request.</p>
      */
     private void setupCacheInvalidation() {
         if (renameListener != null) {
             return;
         }
         renameListener = event -> {
-            logger.info("[JAI] Rename detected, clearing class cache");
-            ClassCacheManager.clearCache();
-            CodeSearchCoordinator.clearCache();
+            // Extract the affected class name from the renamed node.
+            // ICodeNodeRef does not expose a class-name accessor directly; we derive it
+            // from the node's string representation (toString includes the class context)
+            // or fall back to a full class-index invalidation if the node type is opaque.
+            String affectedClass = extractClassNameFromRenameEvent(event);
+            if (affectedClass != null) {
+                logger.info("[JAI] Rename detected for class '{}', invalidating code cache entry", affectedClass);
+                ClassCacheManager.invalidateCode(affectedClass);
+            } else {
+                // Unknown node type (e.g. variable/package rename) — invalidate index only,
+                // which is cheap and avoids dumping the entire decompiled code cache.
+                logger.info("[JAI] Rename detected (unknown node type), clearing class index");
+                ClassCacheManager.clearCache();
+            }
+            // NOTE: CodeSearchCoordinator.clearCache() is deliberately NOT called here.
+            // See Javadoc above for the rationale.
         };
         mainWindow.events().addListener(JadxEvents.NODE_RENAMED_BY_USER, renameListener);
         logger.info("[JAI] Cache invalidation listener registered");
+    }
+
+    /**
+     * Attempts to extract the affected class full name from a rename event.
+     *
+     * <p>The event's {@code node} is an internal JADX {@code ICodeNodeRef} (e.g.
+     * {@code ClassNode}, {@code MethodNode}, {@code FieldNode}, or {@code PackageNode}).
+     * We cannot safely {@code instanceof}-check these internal types, so we rely on their
+     * {@code toString()} representation, which for class/method/field nodes typically has
+     * the form {@code "ClassName"} or {@code "ClassName.memberName"}.</p>
+     *
+     * <p>If the {@code JRenameNode} attachment is present (set by {@code RenameDialog}),
+     * we prefer extracting the class name from it via its {@link jadx.api.JavaNode} wrapper,
+     * which gives us the declaring-class's full name without depending on internal types.</p>
+     *
+     * @return the affected class full name, or null if not determinable
+     */
+    private static String extractClassNameFromRenameEvent(NodeRenamedByUser event) {
+        if (event == null) {
+            return null;
+        }
+        // Try via the JRenameNode attachment first (most reliable path).
+        // RenameDialog sets this via event.setRenameNode(node); cast via reflection
+        // to avoid a compile-time dependency on jadx.gui.treemodel.JRenameNode.
+        Object renameNodeObj = event.getRenameNode();
+        if (renameNodeObj != null) {
+            try {
+                // JRenameNode.getJavaNode() returns jadx.api.JavaNode
+                java.lang.reflect.Method getJavaNode = renameNodeObj.getClass().getMethod("getJavaNode");
+                Object javaNode = getJavaNode.invoke(renameNodeObj);
+                if (javaNode instanceof jadx.api.JavaClass) {
+                    return ((jadx.api.JavaClass) javaNode).getFullName();
+                }
+                if (javaNode instanceof jadx.api.JavaMethod) {
+                    jadx.api.JavaClass declaring = ((jadx.api.JavaMethod) javaNode).getDeclaringClass();
+                    if (declaring != null) {
+                        return declaring.getFullName();
+                    }
+                }
+                if (javaNode instanceof jadx.api.JavaField) {
+                    jadx.api.JavaClass declaring = ((jadx.api.JavaField) javaNode).getDeclaringClass();
+                    if (declaring != null) {
+                        return declaring.getFullName();
+                    }
+                }
+            } catch (Exception ignored) {
+                // Reflection failed (API changed or security manager); fall through to toString path
+            }
+        }
+        // Fallback: parse the node's toString().
+        // ClassNode.toString() → "ClassName", MethodNode.toString() → "ClassName.methodName(…)"
+        jadx.api.metadata.ICodeNodeRef node = event.getNode();
+        if (node == null) {
+            return null;
+        }
+        String nodeStr = node.toString();
+        if (nodeStr == null || nodeStr.isEmpty()) {
+            return null;
+        }
+        // Strip method/field suffix after the first '(' or last '.' that looks like a member
+        int parenIdx = nodeStr.indexOf('(');
+        String stripped = parenIdx >= 0 ? nodeStr.substring(0, parenIdx) : nodeStr;
+        if (stripped.contains(".")) {
+            return stripped.substring(0, stripped.lastIndexOf('.'));
+        }
+        // Node toString IS the class name (e.g. bare ClassNode)
+        return stripped.isEmpty() ? null : stripped;
     }
 
     private void teardownCacheInvalidation() {
@@ -667,6 +795,26 @@ public class PluginServer {
             depth++;
         }
         return false;
+    }
+
+    /**
+     * Reads an integer from an environment variable.
+     * Falls back to {@code defaultValue} if the variable is unset or unparseable.
+     */
+    private static int parseEnvInt(String envVar, int defaultValue) {
+        String raw = System.getenv(envVar);
+        if (raw != null && !raw.isEmpty()) {
+            try {
+                int val = Integer.parseInt(raw.trim());
+                if (val > 0) {
+                    return val;
+                }
+                logger.warn("[JAI] Env var {} must be > 0 (got {}), using default {}", envVar, raw, defaultValue);
+            } catch (NumberFormatException e) {
+                logger.warn("[JAI] Env var {} is not a valid integer (got '{}'), using default {}", envVar, raw, defaultValue);
+            }
+        }
+        return defaultValue;
     }
 
     /**

@@ -34,11 +34,14 @@ public class GeneralRoutes {
     public void handleHealth(Context ctx) {
         try {
             boolean isRunning = server.isRunning();
-            String status = isRunning ? "Running" : "Stopped";
+            boolean oomDetected = PluginServer.isOomDetected();
+            // "degraded" when OOM has been detected; monitoring must keep polling on 200.
+            String status = oomDetected ? "degraded" : (isRunning ? "Running" : "Stopped");
             String url = isRunning ? "http://127.0.0.1:" + server.getPort() + "/" : "N/A";
 
             Map<String, Object> result = new HashMap<>();
             result.put("status", status);
+            result.put("oom_detected", oomDetected);
             result.put("url", url);
             result.put("timestamp", java.time.Instant.now().toString());
             

@@ -11,7 +11,10 @@ import jadx.api.JavaClass;
 import jadx.api.JavaField;
 import jadx.api.JavaMethod;
 import jadx.api.metadata.ICodeNodeRef;
+import jadx.api.metadata.annotations.VarNode;
 import jadx.api.plugins.events.types.NodeRenamedByUser;
+import jadx.core.dex.nodes.MethodNode;
+import jadx.core.dex.instructions.args.SSAVar;
 import jadx.gui.JadxWrapper;
 import jadx.gui.ui.MainWindow;
 
@@ -104,25 +107,30 @@ public class RefactoringRoutes {
         String methodName = getBodyString(requestBody, "method_name");
         String newName = getBodyString(requestBody, "new_name");
         String className = getBodyString(requestBody, "class_name");
+        // Optional JVM short-descriptor (e.g. "foo(I)V") to pinpoint a specific overload
+        String methodSignature = getBodyString(requestBody, "method_signature");
+        if (methodSignature != null && methodSignature.isBlank()) {
+            methodSignature = null;
+        }
 
         if (validateParams(ctx, methodName, newName)) return;
 
-        // Strip method signature if present
+        // Strip method signature if present in the method_name itself (legacy usage)
         if (methodName.contains("(")) {
             methodName = methodName.substring(0, methodName.indexOf('('));
         }
 
         try {
             JadxWrapper wrapper = mainWindow.getWrapper();
-            
+
             // Initialize cache if needed
             if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
                 ClassCacheManager.initCache(wrapper);
             }
-            
+
             // Extract class name from method_name (format: com.example.Class:methodName or com.example.Class.methodName)
             String simpleMethodName = methodName;
-            
+
             if ((className == null || className.isEmpty()) && methodName.contains(":")) {
                 int colonIdx = methodName.lastIndexOf(':');
                 className = methodName.substring(0, colonIdx);
@@ -132,41 +140,93 @@ public class RefactoringRoutes {
                 className = methodName.substring(0, lastDot);
                 simpleMethodName = methodName.substring(lastDot + 1);
             }
-            
+
             if (className == null || className.isEmpty()) {
                 JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'class_name'", logger);
                 return;
             }
-            
+
             // Use cache for fast lookup
             Map<String, JavaClass> classMap = ClassCacheManager.getCache();
             JavaClass cls = ClassCacheManager.findClass(classMap, className);
-            
+
             if (cls != null) {
+                // Collect all name-matching candidates to detect overloads
+                List<JavaMethod> candidates = new ArrayList<>();
                 for (JavaMethod method : cls.getMethods()) {
                     if (JadxApiAdapter.matchesMethodName(method, simpleMethodName)) {
-                        ICodeNodeRef nodeRef = method.getCodeNodeRef();
-                        NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, method.getName(), newName);
-                        event.setRenameNode(nodeRef);
-                        event.setResetName(newName.isEmpty());
-                        mainWindow.events().send(event);
-
-                        // Invalidate decompiled code cache — class source changed after method rename
-                        invalidateCodeForClass(cls, className);
-
-                        logger.info("Renaming method {} to {}", method.getName(), newName);
-                        ctx.json(Map.of("result", "Rename method " + method.getName() + " to " + newName));
-                        return;
+                        candidates.add(method);
                     }
                 }
-                JadxAIMCPPluginError.handleError(ctx, 404, "Method " + simpleMethodName + " not found in class " + className, logger);
+
+                if (candidates.isEmpty()) {
+                    JadxAIMCPPluginError.handleError(ctx, 404,
+                        "Method " + simpleMethodName + " not found in class " + className, logger);
+                    return;
+                }
+
+                // Descriptor supplied: find the exact overload
+                if (methodSignature != null) {
+                    for (JavaMethod method : candidates) {
+                        if (JadxApiAdapter.matchesMethodDescriptor(method, methodSignature)) {
+                            doRenameMethod(ctx, cls, method, newName, className);
+                            return;
+                        }
+                    }
+                    // Descriptor supplied but no overload matched — list available ones
+                    List<String> available = collectMethodDescriptors(candidates);
+                    Map<String, Object> err = new HashMap<>();
+                    err.put("error", "No overload of " + simpleMethodName + " matches descriptor '"
+                        + methodSignature + "' in class " + className);
+                    err.put("available_descriptors", available);
+                    ctx.status(404).json(err);
+                    return;
+                }
+
+                // No descriptor: single match → rename; multiple → require disambiguation
+                if (candidates.size() == 1) {
+                    doRenameMethod(ctx, cls, candidates.get(0), newName, className);
+                    return;
+                }
+
+                List<String> available = collectMethodDescriptors(candidates);
+                Map<String, Object> err = new HashMap<>();
+                err.put("error", "Method " + simpleMethodName + " in class " + className
+                    + " has " + candidates.size()
+                    + " overloads. Provide 'method_signature' to select one.");
+                err.put("available_descriptors", available);
+                ctx.status(300).json(err);
                 return;
             }
-            
+
             JadxAIMCPPluginError.handleError(ctx, 404, "Class " + className + " not found.", logger);
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Internal error while trying to rename the method: " + e.getMessage(), e, logger);
         }
+    }
+
+    /** Performs the actual rename event dispatch and cache invalidation for a single method. */
+    private void doRenameMethod(Context ctx, JavaClass cls, JavaMethod method, String newName, String className) {
+        ICodeNodeRef nodeRef = method.getCodeNodeRef();
+        NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, method.getName(), newName);
+        event.setRenameNode(nodeRef);
+        event.setResetName(newName.isEmpty());
+        mainWindow.events().send(event);
+        invalidateCodeForClass(cls, className);
+        logger.info("Renaming method {} to {}", method.getName(), newName);
+        ctx.json(Map.of("result", "Rename method " + method.getName() + " to " + newName));
+    }
+
+    /** Collects JVM short descriptors (e.g. {@code "foo(I)V"}) for a list of methods. */
+    private List<String> collectMethodDescriptors(List<JavaMethod> methods) {
+        List<String> descriptors = new ArrayList<>(methods.size());
+        for (JavaMethod m : methods) {
+            JadxApiAdapter.MethodInfoSnapshot info = JadxApiAdapter.getMethodInfo(m);
+            if (info != null && info.getShortId() != null) {
+                descriptors.add(info.getShortId());
+            }
+        }
+        return descriptors;
     }
 
     /**
@@ -508,6 +568,102 @@ public class RefactoringRoutes {
         }
     }
 
+    /**
+     * POST /rename-variable
+     *
+     * Renames a local variable inside a method using SSA variable tracking.
+     * Required params: class_name, method_name, variable_name, new_name.
+     * Optional params: reg (register number), ssa (SSA version) for disambiguation.
+     *
+     * If no SSA variables are found for the method on the first try, the class is
+     * unloaded and force-processed to populate SSA state, then retried once.
+     */
+    public void handleRenameVariable(Context ctx) {
+        JsonObject requestBody = parseJsonBody(ctx);
+        if (requestBody == null) return;
+
+        String className = getBodyString(requestBody, "class_name");
+        String methodName = getBodyString(requestBody, "method_name");
+        String variableName = getBodyString(requestBody, "variable_name");
+        String newName = getBodyString(requestBody, "new_name");
+
+        // Optional params for disambiguation when multiple SSA vars share a name
+        String regStr = getBodyString(requestBody, "reg");
+        String ssaStr = getBodyString(requestBody, "ssa");
+
+        if (validateParams(ctx, className, methodName, variableName, newName)) return;
+
+        // Strip method signature if present (e.g. "doSomething(int, String)" -> "doSomething")
+        if (methodName.contains("(")) {
+            methodName = methodName.substring(0, methodName.indexOf('('));
+        }
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+
+            for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
+                if (cls.getFullName().equals(className)) {
+                    for (JavaMethod method : cls.getMethods()) {
+                        String fullMethodName = cls.getFullName() + "." + method.getName();
+                        if (method.getName().equals(methodName) || fullMethodName.equalsIgnoreCase(methodName)) {
+                            MethodNode methodNode = method.getMethodNode();
+                            if (methodNode == null) continue;
+
+                            List<SSAVar> sVars = methodNode.getSVars();
+
+                            // Ensure class is processed to populate SSA variables
+                            if (sVars.isEmpty()) {
+                                logger.info("SSA variables empty for method {}, forcing class reload and processing...", method.getName());
+                                try {
+                                    cls.getClassNode().unload();
+                                    cls.getClassNode().root().getProcessClasses().forceProcess(cls.getClassNode());
+
+                                    // Re-fetch method node and sVars after processing
+                                    MethodNode newMethodNode = cls.getClassNode().searchMethodByShortName(method.getName());
+                                    if (newMethodNode != null) {
+                                        methodNode = newMethodNode;
+                                        sVars = methodNode.getSVars();
+                                        logger.info("Class reloaded. New SSA variables count: {}", sVars != null ? sVars.size() : "null");
+                                    } else {
+                                        logger.error("Failed to find method {} after reload", method.getName());
+                                    }
+                                } catch (Exception e) {
+                                    logger.error("Failed to force process class {}", cls.getName(), e);
+                                }
+                            }
+
+                            if (sVars == null || sVars.isEmpty()) continue;
+
+                            for (SSAVar sVar : sVars) {
+                                boolean nameMatch = variableName.equals(sVar.getName());
+                                boolean regMatch = regStr == null || regStr.isEmpty() || String.valueOf(sVar.getRegNum()).equals(regStr);
+                                boolean ssaMatch = ssaStr == null || ssaStr.isEmpty() || String.valueOf(sVar.getVersion()).equals(ssaStr);
+
+                                if (nameMatch && regMatch && ssaMatch) {
+                                    VarNode varNode = VarNode.get(methodNode, sVar);
+                                    if (varNode != null) {
+                                        NodeRenamedByUser event = new NodeRenamedByUser(varNode, variableName, newName);
+                                        event.setRenameNode(varNode);
+                                        event.setResetName(newName.isEmpty());
+                                        mainWindow.events().send(event);
+
+                                        logger.info("Renamed variable {} to {} in method {}", variableName, newName, method.getName());
+                                        ctx.json(Map.of("result", "Renamed variable " + variableName + " to " + newName));
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            JadxAIMCPPluginError.handleError(ctx, 404, "Variable " + variableName + " not found in method " + methodName, logger);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Internal error while trying to rename the variable: " + e.getMessage(), e, logger);
+        }
+    }
+
     private String getStringFromJson(JsonObject obj, String key) {
         if (!obj.has(key) || obj.get(key).isJsonNull()) return null;
         JsonElement el = obj.get(key);
@@ -578,6 +734,21 @@ public class RefactoringRoutes {
         }
         if (p3 == null || p3.isEmpty()) {
             JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'new_field_name'", logger);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @param Context, String, String, String, String
+     * @return boolean
+     *
+     * Validates four required parameters. Returns true (and sends 400) if any is null/empty.
+     */
+    private boolean validateParams(Context ctx, String p1, String p2, String p3, String p4) {
+        if (p1 == null || p1.isEmpty() || p2 == null || p2.isEmpty()
+                || p3 == null || p3.isEmpty() || p4 == null || p4.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameters", logger);
             return true;
         }
         return false;

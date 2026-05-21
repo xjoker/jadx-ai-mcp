@@ -279,7 +279,9 @@ public class ClassCacheManager {
     private static final Object clearLock = new Object();
 
     /**
-     * Clear the cache with global 30-second cooldown (shared across all cache clear triggers).
+     * Clear only the class-index (className -&gt; JavaClass mapping).
+     * Does NOT evict the upstream JADX code cache.  Use this for lightweight
+     * invalidation such as rename events where only one or a few classes changed.
      * Returns true if cache was cleared, false if debounced.
      */
     public static boolean clearCache() {
@@ -299,7 +301,33 @@ public class ClassCacheManager {
                 return false;
             }
 
-            clearCacheState("manual clear", true);
+            clearCacheState("manual clear (index only)", false);
+            return true;
+        }
+    }
+
+    /**
+     * Full eviction: clears the class index AND the upstream JADX code cache.
+     * Use only when the entire project changes (e.g., load_file replacing the APK).
+     * Returns true if cache was cleared, false if debounced.
+     */
+    public static boolean clearCacheIncludingDecompiled() {
+        long now = System.currentTimeMillis();
+        long lastClear = lastClearTime.get();
+
+        if (now - lastClear < CLEAR_DEBOUNCE_MS && !hasActiveCacheState()) {
+            long remainingSecs = (CLEAR_DEBOUNCE_MS - (now - lastClear)) / 1000;
+            logger.info("[JAI] Full cache clear debounced (cooldown: {}s remaining)", remainingSecs);
+            return false;
+        }
+
+        synchronized (clearLock) {
+            lastClear = lastClearTime.get();
+            if (now - lastClear < CLEAR_DEBOUNCE_MS && !hasActiveCacheState()) {
+                return false;
+            }
+
+            clearCacheState("full clear including decompiled", true);
             return true;
         }
     }
@@ -342,7 +370,7 @@ public class ClassCacheManager {
                     cacheOwnerKey.set(ownerKey);
                     return;
                 }
-                clearCacheState("project owner changed", false);
+                clearCacheState("project owner changed", true);
                 cacheOwnerKey.set(ownerKey);
             }
             logger.info("[JAI] Class index cache invalidated due to project switch");
@@ -377,11 +405,18 @@ public class ClassCacheManager {
         return ownerKey.toString();
     }
 
-    private static void clearCacheState(String reason, boolean updateCooldown) {
-        if (updateCooldown) {
-            lastClearTime.set(System.currentTimeMillis());
+    /**
+     * Core cache-state reset.
+     *
+     * @param reason            human-readable description for logs
+     * @param evictCodeCache    when true, also evict the upstream JADX code cache;
+     *                          set to false for lightweight index-only invalidation
+     */
+    private static void clearCacheState(String reason, boolean evictCodeCache) {
+        lastClearTime.set(System.currentTimeMillis());
+        if (evictCodeCache) {
+            clearCodeCache();
         }
-        clearCodeCache();
         long generation = generationToken.incrementAndGet();
         CompletableFuture<Void> future = initFuture.getAndSet(null);
         if (future != null) {

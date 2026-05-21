@@ -89,6 +89,38 @@ public final class JadxApiAdapter {
             || matchesValue(requestedName, getMethodRawFullId(method), true);
     }
 
+    /**
+     * Returns true when {@code method}'s JVM short descriptor (e.g. {@code "foo(I)V"}) matches
+     * {@code descriptor} using case-sensitive exact comparison.
+     *
+     * <p>The short descriptor is available via {@link jadx.core.dex.info.MethodInfo#getShortId()}
+     * and has the form {@code name(arg-types)return-type}, e.g. {@code "process(Ljava/lang/String;I)Z"}.
+     * Pass {@code null} to skip descriptor filtering (match-all).</p>
+     */
+    public static boolean matchesMethodDescriptor(JavaMethod method, String descriptor) {
+        if (descriptor == null || descriptor.isEmpty()) {
+            return true; // no filter — match everything
+        }
+        MethodNode methodNode = getInternalMethodNode(method);
+        if (methodNode == null || methodNode.getMethodInfo() == null) {
+            return false;
+        }
+        String shortId = methodNode.getMethodInfo().getShortId();
+        return descriptor.equals(shortId);
+    }
+
+    /**
+     * Same as {@link #matchesMethodDescriptor(JavaMethod, String)} but operates on a
+     * {@link MethodInfoSnapshot} so callers that only have snapshot data can filter without
+     * needing to acquire the full {@link JavaMethod}.
+     */
+    public static boolean matchesMethodDescriptor(MethodInfoSnapshot snapshot, String descriptor) {
+        if (descriptor == null || descriptor.isEmpty()) {
+            return true;
+        }
+        return descriptor.equals(snapshot.getShortId());
+    }
+
     public static String getFieldType(JavaField field) {
         FieldNode fieldNode = getInternalFieldNode(field);
         return fieldNode != null && fieldNode.getType() != null ? fieldNode.getType().toString() : null;

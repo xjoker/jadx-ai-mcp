@@ -70,6 +70,11 @@ public class MethodRoutes {
      */
     public void handleMethodByName(Context ctx) {
         String className = ctx.queryParam("class_name");
+        // Optional JVM short-descriptor to disambiguate overloads, e.g. "foo(I)V"
+        String methodSignature = ctx.queryParam("method_signature");
+        if (methodSignature != null && methodSignature.isBlank()) {
+            methodSignature = null;
+        }
 
         String methodName = validateMethodParam(ctx);
         if (methodName == null) return;
@@ -91,7 +96,7 @@ public class MethodRoutes {
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                         for (JadxApiAdapter.MethodInfoSnapshot methodInfo : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
                             if (matchesMethodName(methodInfo, methodName)) {
-                                JavaMethod method = findMethodByName(cls, methodName);
+                                JavaMethod method = findMethodByNameAndDescriptor(cls, methodName, methodSignature);
                                 if (method != null) {
                                     returnMethodResult(ctx, cls, method);
                                     return;
@@ -104,11 +109,45 @@ public class MethodRoutes {
                 else {
                     for (JavaClass cls : wrapper.getIncludedClassesWithInners()) {
                         if (JadxApiAdapter.matchesClassName(cls, className)) {
-                            JavaMethod method = findMethodByName(cls, methodName);
-                            if (method != null) {
-                                returnMethodResult(ctx, cls, method);
+                            // Collect all name-matching methods to detect overloads
+                            List<JavaMethod> candidates = findMethodsByName(cls, methodName);
+                            if (candidates.isEmpty()) {
+                                break; // class found, method not found
+                            }
+
+                            // Descriptor provided: find the exact overload
+                            if (methodSignature != null) {
+                                for (JavaMethod candidate : candidates) {
+                                    if (JadxApiAdapter.matchesMethodDescriptor(candidate, methodSignature)) {
+                                        returnMethodResult(ctx, cls, candidate);
+                                        return;
+                                    }
+                                }
+                                // Descriptor supplied but no match
+                                List<String> available = collectDescriptors(candidates);
+                                Map<String, Object> err = new HashMap<>();
+                                err.put("error", "No overload of " + methodName + " matches descriptor '"
+                                    + methodSignature + "' in class " + cls.getFullName());
+                                err.put("available_descriptors", available);
+                                ctx.status(404).json(err);
                                 return;
                             }
+
+                            // No descriptor: if exactly one match, return it; otherwise require disambiguation
+                            if (candidates.size() == 1) {
+                                returnMethodResult(ctx, cls, candidates.get(0));
+                                return;
+                            }
+
+                            // Multiple overloads — tell the caller which descriptors are available
+                            List<String> available = collectDescriptors(candidates);
+                            Map<String, Object> err = new HashMap<>();
+                            err.put("error", "Method " + methodName + " in class " + cls.getFullName()
+                                + " has " + candidates.size()
+                                + " overloads. Provide 'method_signature' to select one.");
+                            err.put("available_descriptors", available);
+                            ctx.status(300).json(err);
+                            return;
                         }
                     }
                 }
@@ -447,6 +486,46 @@ public class MethodRoutes {
             }
         }
         return null;
+    }
+
+    /** Returns all methods in {@code cls} whose name matches {@code methodName}. */
+    private List<JavaMethod> findMethodsByName(JavaClass cls, String methodName) {
+        List<JavaMethod> result = new ArrayList<>();
+        for (JavaMethod method : cls.getMethods()) {
+            if (JadxApiAdapter.matchesMethodName(method, methodName)) {
+                result.add(method);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns the first method in {@code cls} whose name matches {@code methodName} AND whose
+     * JVM short descriptor matches {@code descriptor}.  When {@code descriptor} is {@code null}
+     * the descriptor check is skipped and the first name-match is returned (legacy behaviour).
+     */
+    private JavaMethod findMethodByNameAndDescriptor(JavaClass cls, String methodName, String descriptor) {
+        for (JavaMethod method : cls.getMethods()) {
+            if (JadxApiAdapter.matchesMethodName(method, methodName)
+                    && JadxApiAdapter.matchesMethodDescriptor(method, descriptor)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    /** Collects the JVM short descriptor (e.g. {@code "foo(I)V"}) for each method in the list. */
+    private List<String> collectDescriptors(List<JavaMethod> methods) {
+        List<String> descriptors = new ArrayList<>(methods.size());
+        for (JavaMethod m : methods) {
+            String shortId = JadxApiAdapter.getMethodInfo(m) != null
+                ? JadxApiAdapter.getMethodInfo(m).getShortId()
+                : null;
+            if (shortId != null) {
+                descriptors.add(shortId);
+            }
+        }
+        return descriptors;
     }
 
     private boolean matchesMethodName(JadxApiAdapter.MethodInfoSnapshot methodInfo, String methodName) {

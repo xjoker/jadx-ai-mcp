@@ -88,6 +88,7 @@ from src.server.tools import (
     register_dataflow_tools,
     register_decompile_tools,
     register_scaling_tools,
+    register_file_management_tools,
 )
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
@@ -135,6 +136,7 @@ register_diff_tools(mcp, with_busy_check)
 register_dataflow_tools(mcp, with_busy_check)
 register_decompile_tools(mcp, with_busy_check)
 register_scaling_tools(mcp)
+register_file_management_tools(mcp, with_busy_check)
 
 # Load balancer status tool
 from src.server.load_balancer import register_loadbalancer_tools

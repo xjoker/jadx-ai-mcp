@@ -39,34 +39,52 @@ async def rename_class(class_name: str, new_name: str, instance_id: Optional[str
     )
 
 
-async def rename_method(class_name: str, method_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
+async def rename_method(
+    class_name: str,
+    method_name: str,
+    new_name: str,
+    method_signature: Optional[str] = None,
+    instance_id: Optional[str] = None,
+) -> dict:
     """
     Renames a specific method.
 
     NOTE: This operation triggers ClassCacheManager reload with 30s global cooldown.
     Rapid successive renames will be debounced.
 
+    When the class has overloaded methods with the same name, supply
+    ``method_signature`` (JVM short descriptor) to target the exact overload.
+    If omitted and multiple overloads exist, the server returns an
+    ``available_descriptors`` list; pick one and call again.
+
     Args:
         class_name: Fully qualified class name containing the method
-        method_name: Current method name (can include signature)
-        new_name: New name for the method
+            (e.g. ``"com.example.Parser"``).
+        method_name: Current method name (e.g. ``"parse"``).
+        new_name: New name for the method.
+        method_signature: Optional JVM short descriptor to disambiguate overloads,
+            e.g. ``"parse(Ljava/lang/String;)V"`` or ``"parse(I)Z"``.
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Confirmation of rename operation
+        dict: Confirmation of rename operation, or error with ``available_descriptors``
+        when multiple overloads exist and no descriptor was provided.
 
     MCP Tool: rename_method
     Description: Refactors method name and updates all call sites
     """
+    json_body: dict = {
+        "class_name": class_name,
+        "method_name": method_name,
+        "new_name": new_name,
+    }
+    if method_signature:
+        json_body["method_signature"] = method_signature
     return await get_from_jadx(
         "rename-method",
         instance_id=instance_id,
         method="POST",
-        json_body={
-            "class_name": class_name,
-            "method_name": method_name,
-            "new_name": new_name,
-        },
+        json_body=json_body,
     )
 
 
@@ -98,6 +116,51 @@ async def rename_field(class_name: str, field_name: str, new_name: str, instance
             "field_name": field_name,
             "new_field_name": new_name,
         },
+    )
+
+
+async def rename_variable(
+    class_name: str,
+    method_name: str,
+    variable_name: str,
+    new_name: str,
+    reg: Optional[str] = None,
+    ssa: Optional[str] = None,
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Renames a local variable inside a method using SSA variable tracking.
+
+    Args:
+        class_name: Fully qualified class name containing the method
+        method_name: Method name (signature stripped if present)
+        variable_name: Current variable name to rename
+        new_name: New variable name
+        reg: Optional. Register number for disambiguation when multiple vars share a name
+        ssa: Optional. SSA version number for further disambiguation
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: Confirmation of rename operation
+
+    MCP Tool: rename_variable
+    Description: Renames a local variable within a specific method
+    """
+    body: dict = {
+        "class_name": class_name,
+        "method_name": method_name,
+        "variable_name": variable_name,
+        "new_name": new_name,
+    }
+    if reg is not None:
+        body["reg"] = reg
+    if ssa is not None:
+        body["ssa"] = ssa
+    return await get_from_jadx(
+        "rename-variable",
+        instance_id=instance_id,
+        method="POST",
+        json_body=body,
     )
 
 
@@ -180,6 +243,46 @@ def register_refactor_tools(mcp, with_busy_check):
 
     @mcp.tool()
     @with_busy_check
+    async def rename_variable_tool(
+        class_name: str,
+        method_name: str,
+        variable_name: str,
+        new_name: str,
+        reg: Optional[str] = None,
+        ssa: Optional[str] = None,
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Rename a local variable inside a method.
+
+        Uses JADX's SSA variable tracking to locate and rename the variable.
+        If the method's SSA variables are not yet populated, the class is
+        force-reloaded once to trigger full processing.
+
+        Args:
+            class_name: Fully qualified class name (e.g., com.example.MainActivity)
+            method_name: Method name (signature will be stripped automatically)
+            variable_name: Current variable name to rename
+            new_name: New variable name
+            reg: Optional register number to disambiguate variables with the same name
+            ssa: Optional SSA version number for further disambiguation
+            instance_id: Target JADX instance name. Uses default if not specified.
+
+        Returns:
+            dict: {"result": "Renamed variable <old> to <new>"} on success,
+                  or {"error": ..., "status": 404} if the variable is not found.
+        """
+        return await rename_variable(
+            class_name=class_name,
+            method_name=method_name,
+            variable_name=variable_name,
+            new_name=new_name,
+            reg=reg,
+            ssa=ssa,
+            instance_id=instance_id,
+        )
+
+    @mcp.tool()
+    @with_busy_check
     async def export_rename_mappings_tool(
         instance_id: Optional[str] = None
     ) -> dict:
@@ -232,6 +335,7 @@ def register_refactor_tools(mcp, with_busy_check):
         old_name: str,
         new_name: str,
         class_name: str = "",
+        method_signature: Optional[str] = None,
         dry_run: bool = False,
         instance_id: Optional[str] = None
     ) -> dict:
@@ -242,6 +346,8 @@ def register_refactor_tools(mcp, with_busy_check):
             old_name: Current name (fully qualified for class/package, simple name for method/field)
             new_name: New name (simple name)
             class_name: Required for method/field - the class containing the member
+            method_signature: Optional JVM short descriptor to disambiguate overloaded methods,
+                e.g. 'parse(Ljava/lang/String;)V'. Only used when target_type is "method".
             dry_run: If True, verify the target exists and return impact preview without renaming
             instance_id: Target JADX instance name
 
@@ -256,8 +362,13 @@ def register_refactor_tools(mcp, with_busy_check):
             # Rename class
             rename("class", "com.example.OldClass", "NewClass")
 
-            # Rename method
+            # Rename method (no overloads)
             rename("method", "oldMethod", "newMethod", class_name="com.example.MyClass")
+
+            # Rename specific overload
+            rename("method", "parse", "parseString",
+                   class_name="com.example.Parser",
+                   method_signature="parse(Ljava/lang/String;)V")
 
             # Rename field
             rename("field", "oldField", "newField", class_name="com.example.MyClass")
@@ -290,7 +401,11 @@ def register_refactor_tools(mcp, with_busy_check):
         elif target_type_lower == "method":
             if not class_name:
                 return {"success": False, "error": "class_name required for method rename"}
-            return await rename_method(class_name, old_name, new_name, instance_id=instance_id)
+            return await rename_method(
+                class_name, old_name, new_name,
+                method_signature=method_signature,
+                instance_id=instance_id,
+            )
         elif target_type_lower == "field":
             if not class_name:
                 return {"success": False, "error": "class_name required for field rename"}

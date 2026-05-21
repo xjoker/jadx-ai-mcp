@@ -47,6 +47,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -102,7 +103,10 @@ public class ClassRoutes {
     // Search optimization constants
     private static final int DEFAULT_RESULT_LIMIT = 50;   // Default results per page
     private static final int MAX_RESULT_LIMIT = 200;      // Maximum results per page
-    private static final int SEARCH_TIMEOUT_SECONDS = 60; // Timeout for search operations
+    private static final int SEARCH_TIMEOUT_SECONDS = 60; // Timeout for search operations (leader)
+    private static final int SEARCH_FOLLOWER_TIMEOUT_SECONDS = Integer.parseInt(
+        System.getenv().getOrDefault("JADX_MCP_SEARCH_FOLLOWER_TIMEOUT_SECONDS", "15")
+    ); // Follower bail-out timeout; configurable via JADX_MCP_SEARCH_FOLLOWER_TIMEOUT_SECONDS
     private static final String SEARCH_DECOMPILATION_BUSY_MESSAGE = "Search/decompilation operation in progress";
 
     public ClassRoutes(MainWindow mainWindow, PaginationUtils paginationUtils) {
@@ -1319,16 +1323,35 @@ public class ClassRoutes {
         }
 
         if (reservation.isFollower()) {
-            try {
-                CodeSearchCoordinator.SearchResult result = reservation.getFuture()
-                    .get(SEARCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                ctx.json(buildSearchResponse(result, offset, count));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                sendCodeSearchBusyResponse(ctx, "Search request interrupted while waiting for in-flight result", 0.0);
-            } catch (ExecutionException | TimeoutException e) {
-                sendCodeSearchBusyResponse(ctx, "Search operation in progress", SEARCH_TIMEOUT_SECONDS);
-            }
+            CompletableFuture<CodeSearchCoordinator.SearchResult> leaderFuture = reservation.getFuture();
+            CompletableFuture<Object> followerFuture = leaderFuture
+                .orTimeout(SEARCH_FOLLOWER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .handle((value, ex) -> {
+                    if (ex != null) {
+                        Throwable cause = (ex instanceof ExecutionException) ? ex.getCause() : ex;
+                        if (cause instanceof TimeoutException) {
+                            return (Object) java.util.Map.of(
+                                "status", "still_searching",
+                                "message", "Search still in progress (follower timeout). Retry shortly.",
+                                "retry_after_seconds", 5
+                            );
+                        }
+                        if (cause instanceof CancellationException) {
+                            return (Object) java.util.Map.of(
+                                "status", "cancelled",
+                                "message", "Search cancelled by concurrent invalidation. Retry.",
+                                "retry_after_seconds", 1
+                            );
+                        }
+                        return (Object) java.util.Map.of(
+                            "status", "error",
+                            "message", cause != null && cause.getMessage() != null
+                                ? cause.getMessage() : ex.getClass().getSimpleName()
+                        );
+                    }
+                    return (Object) buildSearchResponse(value, offset, count);
+                });
+            ctx.future(() -> followerFuture);
             return;
         }
 
@@ -2717,6 +2740,76 @@ public class ClassRoutes {
             
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx, "Error getting bytecode: " + e.getMessage(), e, logger);
+        }
+    }
+
+    // Known library package prefixes for is_likely_library heuristic
+    private static final String[] LIBRARY_PREFIXES = {
+            "androidx.", "android.support.", "com.google.", "com.android.",
+            "kotlin.", "kotlinx.", "okhttp3.", "okio.", "retrofit2.",
+            "com.squareup.", "io.reactivex.", "rx.", "dagger.",
+            "com.facebook.", "com.amazonaws.", "org.apache.", "org.json.",
+            "com.fasterxml.", "org.slf4j.", "javax.", "junit.",
+            "io.netty.", "com.bumptech.glide.", "org.greenrobot.",
+            "com.airbnb.", "io.realm.", "bolts.", "butterknife."
+    };
+
+    /**
+     * Heuristic to detect whether a package is likely a third-party library.
+     * Uses prefix matching against known library namespaces.
+     */
+    private boolean isLikelyLibrary(String packageName) {
+        if (packageName == null) return false;
+        for (String prefix : LIBRARY_PREFIXES) {
+            if (packageName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * GET /package-tree
+     *
+     * Returns a flat list of all packages in the loaded APK/JAR, sorted by class count
+     * (descending). Each entry includes a library-detection heuristic flag.
+     * Useful for quickly orienting in large APKs by identifying high-density packages
+     * and filtering out well-known library namespaces.
+     */
+    public void handleGetPackageTree(Context ctx) {
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+
+            // Group classes by package
+            Map<String, Integer> packageCounts = new HashMap<>();
+            for (JavaClass cls : allClasses) {
+                String fullName = cls.getFullName();
+                int lastDot = fullName.lastIndexOf('.');
+                String pkg = lastDot > 0 ? fullName.substring(0, lastDot) : "(default)";
+                packageCounts.merge(pkg, 1, Integer::sum);
+            }
+
+            // Build sorted list (descending by class count)
+            List<Map<String, Object>> packages = packageCounts.entrySet().stream()
+                    .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                    .map(entry -> {
+                        Map<String, Object> pkg = new HashMap<>();
+                        pkg.put("name", entry.getKey());
+                        pkg.put("class_count", entry.getValue());
+                        pkg.put("is_likely_library", isLikelyLibrary(entry.getKey()));
+                        return pkg;
+                    })
+                    .collect(Collectors.toList());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("total_classes", allClasses.size());
+            result.put("total_packages", packages.size());
+            result.put("packages", packages);
+            ctx.json(result);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx,
+                    "Internal error building package tree: " + e.getMessage(), e, logger);
         }
     }
 }

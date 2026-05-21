@@ -16,25 +16,43 @@ from src.server.request_context import get_from_jadx_for_current_user as get_fro
 logger = get_logger("search_tools")
 
 
-async def get_method_by_name(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
+async def get_method_by_name(
+    class_name: str,
+    method_name: str,
+    method_signature: Optional[str] = None,
+    instance_id: Optional[str] = None,
+) -> dict:
     """
     Fetch the source code of a method from a specific class.
 
+    When the class contains overloaded methods with the same name, supply
+    ``method_signature`` (the JVM short descriptor) to select the exact overload.
+    If you omit it and multiple overloads exist, the server returns HTTP 300 with
+    an ``available_descriptors`` list — call this function again with one of those
+    values to get the code you need.
+
     Args:
-        class_name: Fully qualified class name
-        method_name: Method name (can include signature)
+        class_name: Fully qualified class name (e.g. ``"com.example.MainActivity"``).
+        method_name: Method name (e.g. ``"process"``).
+        method_signature: Optional JVM short descriptor to disambiguate overloads,
+            e.g. ``"process(Ljava/lang/String;I)Z"`` or ``"process(I)V"``.
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Method source code and metadata
+        dict: Method source code and metadata, or an error dict with
+        ``available_descriptors`` when multiple overloads exist.
 
     MCP Tool: get_method_by_name
     Description: Retrieves specific method implementation from a known class
     """
-    logger.info(f"get_method_by_name: class={class_name}, method={method_name}, instance={instance_id}")
-    result = await get_from_jadx(
-        "method-by-name", {"class_name": class_name, "method_name": method_name}, instance_id=instance_id
+    logger.info(
+        f"get_method_by_name: class={class_name}, method={method_name}, "
+        f"method_signature={method_signature}, instance={instance_id}"
     )
+    params: dict = {"class_name": class_name, "method_name": method_name}
+    if method_signature:
+        params["method_signature"] = method_signature
+    result = await get_from_jadx("method-by-name", params, instance_id=instance_id)
     if "error" in result:
         logger.warning(f"get_method_by_name failed: {result.get('error')}")
     return result
@@ -339,15 +357,29 @@ def register_search_tools(mcp, with_busy_check):
 
     @mcp.tool(name="get_method_by_name")
     @with_busy_check
-    async def get_method_by_name_tool(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
+    async def get_method_by_name_tool(
+        class_name: str,
+        method_name: str,
+        method_signature: Optional[str] = None,
+        instance_id: Optional[str] = None,
+    ) -> dict:
         """Fetch the source code of a method from a specific class.
+
+        When the class has overloaded methods with the same name, use
+        ``method_signature`` (JVM short descriptor) to select the exact overload.
+        If omitted and multiple overloads exist, the response contains an
+        ``available_descriptors`` list; pick one and call again.
 
         Args:
             class_name: Fully qualified class name (e.g., 'com.example.MainActivity').
-            method_name: Method name to search for.
+            method_name: Method name to search for (e.g., 'process').
+            method_signature: Optional JVM short descriptor to disambiguate overloads,
+                e.g. 'process(Ljava/lang/String;I)Z' or 'process(I)V'.
             instance_id: Optional. Target JADX instance name. Uses default if not specified.
         """
-        return await get_method_by_name(class_name, method_name, instance_id=instance_id)
+        return await get_method_by_name(
+            class_name, method_name, method_signature=method_signature, instance_id=instance_id
+        )
 
     @mcp.tool(name="search_method_by_name")
     @with_busy_check

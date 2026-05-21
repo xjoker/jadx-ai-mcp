@@ -467,6 +467,30 @@ async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
     return result
 
 
+async def list_packages(instance_id: Optional[str] = None) -> dict:
+    """
+    Returns all packages in the loaded APK/JAR grouped by class count.
+
+    The response is sorted descending by class count. Each entry includes
+    an `is_likely_library` flag based on well-known library namespace prefixes
+    (e.g. androidx., com.google., kotlin., retrofit2., okhttp3., ...).
+
+    Args:
+        instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+    Returns:
+        dict: {
+            total_classes: int,
+            total_packages: int,
+            packages: [{name: str, class_count: int, is_likely_library: bool}]
+        }
+
+    MCP Tool: list_packages
+    Description: Summarises package structure to orient analysis in large APKs
+    """
+    return await get_from_jadx("package-tree", instance_id=instance_id)
+
+
 # Save references to module-level functions before they get shadowed
 # by tool wrapper functions inside register_class_tools
 _get_all_classes = get_all_classes
@@ -478,6 +502,7 @@ _get_smali_of_class = get_smali_of_class
 _get_main_activity_class = get_main_activity_class
 _get_class_info = get_class_info
 _get_decompile_status = get_decompile_status
+_list_packages = list_packages
 
 
 def register_class_tools(mcp, with_busy_check):
@@ -635,3 +660,25 @@ def register_class_tools(mcp, with_busy_check):
             instance_id: Optional. Target JADX instance name. Uses default if not specified.
         """
         return await _get_decompile_status(instance_id=instance_id)
+
+    @mcp.tool()
+    @with_busy_check
+    async def list_packages(instance_id: Optional[str] = None) -> dict:
+        """List all packages in the loaded APK/JAR sorted by class count.
+
+        Returns a flat list of packages with their class counts and a library-detection
+        flag based on well-known namespace prefixes (androidx., kotlin., com.google.,
+        retrofit2., okhttp3., etc.). Useful for quickly orienting in large APKs:
+        start analysis in packages with the most classes that are NOT likely libraries.
+
+        Args:
+            instance_id: Optional. Target JADX instance name. Uses default if not specified.
+
+        Returns:
+            dict: {
+                total_classes: int,
+                total_packages: int,
+                packages: list of {name: str, class_count: int, is_likely_library: bool}
+            }
+        """
+        return await _list_packages(instance_id=instance_id)
