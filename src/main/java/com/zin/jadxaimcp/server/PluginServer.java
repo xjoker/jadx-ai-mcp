@@ -527,23 +527,40 @@ public class PluginServer {
                 java.util.List<jadx.api.JavaClass> classes = wrapper.getIncludedClassesWithInners();
                 int total = classes.size();
                 int processed = 0;
-                
-                // Count classes that have completed processing (cached)
-                for (jadx.api.JavaClass cls : classes) {
-                    if (cls.getClassNode() != null && 
-                        cls.getClassNode().getState().isProcessComplete()) {
-                        processed++;
-                    }
+                int cachedInMemory = 0;
+                int cachedOnDisk = 0;
+
+                // ICodeCache.contains() is O(1) in-memory index — survives GC, restart, APK swap.
+                // This gives accurate cached_percentage even in DISK cache mode where
+                // isProcessComplete() returns false for GC-evicted classes.
+                jadx.api.ICodeCache codeCache = null;
+                try {
+                    codeCache = wrapper.getDecompiler().getArgs().getCodeCache();
+                } catch (Exception ignored) {
+                    // fallback to memory-only counting if ICodeCache unavailable
                 }
-                
+
+                for (jadx.api.JavaClass cls : classes) {
+                    boolean inMem = cls.getClassNode() != null && cls.getClassNode().getState().isProcessComplete();
+                    boolean onDisk = codeCache != null && codeCache.contains(cls.getRawName());
+                    if (inMem) cachedInMemory++;
+                    if (onDisk) cachedOnDisk++;
+                    if (inMem || onDisk) processed++;
+                }
+
                 int cachedPercentage = total > 0 ? (processed * 100 / total) : 0;
-                
+
                 java.util.Map<String, Object> response = new java.util.HashMap<>();
-                
-                // === Class Cache Statistics (from JADX ProcessState) ===
+
+                // === Class Cache Statistics (ICodeCache: in-memory OR on-disk) ===
                 response.put("total_classes", total);
                 response.put("cached_classes", processed);
                 response.put("cached_percentage", cachedPercentage);
+                response.put("cached_in_memory", cachedInMemory);
+                response.put("cached_on_disk", cachedOnDisk);
+
+                // === Warmup Status ===
+                response.put("warmup", com.zin.jadxaimcp.utils.WarmupManager.getStatus());
                 
                 // === JVM Memory Statistics (real data from Runtime) ===
                 Runtime runtime = Runtime.getRuntime();
