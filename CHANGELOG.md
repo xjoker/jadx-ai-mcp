@@ -11,6 +11,20 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`warm_cache(skip_libraries)` MCP tool** — triggers full background decompilation of all classes
+  so `search_in='code'` works without waiting for the cache to warm organically.
+  `skip_libraries=True` (default) filters out known third-party SDK prefixes
+  (`android.*`, `kotlin.*`, `okhttp3.*`, etc.) to save time and memory.
+  Returns immediately; poll `get_warmup_status()` or `get_decompile_status()`
+  to track `cached_percentage` progress.
+- **`get_warmup_status()` MCP tool** — polls the background warmup started by
+  `warm_cache()`. Returns `{phase, running, total, processed, failed, percentage, elapsed_seconds}`.
+- Java `WarmupManager` utility class with two-phase warmup: serial decompile under
+  `JadxSearchLock` (phase 1) + parallel trigram-index fill (phase 2); supports
+  cancel, memory-pressure pause, and per-class timeout.
+- REST endpoints `POST /cache/warmup`, `GET /cache/warmup-status`,
+  `POST /cache/warmup/cancel` on the JADX plugin server.
+
 - **`analyze_apk(path, strategy)` MCP tool** — high-level APK loading with
   smart instance routing. `strategy="auto"` (default) inspects all connected
   instances and routes to a free one; returns `status=ambiguous` when the

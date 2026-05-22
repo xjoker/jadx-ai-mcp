@@ -297,9 +297,70 @@ async def get_decompile_priority_list(
     }
 
 
+async def warm_cache(
+    skip_libraries: bool = True,
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Trigger full background decompilation of all classes to warm the code cache.
+
+    Starts a background warmup on the JADX instance that decompiles every class
+    (optionally skipping known third-party SDKs). After calling this, subsequent
+    search_in='code' queries will be much faster because more classes are cached.
+
+    Call get_decompile_status() to monitor cached_percentage progress while warmup runs.
+
+    Args:
+        skip_libraries: When True (default), skip known third-party SDK packages
+                        (android.*, androidx.*, kotlin.*, okhttp3.*, etc.) to save
+                        time and memory. Set False to cache absolutely everything.
+        instance_id: Optional target JADX instance name.
+
+    Returns:
+        dict: {started, total_classes, skipped_libraries, message} or
+              {started=False, status} if already running.
+
+    MCP Tool: warm_cache
+    Description: Warm the full decompile cache in the background so code search works without restrictions
+    """
+    logger.info(f"warm_cache: skip_libraries={skip_libraries}, instance_id={instance_id}")
+    params = {"skip_libraries": str(skip_libraries).lower()}
+    try:
+        result = await get_from_jadx(
+            "cache/warmup", params=params, instance_id=instance_id, method="POST",
+        )
+        return result
+    except Exception as exc:
+        logger.warning(f"warm_cache failed: {exc}")
+        return {"error": "JADX_ERROR", "message": str(exc)}
+
+
+async def get_warmup_status(
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Poll the background warmup progress started by warm_cache().
+
+    Returns:
+        dict: {phase, running, total, processed, failed, skipped_libraries,
+               percentage, elapsed_seconds}
+
+    MCP Tool: get_warmup_status
+    Description: Check the progress of a running background cache warmup
+    """
+    try:
+        return await get_from_jadx(
+            "cache/warmup-status", instance_id=instance_id,
+        )
+    except Exception as exc:
+        return {"error": "JADX_ERROR", "message": str(exc)}
+
+
 # Module-level references for registration wrappers
 _smart_decompile = smart_decompile
 _get_decompile_priority_list = get_decompile_priority_list
+_warm_cache = warm_cache
+_get_warmup_status = get_warmup_status
 
 
 def register_decompile_tools(mcp, with_busy_check):
@@ -343,6 +404,36 @@ def register_decompile_tools(mcp, with_busy_check):
             analysis_goal=analysis_goal, package=package, instance_id=instance_id,
         )
 
+    @mcp.tool()
+    async def warm_cache(
+        skip_libraries: bool = True,
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Warm the full decompile cache in the background so code search works without restrictions.
+
+        After calling this, cached_percentage in get_decompile_status() will rise toward 100%.
+        Use get_warmup_status() to poll progress. No busy-check: starts immediately and returns.
+
+        Args:
+            skip_libraries: Skip known SDK packages (android.*, kotlin.*, etc.). Default True.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {started, total_classes, skipped_libraries, message}
+        """
+        return await _warm_cache(skip_libraries=skip_libraries, instance_id=instance_id)
+
+    @mcp.tool()
+    async def get_warmup_status(
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Poll progress of a background cache warmup started by warm_cache().
+
+        Returns:
+            dict: {phase, running, total, processed, failed, percentage, elapsed_seconds}
+        """
+        return await _get_warmup_status(instance_id=instance_id)
+
     logger.info(
-        "Decompile tools registered: smart_decompile, get_decompile_priority_list"
+        "Decompile tools registered: smart_decompile, get_decompile_priority_list, "
+        "warm_cache, get_warmup_status"
     )

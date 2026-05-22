@@ -626,6 +626,36 @@ public class PluginServer {
                 ));
             }
         });
+
+        // POST /cache/warmup — trigger full background decompile of all (or non-library) classes
+        app.post("/cache/warmup", ctx -> {
+            try {
+                jadx.gui.JadxWrapper wrapper = mainWindow.getWrapper();
+                if (wrapper == null) {
+                    ctx.status(503).json(java.util.Map.of("error", "JADX wrapper not initialized"));
+                    return;
+                }
+                String skipParam = ctx.queryParam("skip_libraries");
+                boolean skipLibraries = !"false".equalsIgnoreCase(skipParam); // default: skip
+                java.util.Map<String, Object> result =
+                    com.zin.jadxaimcp.utils.WarmupManager.start(wrapper, skipLibraries);
+                ctx.json(result);
+            } catch (Exception e) {
+                logger.error("[JAI] Failed to start cache warmup", e);
+                ctx.status(500).json(java.util.Map.of("error", "Failed to start warmup: " + e.getMessage()));
+            }
+        });
+
+        // GET /cache/warmup-status — poll warmup progress
+        app.get("/cache/warmup-status", ctx ->
+            ctx.json(com.zin.jadxaimcp.utils.WarmupManager.getStatus())
+        );
+
+        // POST /cache/warmup/cancel — stop a running warmup
+        app.post("/cache/warmup/cancel", ctx -> {
+            com.zin.jadxaimcp.utils.WarmupManager.cancel();
+            ctx.json(java.util.Map.of("message", "Warmup cancel requested"));
+        });
     }
     
     /**
