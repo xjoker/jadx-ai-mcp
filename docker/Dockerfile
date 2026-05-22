@@ -9,7 +9,7 @@
 # ============================================================================
 ARG BASE_VERSION=1.2
 ARG JADX_VERSION=1.5.5
-ARG PLUGIN_VERSION=6.1.5-dev
+ARG PLUGIN_VERSION=6.4.2
 ARG DOCKER_PLATFORM=linux/amd64
 
 # ============================================================================
@@ -54,8 +54,10 @@ RUN set -e; \
         echo "mvn package failed on attempt ${attempt}, retrying..." >&2; \
         sleep 5; \
     done \
-    && test -f "target/jadx-ai-mcp-${PLUGIN_VERSION}.jar" \
-    && cp "target/jadx-ai-mcp-${PLUGIN_VERSION}.jar" /build/jadx-ai-mcp.jar
+    && BUILT_JAR=$(ls target/jadx-ai-mcp-*.jar 2>/dev/null | grep -v '\-shaded\.' | grep -v '\-sources\.' | head -1) \
+    && test -n "${BUILT_JAR}" \
+    && echo "Built plugin JAR: ${BUILT_JAR}" \
+    && cp "${BUILT_JAR}" /build/jadx-ai-mcp.jar
 
 # ============================================================================
 # Stage 2: Runtime image

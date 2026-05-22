@@ -41,7 +41,7 @@ public class JadxAIMCP implements JadxPlugin {
     
     // Environment variable names for Docker/container configuration
     private static final String ENV_BIND_ADDRESS = "JADX_MCP_BIND_ADDRESS";
-    private static final String ENV_PORT = "JADX_MCP_PORT";
+    private static final String ENV_PORT = "JADX_API_PORT";
     private static final String ENV_AUTH_TOKEN = "JADX_MCP_AUTH_TOKEN";
     private static final String ENV_AUTH_ENABLED = "JADX_MCP_AUTH_ENABLED";
     private static final String ENV_AUTH_TOKEN_FILE = "JADX_MCP_AUTH_TOKEN_FILE";
