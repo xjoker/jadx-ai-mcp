@@ -284,6 +284,17 @@ async def _generate_apk_digest(instance_id: Optional[str] = None) -> dict:
     file_size_bytes = file_info.get("file_size", 0)
     file_size_mb = round(file_size_bytes / (1024 * 1024), 2) if file_size_bytes else 0.0
 
+    # Step 1b: enhanced APK metadata (signing certs, native libs, dex count)
+    # Available only for APK/AAR/DEX file types; ignore errors gracefully.
+    apk_meta: dict = {}
+    if file_type in ("apk", "aar", "dex"):
+        try:
+            apk_info_result = await get_from_jadx("apk-info", instance_id=instance_id)
+            if isinstance(apk_info_result, dict) and "error" not in apk_info_result:
+                apk_meta = apk_info_result
+        except Exception as exc:
+            logger.warning(f"generate_apk_digest: could not fetch apk-info: {exc}")
+
     # Step 2: manifest (type-dependent)
     manifest_data: dict = {}
     if file_type in ("apk", "aar", "dex"):
@@ -374,6 +385,22 @@ async def _generate_apk_digest(instance_id: Optional[str] = None) -> dict:
     }
     result["analysis_tips"] = tips
 
+    # Inject enhanced APK metadata fields when available (APK/AAR/DEX only).
+    # signing_certificates: list of {subject, sha256, algorithm, valid_from, valid_until}
+    # native_libraries: list of {path, abi, name} for .so files bundled in the APK
+    # dex_count: number of DEX files (multi-dex APKs have dex_count > 1)
+    # total_classes: canonical class count from apk-info (may refine the estimate above)
+    if apk_meta:
+        if "signing_certificates" in apk_meta:
+            result["signing_certificates"] = apk_meta["signing_certificates"]
+        if "native_libraries" in apk_meta:
+            result["native_libraries"] = apk_meta["native_libraries"]
+        if "dex_count" in apk_meta:
+            result["dex_count"] = apk_meta["dex_count"]
+        if "total_classes" in apk_meta:
+            # Prefer the authoritative count from apk-info over the sampled estimate
+            result["class_stats"]["total_classes_apk_info"] = apk_meta["total_classes"]
+
     logger.info(
         f"generate_apk_digest: completed — type={file_type}, classes={total_classes}, "
         f"sdks={len(detected_sdks)}, obfuscation={obfuscation_level}"
@@ -393,10 +420,23 @@ def register_digest_tools(mcp, with_busy_check):
     async def generate_apk_digest(instance_id: Optional[str] = None) -> dict:
         """Generate a pre-analysis digest: file info, manifest, SDK detection, obfuscation assessment, entry points.
 
+        For APK/AAR/DEX files, also includes enhanced metadata when available from the JADX instance:
+        - signing_certificates: [{subject, sha256, algorithm, valid_from, valid_until}]
+            Signing certificate chain details — useful for verifying APK authenticity and
+            comparing against known publisher fingerprints.
+        - native_libraries: [{path, abi, name}]
+            Native .so files bundled in the APK (lib/arm64-v8a/, lib/x86_64/, etc.).
+            Presence of native code typically requires additional analysis with Ghidra/IDA.
+        - dex_count: int
+            Number of DEX files. Values > 1 indicate MultiDex; very large APKs may have
+            3-5+ DEX files.
+
         Args:
             instance_id: Target JADX instance name.
         Returns:
-            dict: {file_type, package_name, class_stats, detected_sdks, obfuscation_level, analysis_tips}
+            dict: {file_type, package_name, class_stats, detected_sdks, obfuscation_level,
+                   analysis_tips, signing_certificates (APK only), native_libraries (APK only),
+                   dex_count (APK only)}
         """
         return await _generate_apk_digest(instance_id=instance_id)
 

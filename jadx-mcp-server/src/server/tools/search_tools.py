@@ -12,6 +12,9 @@ from typing import Optional
 from src.PaginationUtils import PaginationUtils
 from src.server.logging_config import get_logger
 from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
+from src.server.types import format_error_response
+
+_VALID_MATCH_MODES = frozenset({"substring", "exact", "prefix", "regex"})
 
 logger = get_logger("search_tools")
 
@@ -149,6 +152,7 @@ async def search_classes_by_keyword(
     search_in: str = "code",
     offset: int = 0,
     count: int = 20,
+    match_mode: str = "substring",
     instance_id: Optional[str] = None,
 ) -> dict:
     """
@@ -167,6 +171,12 @@ async def search_classes_by_keyword(
         search_in: Comma-separated search scopes: class,method,field,code,comment. Default: code
         offset: Starting index for pagination. Default: 0
         count: Maximum number of results. Default: 20
+        match_mode: Controls how search_term is matched against results. Default: substring.
+            - "substring": search_term appears anywhere in the target (default, current behavior).
+            - "exact": search_term must match the target exactly (case-sensitive).
+            - "prefix": target must start with search_term.
+            - "regex": search_term is interpreted as a Java regular expression.
+              Use for advanced patterns, e.g. "get[A-Z]\\w+" to find getter methods.
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
@@ -175,6 +185,13 @@ async def search_classes_by_keyword(
     MCP Tool: search_classes_by_keyword
     Description: Advanced search tool that finds classes matching a keyword with filtering
     """
+    if match_mode not in _VALID_MATCH_MODES:
+        return format_error_response(
+            "INVALID_INPUT",
+            f"Invalid match_mode: '{match_mode}'",
+            {"valid_values": sorted(_VALID_MATCH_MODES)},
+        )
+
     params = {
         "search_term": search_term,
         "package": package,
@@ -182,6 +199,7 @@ async def search_classes_by_keyword(
         "search_in": search_in,
         "offset": offset,
         "count": count,
+        "match_mode": match_mode,
     }
     return await get_from_jadx("search-classes-by-keyword", params, instance_id=instance_id)
 
@@ -353,6 +371,7 @@ def register_search_tools(mcp, with_busy_check):
         search_in: str = "code",
         offset: int = 0,
         count: int = 20,
+        match_mode: str = "substring",
         instance_id: Optional[str] = None,
     ) -> dict:
         """Search classes by keyword across class/method/field/code/comment scopes.
@@ -360,12 +379,15 @@ def register_search_tools(mcp, with_busy_check):
         Args:
             search_term: Keyword. package: Package filter (recommended). exclude: Comma-separated exclusions.
             search_in: class|method|field|code|comment (class/method/field fast; code needs cache). count: Max results.
+            match_mode: How to match search_term — substring (default, anywhere in target) | exact (full match) |
+                prefix (target starts with term) | regex (Java regex, e.g. "get[A-Z]\\w+" for getters).
             instance_id: Target JADX instance name.
         Returns:
             dict: {classes: [...], total: int, has_more: bool}
         """
         return await search_classes_by_keyword(
-            search_term, package, exclude, search_in, offset, count, instance_id=instance_id
+            search_term, package, exclude, search_in, offset, count,
+            match_mode=match_mode, instance_id=instance_id,
         )
 
     @mcp.tool(name="get_method_signature")

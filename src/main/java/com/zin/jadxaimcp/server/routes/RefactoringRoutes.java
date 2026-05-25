@@ -569,6 +569,138 @@ public class RefactoringRoutes {
     }
 
     /**
+     * POST /apply-proguard-mapping
+     *
+     * Accepts a ProGuard mapping.txt body:
+     *   {"mapping_content": "com.example.Original -> a.b.c:\n ..."}
+     *
+     * Parses class-level mappings only (original -> obfuscated format).
+     * Builds a rename list where obfuscated name (current APK name) is renamed
+     * back to the original name, then delegates to import-rename-mappings logic.
+     *
+     * Response: {"applied":N,"failed":M,"errors":[...],"total":T,"format":"proguard"}
+     */
+    public void handleApplyProguardMapping(Context ctx) {
+        JsonObject requestBody = parseJsonBody(ctx);
+        if (requestBody == null) return;
+
+        String mappingContent = getBodyString(requestBody, "mapping_content");
+        if (mappingContent == null || mappingContent.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing required parameter 'mapping_content'", logger);
+            return;
+        }
+
+        // Parse ProGuard mapping: lines matching "original.Name -> obfuscated.Name:"
+        // (class-level only; method/field lines start with whitespace — skip them)
+        java.util.regex.Pattern classLinePattern =
+            java.util.regex.Pattern.compile("^([\\w.$]+)\\s*->\\s*([\\w.$]+)\\s*:.*$");
+
+        JsonArray mappingsArray = new JsonArray();
+        List<String> parseErrors = new ArrayList<>();
+
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.StringReader(mappingContent))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // Skip blank lines and comment lines (#)
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                // Member lines (method/field) are indented — skip
+                if (line.startsWith(" ") || line.startsWith("\t")) continue;
+
+                java.util.regex.Matcher m = classLinePattern.matcher(trimmed);
+                if (!m.matches()) continue;
+
+                String originalName = m.group(1).trim();
+                String obfuscatedName = m.group(2).trim();
+
+                // In the APK the obfuscated name is the current name;
+                // we rename it back to the original.
+                JsonObject entry = new JsonObject();
+                entry.addProperty("type", "class");
+                entry.addProperty("original_name", obfuscatedName);   // current name in APK
+                entry.addProperty("new_name", originalName);           // target (readable) name
+                entry.addProperty("class_context", "");
+                mappingsArray.add(entry);
+            }
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx,
+                "Failed to parse ProGuard mapping content: " + e.getMessage(), e, logger);
+            return;
+        }
+
+        if (mappingsArray.size() == 0) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("applied", 0);
+            result.put("failed", 0);
+            result.put("errors", parseErrors);
+            result.put("total", 0);
+            result.put("format", "proguard");
+            ctx.json(result);
+            return;
+        }
+
+        // Delegate to existing import logic
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+
+            if (ClassCacheManager.getStatus() == ClassCacheManager.CacheStatus.NOT_INITIALIZED) {
+                ClassCacheManager.initCache(wrapper);
+            }
+
+            Map<String, JavaClass> classMap = ClassCacheManager.getCache();
+            int successCount = 0;
+            int failCount = 0;
+            List<String> errors = new ArrayList<>(parseErrors);
+
+            for (JsonElement element : mappingsArray) {
+                if (!element.isJsonObject()) {
+                    failCount++;
+                    continue;
+                }
+                JsonObject entry = element.getAsJsonObject();
+                String originalName = getStringFromJson(entry, "original_name");
+                String newName = getStringFromJson(entry, "new_name");
+                if (originalName == null || newName == null) {
+                    failCount++;
+                    continue;
+                }
+
+                try {
+                    JavaClass cls = ClassCacheManager.findClass(classMap, originalName);
+                    if (cls == null) {
+                        failCount++;
+                        errors.add("Class not found: " + originalName);
+                        continue;
+                    }
+                    ICodeNodeRef nodeRef = cls.getCodeNodeRef();
+                    NodeRenamedByUser event = new NodeRenamedByUser(nodeRef, cls.getName(), newName);
+                    event.setRenameNode(nodeRef);
+                    event.setResetName(false);
+                    mainWindow.events().send(event);
+                    invalidateCodeForClass(cls, originalName);
+                    successCount++;
+                } catch (Exception e) {
+                    failCount++;
+                    errors.add("Error renaming '" + originalName + "': " + e.getMessage());
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("applied", successCount);
+            result.put("failed", failCount);
+            result.put("errors", errors);
+            result.put("total", mappingsArray.size());
+            result.put("format", "proguard");
+            logger.info("[JAI] Apply ProGuard mapping: applied={}, failed={}", successCount, failCount);
+            ctx.json(result);
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx,
+                "Failed to apply ProGuard mapping: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
      * POST /rename-variable
      *
      * Renames a local variable inside a method using SSA variable tracking.

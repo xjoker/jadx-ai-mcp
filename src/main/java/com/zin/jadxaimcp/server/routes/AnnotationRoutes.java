@@ -67,6 +67,10 @@ public class AnnotationRoutes {
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement()) {
 
+            // Enable WAL mode on first open so it persists in the DB file.
+            // busy_timeout=5000 is also set per-connection in getConnection().
+            stmt.execute("PRAGMA journal_mode=WAL");
+
             stmt.executeUpdate(
                 "CREATE TABLE IF NOT EXISTS annotations (" +
                 "  id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -111,8 +115,21 @@ public class AnnotationRoutes {
         }
     }
 
+    /**
+     * Opens a new SQLite connection with WAL journal mode and a 5-second busy
+     * timeout.  WAL mode is set as a persistent DB property on first open (via
+     * {@link #initDatabase()}), so subsequent connections inherit it; the
+     * PRAGMA here is a belt-and-suspenders guard for freshly opened connections.
+     * The 5-second busy_timeout lets writers queue briefly instead of immediately
+     * returning SQLITE_BUSY, eliminating concurrent-write errors under normal load.
+     */
     private Connection getConnection() throws SQLException {
-        return DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+        Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+        try (Statement pragma = conn.createStatement()) {
+            pragma.execute("PRAGMA journal_mode=WAL");
+            pragma.execute("PRAGMA busy_timeout=5000");
+        }
+        return conn;
     }
 
     // ==================== APK hash retrieval ====================

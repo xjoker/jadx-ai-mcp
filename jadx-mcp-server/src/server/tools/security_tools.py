@@ -10,6 +10,7 @@ Author: jadx-ai-mcp contributors
 License: See LICENSE file
 """
 
+import re
 import time
 from typing import Optional
 from src.server.logging_config import get_logger
@@ -130,6 +131,66 @@ def filter_rules(scan_type: str) -> dict[str, dict]:
     }
 
 
+def _infer_match_context(term: str, snippet: str, class_name: str) -> tuple[str, str]:
+    """
+    Infer the context of a pattern match using heuristics.
+
+    Returns:
+        A tuple of (match_context, confidence) where match_context is one of:
+        'string_literal', 'method_name', 'class_name', 'field_name', 'comment', 'unknown'
+        and confidence is 'high' or 'low'.
+    """
+    if not snippet:
+        # No snippet available — fall back to class name heuristics
+        term_lower = term.lower()
+        class_lower = class_name.lower()
+        if term_lower in class_lower:
+            return "class_name", "low"
+        return "unknown", "low"
+
+    # Check if the term appears inside a string literal (surrounded by quotes)
+    # Pattern: term is inside "..." or '...' (within 60 chars on each side)
+    string_literal_pattern = re.compile(
+        r'(?:"[^"]{0,200}' + re.escape(term) + r'[^"]{0,200}"'
+        r"|'[^']{0,200}" + re.escape(term) + r"[^']{0,200}')",
+        re.IGNORECASE,
+    )
+    if string_literal_pattern.search(snippet):
+        return "string_literal", "high"
+
+    # Check if term appears in a comment (// or /* ... */)
+    comment_pattern = re.compile(
+        r'(?://[^\n]*' + re.escape(term) + r'|/\*[^*]*' + re.escape(term) + r')',
+        re.IGNORECASE,
+    )
+    if comment_pattern.search(snippet):
+        return "comment", "low"
+
+    # Check if the term is part of a method call / method name
+    # Heuristic: term is followed by '(' possibly with spaces, or preceded by '.'
+    method_pattern = re.compile(
+        r'(?:\.' + re.escape(term) + r'\s*\(|(?:void|int|String|boolean|byte|long)\s+' + re.escape(term) + r'\s*\()',
+        re.IGNORECASE,
+    )
+    if method_pattern.search(snippet):
+        return "method_name", "low"
+
+    # Check if term appears in a field/variable assignment (= "value" pattern without quotes around term)
+    field_assign_pattern = re.compile(
+        r'(?:private|public|protected|static|final)\s+\S+\s+' + re.escape(term) + r'\s*[=;]',
+        re.IGNORECASE,
+    )
+    if field_assign_pattern.search(snippet):
+        return "field_name", "low"
+
+    # Check class name for term presence
+    if term.lower() in class_name.lower():
+        return "class_name", "low"
+
+    # Default: unknown, medium confidence
+    return "unknown", "low"
+
+
 def _extract_matches(search_result: dict) -> list[dict[str, str]]:
     """Extract class_name + snippet pairs from a search-classes-by-keyword response."""
     matches: list[dict[str, str]] = []
@@ -217,7 +278,19 @@ async def _run_security_scan(
             if isinstance(result, dict) and "error" not in result:
                 matches = _extract_matches(result)
                 if matches:
-                    rule_matches.extend(matches)
+                    # Annotate each match with context and confidence
+                    annotated: list[dict[str, str]] = []
+                    for m in matches:
+                        ctx, conf = _infer_match_context(
+                            pattern["term"], m.get("snippet", ""), m.get("class_name", "")
+                        )
+                        annotated.append({
+                            **m,
+                            "matched_term": pattern["term"],
+                            "match_context": ctx,
+                            "confidence": conf,
+                        })
+                    rule_matches.extend(annotated)
 
         # Record skipped patterns at rule level
         if rule_skipped_patterns:
@@ -230,6 +303,8 @@ async def _run_security_scan(
             })
 
         if rule_matches:
+            high_conf = [m for m in rule_matches if m.get("confidence") == "high"]
+            low_conf = [m for m in rule_matches if m.get("confidence") != "high"]
             findings.append({
                 "rule_id": rule_id,
                 "category": rule["category"],
@@ -237,6 +312,8 @@ async def _run_security_scan(
                 "description": "; ".join(p["description"] for p in rule["patterns"]),
                 "matches": rule_matches[:20],  # cap displayed matches
                 "match_count": len(rule_matches),
+                "high_confidence_count": len(high_conf),
+                "low_confidence_count": len(low_conf),
                 "recommendation": RECOMMENDATIONS.get(rule_id, "Review the matched code for security issues."),
             })
 
@@ -244,6 +321,8 @@ async def _run_security_scan(
     high_count = sum(1 for f in findings if f["severity"] == "high")
     medium_count = sum(1 for f in findings if f["severity"] == "medium")
     low_count = sum(1 for f in findings if f["severity"] == "low")
+    total_high_conf = sum(f.get("high_confidence_count", 0) for f in findings)
+    total_low_conf = sum(f.get("low_confidence_count", 0) for f in findings)
 
     elapsed = round(time.monotonic() - start_time, 2)
 
@@ -255,6 +334,8 @@ async def _run_security_scan(
             "high_severity": high_count,
             "medium_severity": medium_count,
             "low_severity": low_count,
+            "high_confidence_count": total_high_conf,
+            "low_confidence_count": total_low_conf,
         },
         "findings": findings,
         "skipped_rules": skipped_rules,

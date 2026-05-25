@@ -12,9 +12,17 @@ License: See LICENSE file
 from typing import Optional
 from src.PaginationUtils import PaginationUtils
 from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
+from src.server.types import format_error_response
 
 
-async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
+async def get_xrefs_to_class(
+    class_name: str,
+    offset: int = 0,
+    count: int = 20,
+    include_snippet: bool = False,
+    context_lines: int = 3,
+    instance_id: Optional[str] = None,
+) -> dict:
     """
     Find all references to a class (including constructor calls).
 
@@ -22,25 +30,45 @@ async def get_xrefs_to_class(class_name: str, offset: int = 0, count: int = 20, 
         class_name: Fully qualified class name
         offset: Starting index for pagination (default: 0)
         count: Number of references to return (default: 20)
+        include_snippet: If True, each reference includes the surrounding source code
+            snippet at the call site (default: False). Requires Java side support.
+        context_lines: Number of lines before and after the reference to include in
+            the snippet (default: 3). Only effective when include_snippet=True.
+            If the Java side cannot retrieve a snippet, the field will be null.
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Paginated list of locations where the class is referenced
+        dict: Paginated list of locations where the class is referenced.
+              When include_snippet=True, each entry may contain a 'snippet' field
+              with the surrounding code context (null if unavailable).
 
     MCP Tool: get_xrefs_to_class
     Description: Finds all code locations that instantiate or reference a class
     """
+    additional_params: dict = {"class_name": class_name}
+    if include_snippet:
+        additional_params["include_snippet"] = "true"
+        additional_params["context_lines"] = str(context_lines)
+
     return await PaginationUtils.get_paginated_data(
         endpoint="xrefs-to-class",
         offset=offset,
         count=count,
-        additional_params={"class_name": class_name},
+        additional_params=additional_params,
         data_extractor=lambda parsed: parsed.get("references", []),
         fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id)
     )
 
 
-async def get_xrefs_to_method(class_name: str, method_name: str, offset: int = 0, count: int = 20, instance_id: Optional[str] = None) -> dict:
+async def get_xrefs_to_method(
+    class_name: str,
+    method_name: str,
+    offset: int = 0,
+    count: int = 20,
+    include_snippet: bool = False,
+    context_lines: int = 3,
+    instance_id: Optional[str] = None,
+) -> dict:
     """
     Find all references to a method (includes overrides).
 
@@ -49,19 +77,32 @@ async def get_xrefs_to_method(class_name: str, method_name: str, offset: int = 0
         method_name: Method name (can include signature)
         offset: Starting index for pagination (default: 0)
         count: Number of references to return (default: 20)
+        include_snippet: If True, each reference includes the surrounding source code
+            snippet at the call site (default: False). Useful for quickly understanding
+            how the method is being called without opening each class separately.
+        context_lines: Number of lines before and after the reference to include in
+            the snippet (default: 3). Only effective when include_snippet=True.
+            If the Java side cannot retrieve a snippet, the field will be null.
         instance_id: Optional. Target JADX instance name. Uses default if not specified.
 
     Returns:
-        dict: Paginated list of locations where the method is called
+        dict: Paginated list of locations where the method is called.
+              When include_snippet=True, each entry may contain a 'snippet' field
+              with the surrounding code context (null if unavailable).
 
     MCP Tool: get_xrefs_to_method
     Description: Tracks all invocations of a specific method across the APK
     """
+    additional_params: dict = {"class_name": class_name, "method_name": method_name}
+    if include_snippet:
+        additional_params["include_snippet"] = "true"
+        additional_params["context_lines"] = str(context_lines)
+
     return await PaginationUtils.get_paginated_data(
         endpoint="xrefs-to-method",
         offset=offset,
         count=count,
-        additional_params={"class_name": class_name, "method_name": method_name},
+        additional_params=additional_params,
         data_extractor=lambda parsed: parsed.get("references", []),
         fetch_function=lambda ep, params={}: get_from_jadx(ep, params, instance_id=instance_id)
     )
@@ -130,6 +171,8 @@ def register_xrefs_tools(mcp, with_busy_check):
         member_name: str = "",
         offset: int = 0,
         count: int = 20,
+        include_snippet: bool = False,
+        context_lines: int = 3,
         instance_id: Optional[str] = None
     ) -> dict:
         """Find cross-references to a class, method, or field.
@@ -137,24 +180,49 @@ def register_xrefs_tools(mcp, with_busy_check):
         Args:
             target_type: class|method|field. class_name: Fully qualified class name.
             member_name: Method or field name (required for method/field). offset/count: Pagination.
+            include_snippet: If True, attach the surrounding source code snippet at each call site.
+                Useful for quickly understanding usage context without opening each referencing class.
+                Each result entry will contain a 'snippet' field (null if retrieval failed).
+            context_lines: Lines of context before/after the reference in the snippet (default: 3).
+                Only used when include_snippet=True.
             instance_id: Target JADX instance name.
         Returns:
-            dict: {xrefs: [{from_class, from_method, line}], total: int}
+            dict: {xrefs: [{from_class, from_method, line[, snippet]}], total: int}
         """
         target_type_lower = target_type.lower()
 
         if target_type_lower == "class":
-            return await get_xrefs_to_class(class_name, offset, count, instance_id=instance_id)
+            return await get_xrefs_to_class(
+                class_name, offset, count,
+                include_snippet=include_snippet, context_lines=context_lines,
+                instance_id=instance_id,
+            )
         elif target_type_lower == "method":
             if not member_name:
-                return {"error": "member_name required for method xrefs"}
-            return await get_xrefs_to_method(class_name, member_name, offset, count, instance_id=instance_id)
+                return format_error_response(
+                    "INVALID_INPUT",
+                    "member_name is required for method xrefs",
+                    {"hint": "Provide the method name via the member_name parameter"},
+                )
+            return await get_xrefs_to_method(
+                class_name, member_name, offset, count,
+                include_snippet=include_snippet, context_lines=context_lines,
+                instance_id=instance_id,
+            )
         elif target_type_lower == "field":
             if not member_name:
-                return {"error": "member_name required for field xrefs"}
+                return format_error_response(
+                    "INVALID_INPUT",
+                    "member_name is required for field xrefs",
+                    {"hint": "Provide the field name via the member_name parameter"},
+                )
             return await get_xrefs_to_field(class_name, member_name, offset, count, instance_id=instance_id)
         else:
-            return {"error": f"Invalid target_type: {target_type}. Use: class, method, field"}
+            return format_error_response(
+                "INVALID_INPUT",
+                f"Invalid target_type: {target_type}",
+                {"valid_values": ["class", "method", "field"]},
+            )
 
     @mcp.tool(name="batch_get_xrefs")
     @with_busy_check

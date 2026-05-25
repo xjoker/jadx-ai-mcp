@@ -37,6 +37,33 @@ public class PluginServer {
     private volatile boolean isRunning = false;
     private Thread lockWatchdogThread;
 
+    // ---- /decompile-status TTL cache (Task #13) ----
+    // Caches the expensive O(N) class-traversal statistics for 10 seconds.
+    // Warmup phase and JVM metrics are always read live (not cached).
+    private static final long DECOMPILE_STATUS_CACHE_TTL_MS = 10_000L;
+
+    private static final class DecompileStatCache {
+        final int total;
+        final int processed;
+        final int cachedInMemory;
+        final int cachedOnDisk;
+        final long timestampMs;
+
+        DecompileStatCache(int total, int processed, int cachedInMemory, int cachedOnDisk) {
+            this.total = total;
+            this.processed = processed;
+            this.cachedInMemory = cachedInMemory;
+            this.cachedOnDisk = cachedOnDisk;
+            this.timestampMs = System.currentTimeMillis();
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() - timestampMs > DECOMPILE_STATUS_CACHE_TTL_MS;
+        }
+    }
+
+    private volatile DecompileStatCache decompileStatCache = null;
+
     /**
      * @param mainWindows - The main Jadx window context
      * @param port        - The port to listen on
@@ -499,6 +526,32 @@ public class PluginServer {
         // --- Rename Mappings Import/Export ---
         app.get("/export-rename-mappings", refactoringRoutes::handleExportRenameMappings);
         app.post("/import-rename-mappings", refactoringRoutes::handleImportRenameMappings);
+        app.post("/apply-proguard-mapping", refactoringRoutes::handleApplyProguardMapping);
+
+        // --- Analysis Routes (Wave 2) ---
+        AnalysisRoutes analysisRoutes = new AnalysisRoutes(mainWindow);
+        app.get("/attack-surface", analysisRoutes::handleAttackSurface);
+        app.get("/search-string-literals", analysisRoutes::handleSearchStringLiterals);
+        app.get("/export-callgraph", analysisRoutes::handleExportCallgraph);
+
+        // --- Cancel running search ---
+        app.post("/cancel-search", ctx -> {
+            // CodeSearchCoordinator.clearCache() cancels in-flight futures and increments generation.
+            // Searches have a 60s natural timeout; clearing cache is the closest available cancel.
+            try {
+                CodeSearchCoordinator.clearCache();
+                ctx.json(java.util.Map.of(
+                    "cancelled", true,
+                    "message", "Search cancellation requested; in-flight searches cancelled and cache cleared"
+                ));
+            } catch (Exception e) {
+                logger.warn("[JAI] /cancel-search failed: {}", e.getMessage());
+                ctx.json(java.util.Map.of(
+                    "cancelled", true,
+                    "message", "Search cancellation requested"
+                ));
+            }
+        });
 
         // --- Collaborative Workspace: Annotations / Bookmarks / Tags ---
         AnnotationRoutes annotationRoutes = new AnnotationRoutes(mainWindow);
@@ -523,29 +576,47 @@ public class PluginServer {
                     ));
                     return;
                 }
-                
-                java.util.List<jadx.api.JavaClass> classes = wrapper.getIncludedClassesWithInners();
-                int total = classes.size();
-                int processed = 0;
-                int cachedInMemory = 0;
-                int cachedOnDisk = 0;
 
-                // ICodeCache.contains() is O(1) in-memory index — survives GC, restart, APK swap.
-                // This gives accurate cached_percentage even in DISK cache mode where
-                // isProcessComplete() returns false for GC-evicted classes.
-                jadx.api.ICodeCache codeCache = null;
-                try {
-                    codeCache = wrapper.getDecompiler().getArgs().getCodeCache();
-                } catch (Exception ignored) {
-                    // fallback to memory-only counting if ICodeCache unavailable
-                }
+                // --- TTL cache for expensive O(N) class traversal ---
+                // Only the class count statistics are cached (10s TTL).
+                // Warmup phase, memory, threads, and JADX config are always read live.
+                DecompileStatCache cached = decompileStatCache;
+                int total, processed, cachedInMemory, cachedOnDisk;
+                boolean cacheHit = false;
 
-                for (jadx.api.JavaClass cls : classes) {
-                    boolean inMem = cls.getClassNode() != null && cls.getClassNode().getState().isProcessComplete();
-                    boolean onDisk = codeCache != null && codeCache.contains(cls.getRawName());
-                    if (inMem) cachedInMemory++;
-                    if (onDisk) cachedOnDisk++;
-                    if (inMem || onDisk) processed++;
+                if (cached != null && !cached.isExpired()) {
+                    total         = cached.total;
+                    processed     = cached.processed;
+                    cachedInMemory = cached.cachedInMemory;
+                    cachedOnDisk  = cached.cachedOnDisk;
+                    cacheHit = true;
+                } else {
+                    java.util.List<jadx.api.JavaClass> classes = wrapper.getIncludedClassesWithInners();
+                    total = classes.size();
+                    processed = 0;
+                    cachedInMemory = 0;
+                    cachedOnDisk = 0;
+
+                    // ICodeCache.contains() is O(1) in-memory index — survives GC, restart, APK swap.
+                    // This gives accurate cached_percentage even in DISK cache mode where
+                    // isProcessComplete() returns false for GC-evicted classes.
+                    jadx.api.ICodeCache codeCache = null;
+                    try {
+                        codeCache = wrapper.getDecompiler().getArgs().getCodeCache();
+                    } catch (Exception ignored) {
+                        // fallback to memory-only counting if ICodeCache unavailable
+                    }
+
+                    for (jadx.api.JavaClass cls : classes) {
+                        boolean inMem = cls.getClassNode() != null && cls.getClassNode().getState().isProcessComplete();
+                        boolean onDisk = codeCache != null && codeCache.contains(cls.getRawName());
+                        if (inMem) cachedInMemory++;
+                        if (onDisk) cachedOnDisk++;
+                        if (inMem || onDisk) processed++;
+                    }
+
+                    // Store in cache
+                    decompileStatCache = new DecompileStatCache(total, processed, cachedInMemory, cachedOnDisk);
                 }
 
                 int cachedPercentage = total > 0 ? (processed * 100 / total) : 0;
@@ -558,6 +629,8 @@ public class PluginServer {
                 response.put("cached_percentage", cachedPercentage);
                 response.put("cached_in_memory", cachedInMemory);
                 response.put("cached_on_disk", cachedOnDisk);
+                response.put("stats_cache_hit", cacheHit);
+                response.put("stats_cache_ttl_seconds", DECOMPILE_STATUS_CACHE_TTL_MS / 1000);
 
                 // === Warmup Status ===
                 response.put("warmup", com.zin.jadxaimcp.utils.WarmupManager.getStatus());
@@ -672,6 +745,24 @@ public class PluginServer {
         app.post("/cache/warmup/cancel", ctx -> {
             com.zin.jadxaimcp.utils.WarmupManager.cancel();
             ctx.json(java.util.Map.of("message", "Warmup cancel requested"));
+        });
+
+        // POST /recover-oom — clears the OOM flag so the service resumes handling requests.
+        // Requires authentication (the before() middleware already enforces this when auth is enabled).
+        app.post("/recover-oom", ctx -> {
+            if (!isOomDetected()) {
+                ctx.json(java.util.Map.of(
+                    "recovered", false,
+                    "message", "No OOM flag was set; service is not in degraded state"
+                ));
+                return;
+            }
+            System.getProperties().remove(JVM_OOM_KEY);
+            logger.warn("[JAI] OOM flag manually cleared via /recover-oom by {}", ctx.ip());
+            ctx.json(java.util.Map.of(
+                "recovered", true,
+                "message", "OOM flag cleared, service restored"
+            ));
         });
     }
     

@@ -44,6 +44,14 @@ public class MethodRoutes {
     private static final java.lang.reflect.Method METHOD_NODE_GET_USED = findOptionalMethod(MethodNode.class, "getUsed");
     private static final java.lang.reflect.Method METHOD_NODE_GET_UNRESOLVED_USED =
         findOptionalMethod(MethodNode.class, "getUnresolvedUsed");
+
+    static {
+        // Log reflection probe result once at class-load time so operators can confirm
+        // which API path is active without needing runtime debugging.
+        logger.info("[JADX-AI-MCP] MethodNode.getUsed() available via reflection: {}",
+            METHOD_NODE_GET_USED != null);
+    }
+
     private final MainWindow mainWindow;
     private final PaginationUtils paginationUtils;
 
@@ -676,6 +684,12 @@ public class MethodRoutes {
                         response.put("unresolved_callees", analysis.getUnresolvedCallees());
                         response.put("analysis_mode", analysis.getAnalysisMode());
                         response.put("note", analysis.getNote());
+
+                        // API compatibility metadata so callers know which reflection path is active.
+                        Map<String, Object> apiCompat = new HashMap<>();
+                        apiCompat.put("get_used_via", METHOD_NODE_GET_USED != null ? "reflection" : "unavailable");
+                        response.put("api_compatibility", apiCompat);
+
                         ctx.json(response);
                         return;
                     }

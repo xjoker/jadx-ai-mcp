@@ -166,3 +166,41 @@ def make_error(code: str, message: str, **extra: Any) -> Dict[str, Any]:
     if extra:
         result.update(extra)
     return result
+
+
+def format_error_response(
+    error_code: str,
+    message: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build a unified error response for MCP tool return values.
+
+    This is the canonical error format for tool-layer errors (validation,
+    routing, input checks). Prefer this over ad-hoc ``{"error": msg}`` dicts
+    so that callers can reliably detect failures by checking ``ok == false``.
+
+    Args:
+        error_code: A short, machine-readable error identifier, e.g.
+            ``"INVALID_INPUT"``, ``"INSTANCE_NOT_FOUND"``.
+        message: Human-readable description of the error.
+        details: Optional dict with additional context (e.g. valid values,
+            hints, or the offending parameter name).
+
+    Returns:
+        ``{"ok": False, "error_code": error_code, "message": message, "details": details}``
+
+    Example::
+
+        return format_error_response(
+            "INVALID_INPUT",
+            f"Invalid match_mode: '{match_mode}'",
+            {"valid_values": ["substring", "exact", "prefix", "regex"]},
+        )
+    """
+    result: Dict[str, Any] = {
+        "ok": False,
+        "error_code": error_code,
+        "message": message,
+        "details": details or {},
+    }
+    return result

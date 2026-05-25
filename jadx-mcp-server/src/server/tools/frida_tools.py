@@ -17,6 +17,34 @@ from src.server.request_context import get_from_jadx_for_current_user as get_fro
 logger = get_logger("frida_tools")
 
 
+_FRIDA_HOOK_METADATA = {
+    "frida_min_version": "16.0",
+    "requires": ["Java"],
+    "tested_arch": ["arm64-v8a", "x86_64"],
+    "notes": "Uses Java.use() — requires ART runtime. Will not work on native-only targets.",
+}
+
+_FRIDA_TRACE_METADATA = {
+    "frida_min_version": "16.0",
+    "requires": ["Java"],
+    "tested_arch": ["arm64-v8a", "x86_64"],
+    "notes": (
+        "Uses Java.use() with method.implementation overrides — requires ART runtime. "
+        "Include subclasses with include_subclasses=True to capture polymorphic calls."
+    ),
+}
+
+_FRIDA_ENUM_METADATA = {
+    "frida_min_version": "16.0",
+    "requires": ["Java"],
+    "tested_arch": ["arm64-v8a", "x86_64"],
+    "notes": (
+        "Uses Java.choose() to enumerate live instances — requires ART runtime. "
+        "Static field reads happen immediately; instance enumeration may block briefly on large heaps."
+    ),
+}
+
+
 async def generate_frida_hook(
     class_name: str,
     method_name: Optional[str] = None,
@@ -46,6 +74,7 @@ async def generate_frida_hook(
             - method_name: Target method name (or "(all)")
             - hook_type: The hook type used
             - script: Generated Frida JavaScript script
+            - metadata: Frida version requirements and runtime notes
 
     MCP Tool: generate_frida_hook
     Description: Automatically generate ready-to-run Frida hook scripts with overload support and correct type conversion
@@ -59,6 +88,7 @@ async def generate_frida_hook(
         logger.warning(f"generate_frida_hook error: {result.get('error')}")
     else:
         logger.info(f"generate_frida_hook: class={class_name}, method={method_name}, type={hook_type}")
+        result["metadata"] = _FRIDA_HOOK_METADATA
     return result
 
 
@@ -97,6 +127,7 @@ async def generate_frida_trace(
         logger.warning(f"generate_frida_trace error: {result.get('error')}")
     else:
         logger.info(f"generate_frida_trace: class={class_name}, subclasses={include_subclasses}")
+        result["metadata"] = _FRIDA_TRACE_METADATA
     return result
 
 
@@ -132,6 +163,7 @@ async def generate_frida_enum(
         logger.warning(f"generate_frida_enum error: {result.get('error')}")
     else:
         logger.info(f"generate_frida_enum: class={class_name}")
+        result["metadata"] = _FRIDA_ENUM_METADATA
     return result
 
 

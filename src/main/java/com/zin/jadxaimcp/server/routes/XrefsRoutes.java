@@ -65,6 +65,9 @@ public class XrefsRoutes {
         String className = validateRequiredParam(ctx, "class_name");
         if (className == null) return;
 
+        boolean includeSnippet = "true".equalsIgnoreCase(ctx.queryParam("include_snippet"));
+        int contextLines = parseIntParam(ctx.queryParam("context_lines"), 3);
+
         if (!tryAcquireDecompileLock(ctx)) {
             return;
         }
@@ -97,6 +100,11 @@ public class XrefsRoutes {
 
             List<Map<String, Object>> referenceList =
                 collectPreciseReferences(targetJavaClass, classReferences, methodReferences);
+
+            if (includeSnippet) {
+                attachSnippets(referenceList, contextLines);
+            }
+
             sendXrefsResponse(ctx, referenceList);
         } catch (PaginationException e) {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToClass(): " + e.getMessage(), logger);
@@ -132,6 +140,9 @@ public class XrefsRoutes {
         String methodName = validateRequiredParam(ctx, "method_name");
         if (className == null || methodName == null) return;
 
+        boolean includeSnippet = "true".equalsIgnoreCase(ctx.queryParam("include_snippet"));
+        int contextLines = parseIntParam(ctx.queryParam("context_lines"), 3);
+
         if (!tryAcquireDecompileLock(ctx)) {
             return;
         }
@@ -160,6 +171,11 @@ public class XrefsRoutes {
                     collectMethodReferences(relatedMethod, extractMethods(relatedMethod.getUseIn()))
                 );
             }
+
+            if (includeSnippet) {
+                attachSnippets(referenceList, contextLines);
+            }
+
             sendXrefsResponse(ctx, referenceList);
         } catch (PaginationException e) {
             JadxAIMCPPluginError.handleError(ctx, 400, "Pagination error occurred while trying to handleXrefsToMethod(): " + e.getMessage(), logger);
@@ -792,6 +808,128 @@ public class XrefsRoutes {
             JadxAIMCPPluginError.handleError(ctx, "Internal error in batch xrefs: " + e.getMessage(), e, logger);
         } finally {
             JadxSearchLock.release();
+        }
+    }
+
+    /**
+     * Parses an integer query parameter, returning {@code defaultValue} if the
+     * parameter is null, blank, or non-numeric.
+     */
+    private int parseIntParam(String raw, int defaultValue) {
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    /**
+     * For each entry in {@code referenceList}, looks up the source code of the
+     * referencing class and attaches a {@code snippet} sub-object containing
+     * the lines around {@code source_line} (or {@code decompiled_line} as fallback).
+     *
+     * <p>If source code is unavailable or an error occurs for a specific entry,
+     * that entry's {@code snippet} is set to {@code null} — the call never fails
+     * the entire xref response.</p>
+     *
+     * @param referenceList mutable list of xref maps (modified in place)
+     * @param contextLines  number of lines before and after the reference line to include
+     */
+    private void attachSnippets(List<Map<String, Object>> referenceList, int contextLines) {
+        // Cache source code per class name to avoid repeated decompilation
+        Map<String, String[]> sourceLineCache = new HashMap<>();
+
+        for (Map<String, Object> ref : referenceList) {
+            try {
+                String fromClassName = (String) ref.get("class");
+                if (fromClassName == null || fromClassName.isEmpty()) {
+                    ref.put("snippet", null);
+                    continue;
+                }
+
+                // Resolve the target line — prefer source_line (maps to original .java/.kt),
+                // fall back to decompiled_line.
+                Integer targetLine = null;
+                Object sourceLine = ref.get("source_line");
+                if (sourceLine instanceof Number) {
+                    targetLine = ((Number) sourceLine).intValue();
+                }
+                if (targetLine == null || targetLine <= 0) {
+                    Object decompiledLine = ref.get("decompiled_line");
+                    if (decompiledLine instanceof Number) {
+                        targetLine = ((Number) decompiledLine).intValue();
+                    }
+                }
+                if (targetLine == null || targetLine <= 0) {
+                    ref.put("snippet", null);
+                    continue;
+                }
+
+                // Fetch and cache decompiled source lines for this class.
+                String[] lines = sourceLineCache.get(fromClassName);
+                if (lines == null) {
+                    lines = fetchSourceLines(fromClassName);
+                    sourceLineCache.put(fromClassName, lines != null ? lines : new String[0]);
+                }
+                if (lines == null || lines.length == 0) {
+                    ref.put("snippet", null);
+                    continue;
+                }
+
+                // lines array is 0-based; targetLine is 1-based.
+                int zeroLine = targetLine - 1;
+                int startLine = Math.max(0, zeroLine - contextLines);
+                int endLine = Math.min(lines.length - 1, zeroLine + contextLines);
+
+                StringBuilder sb = new StringBuilder();
+                for (int i = startLine; i <= endLine; i++) {
+                    sb.append(lines[i]);
+                    if (i < endLine) {
+                        sb.append('\n');
+                    }
+                }
+
+                Map<String, Object> snippet = new HashMap<>();
+                snippet.put("code", sb.toString());
+                snippet.put("start_line", startLine + 1); // convert back to 1-based
+                snippet.put("end_line", endLine + 1);
+                ref.put("snippet", snippet);
+
+            } catch (Exception e) {
+                logger.debug("[JAI] Failed to attach snippet for xref entry: {}", e.getMessage());
+                ref.put("snippet", null);
+            }
+        }
+    }
+
+    /**
+     * Returns the decompiled source of {@code className} split into lines, or
+     * {@code null} if the class cannot be found or decompiled.
+     */
+    private String[] fetchSourceLines(String className) {
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            Map<String, jadx.api.JavaClass> classMap = ClassCacheManager.getCache();
+            jadx.api.JavaClass cls = ClassCacheManager.findClass(classMap, className);
+            if (cls == null) {
+                return null;
+            }
+            jadx.api.ICodeInfo codeInfo = cls.getCodeInfo();
+            if (codeInfo == null) {
+                return null;
+            }
+            String code = codeInfo.getCodeStr();
+            if (code == null) {
+                return null;
+            }
+            String newLine = wrapper.getArgs().getCodeNewLineStr();
+            return code.split(java.util.regex.Pattern.quote(newLine), -1);
+        } catch (Exception e) {
+            logger.debug("[JAI] fetchSourceLines failed for {}: {}", className, e.getMessage());
+            return null;
         }
     }
 

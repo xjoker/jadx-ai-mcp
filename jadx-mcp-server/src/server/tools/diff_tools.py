@@ -10,6 +10,7 @@ License: See LICENSE file
 """
 
 import difflib
+import re
 from typing import Optional
 
 from src.server.logging_config import get_logger
@@ -23,6 +24,137 @@ _MAX_MODIFIED_CLASSES_REPORTED = 30
 _MAX_CLASSES_FOR_METHOD_DIFF = 200
 _MAX_CODE_DIFFS = 20
 _CLASS_FETCH_LIMIT = 5000
+
+
+def _parse_manifest_permissions(manifest_xml: str) -> set[str]:
+    """Extract uses-permission names from manifest XML text."""
+    return set(re.findall(
+        r'<uses-permission[^>]+android:name=["\']([^"\']+)["\']',
+        manifest_xml,
+    ))
+
+
+def _parse_exported_components(manifest_xml: str) -> list[dict[str, str]]:
+    """
+    Extract exported components (activity, service, receiver, provider) from manifest XML.
+    A component is considered exported if it has android:exported="true" or contains
+    an <intent-filter> child (implicit export).
+    """
+    components: list[dict[str, str]] = []
+
+    # Match component tags with their full attribute block
+    component_pattern = re.compile(
+        r'<(activity|service|receiver|provider)\s([^>]*?)(/?>)',
+        re.DOTALL,
+    )
+
+    # For intent-filter detection we look for the component block end
+    # This is a simplified heuristic — not full XML parsing
+    for m in component_pattern.finditer(manifest_xml):
+        comp_type = m.group(1)
+        attrs = m.group(2)
+
+        name_match = re.search(r'android:name=["\']([^"\']+)["\']', attrs)
+        if not name_match:
+            continue
+        comp_name = name_match.group(1)
+
+        exported_match = re.search(r'android:exported=["\']([^"\']+)["\']', attrs)
+        explicitly_exported = exported_match and exported_match.group(1).lower() == "true"
+
+        if explicitly_exported:
+            components.append({"type": comp_type, "name": comp_name})
+
+    return components
+
+
+def _parse_sdk_versions(manifest_xml: str) -> tuple[Optional[int], Optional[int]]:
+    """Return (min_sdk_version, target_sdk_version) from manifest XML, or None if absent."""
+    min_sdk: Optional[int] = None
+    target_sdk: Optional[int] = None
+
+    min_match = re.search(r'android:minSdkVersion=["\'](\d+)["\']', manifest_xml)
+    if min_match:
+        try:
+            min_sdk = int(min_match.group(1))
+        except ValueError:
+            pass
+
+    target_match = re.search(r'android:targetSdkVersion=["\'](\d+)["\']', manifest_xml)
+    if target_match:
+        try:
+            target_sdk = int(target_match.group(1))
+        except ValueError:
+            pass
+
+    return min_sdk, target_sdk
+
+
+async def _fetch_manifest(instance_id: str) -> Optional[str]:
+    """Fetch the AndroidManifest.xml text from a JADX instance. Returns None on failure."""
+    try:
+        result = await get_from_jadx("android-manifest", instance_id=instance_id)
+        if isinstance(result, dict):
+            # Common response shapes: {"manifest": "..."} or {"content": "..."} or {"xml": "..."}
+            for key in ("manifest", "content", "xml", "text"):
+                if key in result and isinstance(result[key], str):
+                    return result[key]
+        if isinstance(result, str):
+            return result
+        return None
+    except Exception:
+        return None
+
+
+async def _build_manifest_diff(
+    old_instance_id: str,
+    new_instance_id: str,
+) -> Optional[dict]:
+    """
+    Compare AndroidManifest.xml between two JADX instances.
+
+    Returns a manifest_diff dict, or None if manifest is not available on either instance.
+    """
+    old_xml = await _fetch_manifest(old_instance_id)
+    new_xml = await _fetch_manifest(new_instance_id)
+
+    if not old_xml or not new_xml:
+        return None
+
+    old_perms = _parse_manifest_permissions(old_xml)
+    new_perms = _parse_manifest_permissions(new_xml)
+    old_exported = _parse_exported_components(old_xml)
+    new_exported = _parse_exported_components(new_xml)
+
+    old_min_sdk, old_target_sdk = _parse_sdk_versions(old_xml)
+    new_min_sdk, new_target_sdk = _parse_sdk_versions(new_xml)
+
+    # Exported component sets (by type+name for comparison)
+    old_comp_keys = {(c["type"], c["name"]) for c in old_exported}
+    new_comp_keys = {(c["type"], c["name"]) for c in new_exported}
+
+    comps_added = [
+        {"type": t, "name": n}
+        for t, n in sorted(new_comp_keys - old_comp_keys)
+    ]
+    comps_removed = [
+        {"type": t, "name": n}
+        for t, n in sorted(old_comp_keys - new_comp_keys)
+    ]
+
+    def _sdk_change(old: Optional[int], new: Optional[int]) -> Optional[dict]:
+        if old != new:
+            return {"from": old, "to": new}
+        return None
+
+    return {
+        "permissions_added": sorted(new_perms - old_perms),
+        "permissions_removed": sorted(old_perms - new_perms),
+        "exported_components_added": comps_added,
+        "exported_components_removed": comps_removed,
+        "min_sdk_changed": _sdk_change(old_min_sdk, new_min_sdk),
+        "target_sdk_changed": _sdk_change(old_target_sdk, new_target_sdk),
+    }
 
 
 async def _fetch_file_info(instance_id: str) -> dict:
@@ -217,7 +349,10 @@ async def compare_versions(
     if len(common) > compare_limit:
         classes_unchanged += len(common) - compare_limit  # not compared, count as unchanged
 
-    # 4. Build response
+    # 4. Manifest diff
+    manifest_diff = await _build_manifest_diff(old_instance_id, new_instance_id)
+
+    # 5. Build response
     if not package:
         tips.append(
             "No package filter was applied. Results may include third-party library changes. "
@@ -239,6 +374,7 @@ async def compare_versions(
         "added_classes": added[:_MAX_CLASSES_REPORTED],
         "removed_classes": removed[:_MAX_CLASSES_REPORTED],
         "modified_classes": modified_classes,
+        "manifest_diff": manifest_diff,
         "analysis_tips": tips,
     }
 

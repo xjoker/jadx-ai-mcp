@@ -150,6 +150,14 @@ public class SearchRoutes {
      *   <li>{@code exclude} (optional): Comma-separated package prefixes to exclude</li>
      * </ul>
      */
+    /**
+     * Supported match modes for metadata searches (class_name / method_name / field_name).
+     * Code searches always use substring matching to avoid performance issues.
+     */
+    public enum MatchMode {
+        SUBSTRING, EXACT, PREFIX, REGEX
+    }
+
     public void handleSearchClassesByKeyword(Context ctx) {
         String searchTerm = ctx.queryParam("search_term");
         if (searchTerm == null || searchTerm.isEmpty()) {
@@ -173,12 +181,28 @@ public class SearchRoutes {
             }
         }
 
+        // Parse match_mode (applies to metadata searches: class/method/field name)
+        MatchMode matchMode = parseMatchMode(ctx.queryParam("match_mode"));
+
         // Parse search locations, default to CODE if not specified
         Set<SearchLocation> searchLocations = parseSearchLocations(searchInParam);
 
         // Check if code/comment search (requires getCode() - expensive)
         boolean isCodeSearch = searchLocations.contains(SearchLocation.CODE)
             || searchLocations.contains(SearchLocation.COMMENT);
+
+        // Pre-compile regex pattern for REGEX mode to detect errors early
+        Pattern regexPattern = null;
+        if (matchMode == MatchMode.REGEX && !isCodeSearch) {
+            try {
+                regexPattern = Pattern.compile(searchTerm, Pattern.CASE_INSENSITIVE);
+            } catch (java.util.regex.PatternSyntaxException e) {
+                JadxAIMCPPluginError.handleError(ctx, 400,
+                    "Invalid regex pattern: " + e.getMessage(), logger);
+                return;
+            }
+        }
+        final Pattern compiledRegex = regexPattern;
 
         // Parse pagination parameters - limit results per page
         int offset = paginationUtils.getIntParam(ctx, "offset", 0);
@@ -191,6 +215,7 @@ public class SearchRoutes {
             List<JavaClass> filteredClasses = filterSearchClasses(allClasses, packageFilter, excludePrefixes);
 
             if (isCodeSearch) {
+                // Code searches always use substring — pass through with match_mode echoed in response
                 handleCoordinatedCodeSearch(
                     ctx,
                     wrapper,
@@ -202,32 +227,76 @@ public class SearchRoutes {
                     searchInParam,
                     searchLocations,
                     offset,
-                    count
+                    count,
+                    matchMode
                 );
                 return;
             }
 
             // Fast-path: attempt O(1) exact-match lookup via pre-built name indices.
-            CodeSearchCoordinator.SearchResult indexResult = tryExactNameIndexSearch(
-                searchTerm, searchLocations, packageFilter, excludePrefixes, allClasses);
-            if (indexResult != null) {
-                ctx.json(buildSearchResponse(indexResult, offset, count));
-                return;
+            // Only available for EXACT mode (the index uses exact equality).
+            if (matchMode == MatchMode.EXACT || matchMode == MatchMode.SUBSTRING) {
+                CodeSearchCoordinator.SearchResult indexResult = tryExactNameIndexSearch(
+                    searchTerm, searchLocations, packageFilter, excludePrefixes, allClasses);
+                if (indexResult != null && matchMode == MatchMode.EXACT) {
+                    ctx.json(buildSearchResponse(indexResult, offset, count, matchMode));
+                    return;
+                }
+                // For SUBSTRING, only use index when it returns results (exact hit also covers substring)
+                if (indexResult != null && matchMode == MatchMode.SUBSTRING) {
+                    ctx.json(buildSearchResponse(indexResult, offset, count, matchMode));
+                    return;
+                }
             }
 
-            SearchExecution searchExecution = executeSearch(
+            SearchExecution searchExecution = executeSearchWithMatchMode(
                 wrapper,
                 allClasses,
                 filteredClasses,
                 searchTerm,
                 searchLocations,
                 false,
-                offset + count + 1
+                offset + count + 1,
+                matchMode,
+                compiledRegex
             );
-            ctx.json(buildSearchResponse(searchExecution.getResult(), offset, count));
+            ctx.json(buildSearchResponse(searchExecution.getResult(), offset, count, matchMode));
         } catch (Exception e) {
             JadxAIMCPPluginError.handleError(ctx,
                     "Internal error in search: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
+     * Parses the {@code match_mode} query parameter into a {@link MatchMode} enum value.
+     * Defaults to {@code SUBSTRING} for unrecognized or absent values.
+     */
+    private MatchMode parseMatchMode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return MatchMode.SUBSTRING;
+        }
+        switch (raw.toLowerCase().trim()) {
+            case "exact":   return MatchMode.EXACT;
+            case "prefix":  return MatchMode.PREFIX;
+            case "regex":   return MatchMode.REGEX;
+            case "substring":
+            default:        return MatchMode.SUBSTRING;
+        }
+    }
+
+    /**
+     * Returns true if {@code candidate} matches {@code term} according to {@code mode}.
+     * Both strings should already be lowercased when {@code mode} is SUBSTRING or PREFIX.
+     * EXACT uses case-insensitive comparison. REGEX uses the pre-compiled pattern.
+     */
+    private boolean nameMatches(String candidate, String term, MatchMode mode, Pattern compiledRegex) {
+        if (candidate == null) return false;
+        switch (mode) {
+            case EXACT:     return candidate.equalsIgnoreCase(term);
+            case PREFIX:    return candidate.toLowerCase().startsWith(term.toLowerCase());
+            case REGEX:     return compiledRegex != null && compiledRegex.matcher(candidate).find();
+            case SUBSTRING:
+            default:        return candidate.toLowerCase().contains(term.toLowerCase());
         }
     }
 
@@ -326,7 +395,8 @@ public class SearchRoutes {
         String searchInParam,
         Set<SearchLocation> searchLocations,
         int offset,
-        int count
+        int count,
+        MatchMode matchMode
     ) throws Exception {
         CodeSearchCoordinator.SearchReservation reservation = CodeSearchCoordinator.reserve(
             wrapper,
@@ -337,7 +407,7 @@ public class SearchRoutes {
         );
 
         if (reservation.hasCachedResult()) {
-            ctx.json(buildSearchResponse(reservation.getCachedResult(), offset, count));
+            ctx.json(buildSearchResponse(reservation.getCachedResult(), offset, count, matchMode));
             return;
         }
 
@@ -368,7 +438,7 @@ public class SearchRoutes {
                                 ? cause.getMessage() : ex.getClass().getSimpleName()
                         );
                     }
-                    return (Object) buildSearchResponse(value, offset, count);
+                    return (Object) buildSearchResponse(value, offset, count, matchMode);
                 });
             ctx.future(() -> followerFuture);
             return;
@@ -409,7 +479,7 @@ public class SearchRoutes {
                     execution.getElapsedMs()
                 );
             }
-            ctx.json(buildSearchResponse(execution.getResult(), offset, count));
+            ctx.json(buildSearchResponse(execution.getResult(), offset, count, matchMode));
         } catch (Exception e) {
             CodeSearchCoordinator.completeFailure(key, future, e);
             throw e;
@@ -661,6 +731,15 @@ public class SearchRoutes {
         int offset,
         int count
     ) {
+        return buildSearchResponse(result, offset, count, MatchMode.SUBSTRING);
+    }
+
+    private Map<String, Object> buildSearchResponse(
+        CodeSearchCoordinator.SearchResult result,
+        int offset,
+        int count,
+        MatchMode matchMode
+    ) {
         List<String> matches = result.getMatches();
         List<String> paginatedResults = new ArrayList<>();
         for (int i = offset; i < Math.min(offset + count, matches.size()); i++) {
@@ -675,6 +754,7 @@ public class SearchRoutes {
         response.put("has_more", matches.size() > offset + paginatedResults.size());
         response.put("next_offset", offset + paginatedResults.size());
         response.put("search_info", result.getSearchInfo());
+        response.put("match_mode", matchMode.name().toLowerCase());
         return response;
     }
 
@@ -723,6 +803,110 @@ public class SearchRoutes {
         public boolean isTimedOut() {
             return timedOut;
         }
+    }
+
+    /**
+     * Variant of {@link #executeSearch} that applies {@code matchMode} for metadata
+     * searches (class/method/field name). Code searches always use substring matching.
+     */
+    SearchExecution executeSearchWithMatchMode(
+        JadxWrapper wrapper,
+        List<JavaClass> allClasses,
+        List<JavaClass> filteredClasses,
+        String searchTerm,
+        Set<SearchLocation> searchLocations,
+        boolean collectAllResults,
+        int resultsNeeded,
+        MatchMode matchMode,
+        Pattern compiledRegex
+    ) {
+        if (matchMode == null || matchMode == MatchMode.SUBSTRING) {
+            // Default path — delegate to the existing method unchanged.
+            return executeSearch(wrapper, allClasses, filteredClasses, searchTerm,
+                searchLocations, collectAllResults, resultsNeeded);
+        }
+
+        // For non-default modes apply custom name matching for metadata searches.
+        final String term = searchTerm.toLowerCase();
+        final java.util.Set<String> matchedClasses = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final AtomicInteger totalMatches = new AtomicInteger(0);
+        final AtomicBoolean cancelled = new AtomicBoolean(false);
+
+        long startTimeMs = System.currentTimeMillis();
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(SEARCH_TIMEOUT_SECONDS);
+        boolean timedOut = false;
+
+        for (JavaClass cls : filteredClasses) {
+            if (cancelled.get()) break;
+            if (System.nanoTime() >= deadlineNanos) {
+                timedOut = true;
+                break;
+            }
+            try {
+                boolean matched = classMatchesInLocationWithMode(cls, searchTerm, term, searchLocations, matchMode, compiledRegex);
+                if (matched && matchedClasses.add(cls.getFullName())) {
+                    int total = totalMatches.incrementAndGet();
+                    if (!collectAllResults && total >= resultsNeeded) {
+                        cancelled.set(true);
+                    }
+                }
+            } catch (Exception ignored) {
+                // Skip failed classes
+            }
+        }
+
+        long elapsedMs = Math.max(0L, System.currentTimeMillis() - startTimeMs);
+        Map<String, Object> searchInfo = new HashMap<>();
+        searchInfo.put("total_found", totalMatches.get());
+        searchInfo.put("total_classes", allClasses.size());
+        searchInfo.put("filtered_classes", filteredClasses.size());
+        searchInfo.put("elapsed_seconds", TimeUnit.MILLISECONDS.toSeconds(elapsedMs));
+        searchInfo.put("timed_out", timedOut);
+        searchInfo.put("parallel_batches", 0);
+        searchInfo.put("search_locations", searchLocations.toString());
+
+        CodeSearchCoordinator.SearchResult result = new CodeSearchCoordinator.SearchResult(
+            buildOrderedMatchList(filteredClasses, matchedClasses),
+            searchInfo
+        );
+        return new SearchExecution(result, elapsedMs, timedOut);
+    }
+
+    /**
+     * Checks whether {@code cls} matches {@code searchTerm} in any of the given
+     * metadata locations using the specified {@code matchMode}.
+     */
+    private boolean classMatchesInLocationWithMode(
+        JavaClass cls,
+        String searchTerm,
+        String termLower,
+        Set<SearchLocation> searchLocations,
+        MatchMode matchMode,
+        Pattern compiledRegex
+    ) {
+        for (SearchLocation location : searchLocations) {
+            if (location == SearchLocation.CODE || location == SearchLocation.COMMENT) {
+                continue; // code searches always use substring; handled by existing path
+            }
+            switch (location) {
+                case CLASS_NAME:
+                    if (nameMatches(cls.getName(), searchTerm, matchMode, compiledRegex)) return true;
+                    break;
+                case METHOD_NAME:
+                    for (JadxApiAdapter.MethodInfoSnapshot ms : JadxApiAdapter.getDeclaredMethodInfos(cls)) {
+                        if (nameMatches(ms.getName(), searchTerm, matchMode, compiledRegex)) return true;
+                    }
+                    break;
+                case FIELD_NAME:
+                    for (JadxApiAdapter.FieldInfoSnapshot fs : JadxApiAdapter.getDeclaredFieldInfos(cls)) {
+                        if (nameMatches(fs.getName(), searchTerm, matchMode, compiledRegex)) return true;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        return false;
     }
 
     /**

@@ -7,9 +7,21 @@ import jadx.gui.ui.MainWindow;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import com.zin.jadxaimcp.JadxAIMCP;
 import com.zin.jadxaimcp.utils.FileTypeDetector;
@@ -94,7 +106,15 @@ public class ApkInfoRoutes {
             if (detection.hasAndroidFeatures()) {
                 parseAndroidManifest(wrapper, result);
             }
-            
+
+            // DEX count and total classes (always available when classes loaded)
+            result.put("total_classes", classes.size());
+
+            // APK-specific enrichment: signatures, native libs, DEX count
+            if (detection.hasAndroidFeatures()) {
+                enrichApkMetadata(wrapper, result);
+            }
+
             // Server info
             result.put("server_bind_address", plugin.getCurrentBindAddress());
             result.put("server_port", plugin.getCurrentPort());
@@ -259,6 +279,115 @@ public class ApkInfoRoutes {
         }
     }
     
+    /**
+     * Enriches the APK info response with signature certificate, native libraries,
+     * and DEX count. Failures in any sub-section are caught and set to null to
+     * avoid breaking the rest of the response.
+     */
+    private void enrichApkMetadata(JadxWrapper wrapper, Map<String, Object> result) {
+        // Resolve APK file path
+        java.io.File apkFile = null;
+        try {
+            List<java.nio.file.Path> filePaths = wrapper.getProject().getFilePaths();
+            if (!filePaths.isEmpty()) {
+                apkFile = filePaths.get(0).toFile();
+            }
+        } catch (Exception e) {
+            logger.debug("Could not resolve APK file path: {}", e.getMessage());
+        }
+
+        if (apkFile == null || !apkFile.exists()) {
+            result.put("signing_certificate", null);
+            result.put("native_libraries", null);
+            result.put("dex_count", null);
+            return;
+        }
+
+        try (ZipFile zip = new ZipFile(apkFile)) {
+            // --- Signature certificate (v1: META-INF/*.RSA / *.DSA / *.EC) ---
+            Map<String, Object> certInfo = null;
+            try {
+                Enumeration<? extends ZipEntry> entries = zip.entries();
+                while (entries.hasMoreElements()) {
+                    ZipEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    if (name.startsWith("META-INF/") && (name.endsWith(".RSA") || name.endsWith(".DSA") || name.endsWith(".EC"))) {
+                        try (InputStream is = zip.getInputStream(entry)) {
+                            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                            Certificate cert = cf.generateCertificate(is);
+                            if (cert instanceof X509Certificate) {
+                                X509Certificate x509 = (X509Certificate) cert;
+                                certInfo = new LinkedHashMap<>();
+                                certInfo.put("subject", x509.getSubjectDN().getName());
+                                certInfo.put("algorithm", x509.getSigAlgName());
+
+                                // SHA-256 fingerprint
+                                byte[] encoded = x509.getEncoded();
+                                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                                byte[] digest = md.digest(encoded);
+                                StringBuilder hexSb = new StringBuilder();
+                                for (byte b : digest) {
+                                    hexSb.append(String.format("%02X", b));
+                                }
+                                certInfo.put("sha256", hexSb.toString().toLowerCase());
+
+                                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+                                sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+                                certInfo.put("valid_from", sdf.format(x509.getNotBefore()));
+                                certInfo.put("valid_until", sdf.format(x509.getNotAfter()));
+                            }
+                        } catch (Exception ex) {
+                            logger.debug("Failed to parse signing cert entry {}: {}", name, ex.getMessage());
+                        }
+                        if (certInfo != null) break; // use first found cert
+                    }
+                }
+            } catch (Exception ex) {
+                logger.debug("Failed to enumerate APK entries for cert: {}", ex.getMessage());
+            }
+            result.put("signing_certificate", certInfo);
+
+            // --- Native libraries: lib/<abi>/*.so ---
+            List<Map<String, Object>> nativeLibs = new ArrayList<>();
+            int dexCount = 0;
+            try {
+                Enumeration<? extends ZipEntry> allEntries = zip.entries();
+                while (allEntries.hasMoreElements()) {
+                    ZipEntry entry = allEntries.nextElement();
+                    String name = entry.getName();
+
+                    if (name.endsWith(".dex")) {
+                        dexCount++;
+                    }
+
+                    if (name.startsWith("lib/") && name.endsWith(".so") && !entry.isDirectory()) {
+                        // lib/<abi>/libfoo.so
+                        String[] parts = name.split("/");
+                        if (parts.length >= 3) {
+                            String abi = parts[1];
+                            String soName = parts[parts.length - 1];
+                            Map<String, Object> libEntry = new LinkedHashMap<>();
+                            libEntry.put("path", name);
+                            libEntry.put("abi", abi);
+                            libEntry.put("name", soName);
+                            nativeLibs.add(libEntry);
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                logger.debug("Failed to enumerate APK entries for native libs/dex: {}", ex.getMessage());
+            }
+            result.put("native_libraries", nativeLibs);
+            result.put("dex_count", dexCount);
+
+        } catch (Exception e) {
+            logger.debug("Failed to open APK as ZIP for metadata enrichment: {}", e.getMessage());
+            result.put("signing_certificate", null);
+            result.put("native_libraries", null);
+            result.put("dex_count", null);
+        }
+    }
+
     /**
      * Parse JAR MANIFEST.MF for common attributes.
      */

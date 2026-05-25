@@ -496,6 +496,469 @@ batch_get_class_source(class_names=[
 | Provider | `readPermission` / `writePermission` set |
 """
 
+    @mcp.prompt("triage-apk")
+    def triage_apk_prompt() -> str:
+        """Quickly classify an APK: purpose, feature set, tech stack, and obfuscation level.
+
+        Use this as the first step when you receive an unknown APK and need a high-level
+        overview before diving into deeper analysis.
+        """
+        return """You are triaging an unknown APK. Your goal is to answer four questions:
+1. What is this app?
+2. What are its main features?
+3. What technical libraries and frameworks does it use?
+4. How heavily obfuscated is it?
+
+**Step 1: File and Package Info**
+```python
+file_info = get_file_info()
+manifest   = get_android_manifest()
+```
+From `manifest`, extract:
+- `package` attribute on `<manifest>` → app package ID
+- `android:label` on `<application>` → app display name
+- `android:versionName` / `android:versionCode` → version
+- `<uses-permission>` → permission profile
+- `<activity>`, `<service>`, `<receiver>`, `<provider>` → component inventory
+
+**Step 2: Class Volume and Package Structure**
+```python
+status = get_decompile_status()
+pkgs   = list_packages()
+```
+- `total_classes` from status → overall size signal
+- Top-level packages in `pkgs` → identify app package vs third-party libraries
+
+**Step 3: Technology Stack Detection**
+Run metadata searches (fast, no cache needed):
+```python
+# Networking
+search_classes_by_keyword(search_term="OkHttpClient",  search_in="class")
+search_classes_by_keyword(search_term="Retrofit",       search_in="class")
+search_classes_by_keyword(search_term="Volley",         search_in="class")
+
+# DI frameworks
+search_classes_by_keyword(search_term="Dagger",  search_in="class")
+search_classes_by_keyword(search_term="Hilt",    search_in="class")
+search_classes_by_keyword(search_term="Koin",    search_in="class")
+
+# Database
+search_classes_by_keyword(search_term="RoomDatabase", search_in="class")
+search_classes_by_keyword(search_term="SQLiteDatabase", search_in="class")
+
+# React Native / Flutter / Xamarin / Cordova
+search_classes_by_keyword(search_term="ReactContext",     search_in="class")
+search_classes_by_keyword(search_term="FlutterActivity",  search_in="class")
+search_classes_by_keyword(search_term="XamarinForms",     search_in="class")
+
+# Analytics / Crash
+search_classes_by_keyword(search_term="FirebaseAnalytics", search_in="class")
+search_classes_by_keyword(search_term="Crashlytics",        search_in="class")
+```
+
+**Step 4: Obfuscation Assessment**
+```python
+main_activity = get_main_activity_class()
+```
+- Inspect class and method names: single-letter names (`a`, `b`, `c`) → ProGuard/R8 obfuscation
+- Check if `<application android:debuggable="true">` in manifest → debug build
+- Count classes with names ≤2 chars as a rough obfuscation ratio
+
+**Step 5: Output Format**
+Summarize findings as:
+```
+APP TRIAGE REPORT
+=================
+Package:        com.example.app
+Version:        2.3.1 (231)
+Purpose:        [1-2 sentences describing what the app does]
+Key Features:   [bullet list]
+Tech Stack:     [bullet list: networking, DB, DI, analytics…]
+Obfuscation:    None / Light (class names preserved) / Heavy (single-letter names)
+Risk Profile:   [permission highlights, notable attack surface]
+Recommended Next Steps:
+  - [e.g., "run find-crypto for crypto audit"]
+  - [e.g., "run find-network-endpoints to map API surface"]
+```
+"""
+
+    @mcp.prompt("find-crypto")
+    def find_crypto_prompt() -> str:
+        """Audit all cryptographic code: algorithm strength, key management, IV/salt usage."""
+        return """You are performing a **cryptographic audit** of the loaded APK.
+
+**Goal**: Find all encryption/hashing/signing code, assess algorithm choices, key
+management patterns, and common crypto implementation mistakes.
+
+**Step 1: Check Status**
+```python
+status = get_decompile_status()
+```
+If `cached_percentage` < 20%, use `search_in="class"` only for steps 2–3.
+
+**Step 2: Find Crypto Classes (metadata search — always fast)**
+```python
+crypto_terms = ["Cipher", "SecretKey", "KeyStore", "MessageDigest",
+                "Mac", "Signature", "SecureRandom", "KeyGenerator",
+                "KeyPairGenerator", "X509Certificate", "TrustManager",
+                "SSLContext", "CertificatePinner"]
+
+for term in crypto_terms:
+    search_classes_by_keyword(search_term=term, search_in="class", count=20)
+```
+
+**Step 3: Find Weak Algorithm References (metadata search)**
+```python
+weak_terms = ["DES", "MD5", "SHA1", "RC4", "ECB", "AES/ECB", "RSA/ECB"]
+for term in weak_terms:
+    search_classes_by_keyword(search_term=term, search_in="class", count=20)
+```
+
+**Step 4: Code-Level Search (requires cache > 20%)**
+```python
+if status["cached_percentage"] > 20:
+    code_terms = ['Cipher.getInstance("DES', 'Cipher.getInstance("AES/ECB',
+                  '"MD5"', '"SHA-1"', '"RC4"',
+                  "SecretKeySpec", "IvParameterSpec",
+                  "KeyStore.getInstance", "EncryptedSharedPreferences"]
+    for term in code_terms:
+        search_classes_by_keyword(search_term=term, search_in="code", count=10)
+```
+
+**Step 5: Inspect Key Classes**
+For each candidate class found above:
+```python
+get_class_source(class_name="com.example.CryptoHelper")
+```
+
+**Step 6: Trace Key Usage with Data-Flow**
+```python
+# Forward trace to see where encrypted data goes
+trace_data_flow(source_class="com.example.CryptoHelper",
+                source_method="encrypt", max_depth=3)
+
+# Backward trace to find key sources
+find_callers_chain(target_class="com.example.CryptoHelper",
+                   target_method="encrypt", max_depth=3)
+```
+
+**Assessment Checklist**:
+| Issue | Severity | What to look for |
+|-------|----------|-----------------|
+| Hardcoded key/IV | Critical | byte[] literals next to Cipher.init |
+| Weak algorithm (DES/MD5/SHA1/RC4) | High | getInstance("DES"), getInstance("MD5") |
+| ECB mode | High | AES/ECB or no mode specified |
+| No IV for CBC/GCM | High | Cipher.init(ENCRYPT_MODE, key) without IvParameterSpec |
+| Predictable random | Medium | new Random() instead of SecureRandom |
+| Key stored in SharedPreferences | Medium | SecretKey → putString |
+| Self-signed TrustManager | High | checkServerTrusted is empty |
+
+**Output Format**:
+```
+CRYPTO AUDIT REPORT
+===================
+Algorithms Found:  [list]
+Key Management:    [description]
+Weak Patterns:     [list of issues with class:method references]
+Recommendations:   [prioritized list]
+```
+"""
+
+    @mcp.prompt("find-network-endpoints")
+    def find_network_endpoints_prompt() -> str:
+        """Discover all API endpoints, base URLs, and domains used by the APK."""
+        return """You are mapping the **complete network API surface** of the loaded APK.
+
+**Goal**: Enumerate every URL, base URL, API path, and domain found in the app.
+
+**Step 1: Check Status**
+```python
+status = get_decompile_status()
+```
+
+**Step 2: Find Networking Libraries (metadata — always fast)**
+```python
+lib_terms = ["OkHttpClient", "Retrofit", "RequestQueue",
+             "HttpURLConnection", "HttpClient", "WebSocket",
+             "HttpClient", "Ktor", "gRPC", "GrpcChannel"]
+for term in lib_terms:
+    search_classes_by_keyword(search_term=term, search_in="class", count=20)
+```
+
+**Step 3: Find Retrofit/API Interface Classes**
+Retrofit defines endpoints as annotated interfaces. Find them:
+```python
+api_terms = ["ApiService", "ApiInterface", "RetrofitService", "NetworkService",
+             "RestService", "ApiClient", "WebService"]
+for term in api_terms:
+    search_classes_by_keyword(search_term=term, search_in="class", count=20)
+
+# Get source for each candidate to read @GET/@POST annotations
+for cls in candidates:
+    get_class_source(class_name=cls)
+```
+
+**Step 4: URL and Endpoint Patterns (requires cache)**
+```python
+if status["cached_percentage"] > 20:
+    url_terms = ["https://", "http://", "BASE_URL", "API_URL",
+                 "baseUrl", "endpoint", "/api/", "/v1/", "/v2/",
+                 "Authorization", "Bearer "]
+    for term in url_terms:
+        search_classes_by_keyword(search_term=term, search_in="code", count=30)
+```
+
+**Step 5: Manifest — Check Network Config**
+```python
+manifest = get_android_manifest()
+```
+Look for:
+- `android:usesCleartextTraffic="true"` — HTTP allowed
+- `android:networkSecurityConfig` → fetch that resource file
+- `<domain-config>` entries
+
+**Step 6: Certificate Pinning**
+```python
+pin_terms = ["CertificatePinner", "checkServerTrusted",
+             "TrustManager", "X509TrustManager"]
+for term in pin_terms:
+    search_classes_by_keyword(search_term=term, search_in="class", count=10)
+```
+
+**Step 7: Compile the Endpoint Map**
+For each API interface / network class found, read source and extract:
+- Base URLs
+- Path templates (e.g., `/users/{id}`)
+- HTTP methods (GET / POST / PUT / DELETE)
+- Authentication headers / tokens
+
+**Output Format**:
+```
+NETWORK ENDPOINT MAP
+====================
+Base URLs:
+  - https://api.example.com  (source: RetrofitClient.java:42)
+
+Endpoints:
+  GET  /users/{id}           (ApiService.getUser)
+  POST /auth/login           (ApiService.login)
+  ...
+
+Security:
+  Certificate pinning: Yes / No
+  Cleartext HTTP:      Allowed / Blocked
+  Custom TrustManager: Found / Not found
+```
+"""
+
+    @mcp.prompt("analyze-deeplink-attack-surface")
+    def analyze_deeplink_attack_surface_prompt() -> str:
+        """Map all deep-link / intent-filter entry points and analyze parameter injection risk."""
+        return """You are analyzing the **deep-link and intent-filter attack surface** of the loaded APK.
+
+**Goal**: Enumerate every custom scheme / App Link / intent-filter, identify which
+Activities/Services handle them, and assess parameter injection risks.
+
+**Step 1: Parse the Manifest**
+```python
+manifest = get_android_manifest()
+```
+Scan for all `<intent-filter>` blocks:
+- `<action android:name="android.intent.action.VIEW">` → deep-link handler
+- `<data android:scheme="...">` → custom URL scheme
+- `<data android:host="...">` → App Link domain
+- `<data android:pathPrefix="...">` → path scope
+
+Build a table:
+| Component | Type | Scheme | Host | Path |
+|-----------|------|--------|------|------|
+| ...       | activity | myapp | ... | /open |
+
+**Step 2: Find Deep-Link Handler Classes**
+For each component identified in step 1:
+```python
+get_class_source(class_name="com.example.DeepLinkActivity")
+get_method_by_name(class_name="com.example.DeepLinkActivity", method_name="onCreate")
+get_method_by_name(class_name="com.example.DeepLinkActivity", method_name="onNewIntent")
+```
+
+**Step 3: Trace Intent Data Extraction**
+Look for dangerous patterns in handler code:
+```python
+# Search for common URI/intent data extraction methods
+search_classes_by_keyword(search_term="getIntent",       search_in="method", count=20)
+search_classes_by_keyword(search_term="getData",         search_in="method", count=20)
+search_classes_by_keyword(search_term="getQueryParameter", search_in="method", count=20)
+search_classes_by_keyword(search_term="getStringExtra",  search_in="method", count=20)
+```
+
+**Step 4: Data-Flow from Intent to Sink**
+For each handler method that processes intent data:
+```python
+trace_data_flow(
+    source_class="com.example.DeepLinkActivity",
+    source_method="onCreate",
+    max_depth=4,
+)
+```
+Flag paths that reach:
+- `WebView.loadUrl` — XSS / open redirect
+- `Runtime.exec` — command injection
+- `SQLiteDatabase.rawQuery` — SQL injection
+- `startActivity` / `sendBroadcast` — intent redirection
+- `FileInputStream` / file path construction — path traversal
+
+**Step 5: Assess Validation**
+In each handler, look for:
+- Input validation / allow-list checks before using URI parameters
+- Authentication gates before sensitive actions
+- Fragment navigation via deep links (NavController)
+
+**Risk Scoring**:
+| Pattern | Risk |
+|---------|------|
+| URI param → WebView.loadUrl without validation | Critical |
+| URI param → startActivity intent | High |
+| No auth check on exported activity | High |
+| Custom scheme (not App Link) | Medium — spoofable |
+| App Link without digital asset link | Medium |
+
+**Output Format**:
+```
+DEEPLINK ATTACK SURFACE REPORT
+================================
+Deep Links Found: N
+Custom Schemes: [list]
+App Link Domains: [list]
+
+Handlers:
+  com.example.DeepLinkActivity
+    Handles: myapp://open?id={id}
+    Extracts: id (getQueryParameter)
+    Data flows to: WebView.loadUrl  ← HIGH RISK (open redirect)
+    Validation: None found
+
+Risk Summary: [Critical/High/Medium/Low count]
+```
+"""
+
+    @mcp.prompt("audit-webview")
+    def audit_webview_prompt() -> str:
+        """Perform a WebView security audit: JS injection, file access, bridge exposure."""
+        return """You are performing a **WebView security audit** of the loaded APK.
+
+**Goal**: Find all WebView usages, assess JavaScript bridge (addJavascriptInterface) exposure,
+file access permissions, and content loading patterns.
+
+**Step 1: Check Status**
+```python
+status = get_decompile_status()
+```
+
+**Step 2: Find All WebView Classes (metadata — fast)**
+```python
+wv_terms = ["WebView", "WebViewClient", "WebChromeClient",
+            "WebSettings", "addJavascriptInterface", "WebResourceRequest"]
+for term in wv_terms:
+    search_classes_by_keyword(search_term=term, search_in="class", count=20)
+```
+
+**Step 3: Find Dangerous WebView Configurations (code search)**
+```python
+if status["cached_percentage"] > 20:
+    dangerous = [
+        "setJavaScriptEnabled",
+        "addJavascriptInterface",
+        "setAllowFileAccess",
+        "setAllowFileAccessFromFileURLs",
+        "setAllowUniversalAccessFromFileURLs",
+        "loadUrl",
+        "evaluateJavascript",
+        "onReceivedSslError",
+        "shouldOverrideUrlLoading",
+    ]
+    for term in dangerous:
+        search_classes_by_keyword(search_term=term, search_in="code", count=15)
+```
+
+**Step 4: Inspect WebView Configuration Classes**
+For each class that appeared in steps 2–3:
+```python
+get_class_source(class_name="com.example.MyWebActivity")
+```
+Look for:
+- `webSettings.setJavaScriptEnabled(true)` — JS enabled
+- `webView.addJavascriptInterface(obj, "name")` — bridge exposed
+- `webSettings.setAllowFileAccess(true)` — local file access
+- `webSettings.setAllowFileAccessFromFileURLs(true)` — **dangerous**: file:// XSS
+- `webSettings.setAllowUniversalAccessFromFileURLs(true)` — **critical**: same-origin bypass
+
+**Step 5: Audit JavaScript Bridge Objects**
+For each interface object registered via `addJavascriptInterface`:
+```python
+get_class_source(class_name="com.example.JsBridgeObject")
+```
+- List all `@JavascriptInterface` annotated methods
+- Check what each method does (file read, intent fire, native call?)
+- Check Android version guards (bridges are dangerous on API < 17)
+
+**Step 6: Trace URL Loading Sources**
+```python
+# Who calls loadUrl? Trace backward
+find_callers_chain(
+    target_class="com.example.MyWebActivity",
+    target_method="loadUrl",
+    max_depth=3,
+)
+```
+Check if `loadUrl` parameter comes from:
+- External intent (`getIntent().getData()`) — open redirect risk
+- Remote server response — server-side redirect abuse
+- Hardcoded string — generally safe
+
+**Step 7: SSL Error Handling**
+Find `onReceivedSslError` overrides:
+```python
+search_classes_by_keyword(search_term="onReceivedSslError", search_in="method", count=10)
+```
+If `handler.proceed()` is called unconditionally → **SSL pinning bypass**.
+
+**Risk Assessment**:
+| Pattern | Severity |
+|---------|----------|
+| `addJavascriptInterface` with sensitive methods | Critical |
+| `setAllowUniversalAccessFromFileURLs(true)` | Critical |
+| `onReceivedSslError` → `handler.proceed()` | High |
+| `setAllowFileAccessFromFileURLs(true)` | High |
+| External URL in `loadUrl` without validation | High |
+| `setJavaScriptEnabled(true)` with external content | Medium |
+| `setAllowFileAccess(true)` only | Low |
+
+**Output Format**:
+```
+WEBVIEW AUDIT REPORT
+====================
+WebViews Found: N (list of classes)
+
+JavaScript:  Enabled / Disabled
+JS Bridge:   N interfaces registered
+  - "bridgeName" → com.example.JsBridgeObject
+    Methods: [list of @JavascriptInterface methods]
+    Risk: [Critical/High/Medium/Low]
+
+File Access: Enabled / Disabled
+Universal File Access: Enabled / Disabled  ← if enabled: CRITICAL
+
+SSL Handling: Secure / BYPASSED (onReceivedSslError calls handler.proceed())
+
+URL Sources: [Hardcoded / Intent data / Remote response]
+
+Top Risks:
+  1. [description + location]
+  2. ...
+```
+"""
+
     @mcp.prompt("batch-operations")
     def batch_operations_prompt() -> str:
         """Guide the AI on best practices for batch operations to reduce overhead."""

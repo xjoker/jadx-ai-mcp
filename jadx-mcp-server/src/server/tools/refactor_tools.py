@@ -11,6 +11,7 @@ License: See LICENSE file
 
 from typing import Optional
 from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
+from src.server.types import format_error_response
 
 
 async def rename_class(class_name: str, new_name: str, instance_id: Optional[str] = None) -> dict:
@@ -209,6 +210,36 @@ async def import_rename_mappings(mappings: list, instance_id: Optional[str] = No
     )
 
 
+async def apply_proguard_mapping(mapping_content: str, instance_id: Optional[str] = None) -> dict:
+    """
+    Apply a ProGuard/R8 mapping.txt to batch-rename all matching obfuscated classes.
+
+    Parses the standard ProGuard mapping format:
+        original.class.Name -> obfuscated.a:
+            int originalField -> b
+            void originalMethod() -> c
+
+    All obfuscated class names found in JADX that match entries in the mapping
+    are renamed in bulk. This is much faster than calling rename() individually.
+
+    Args:
+        mapping_content: Full contents of a ProGuard/R8 mapping.txt file.
+        instance_id: Optional target JADX instance name.
+
+    Returns:
+        dict: {applied: int, failed: int, errors: list[str], total: int, format: str}
+
+    MCP Tool: apply_proguard_mapping
+    Description: Batch-apply a ProGuard/R8 mapping.txt to rename all obfuscated classes at once
+    """
+    return await get_from_jadx(
+        "apply-proguard-mapping",
+        instance_id=instance_id,
+        method="POST",
+        json_body={"mapping_content": mapping_content},
+    )
+
+
 async def rename_package(old_package_name: str, new_package_name: str, instance_id: Optional[str] = None) -> dict:
     """
     Renames a package and all its classes.
@@ -357,3 +388,55 @@ def register_refactor_tools(mcp, with_busy_check):
             return await rename_package(old_name, new_name, instance_id=instance_id)
         else:
             return {"success": False, "error": f"Invalid target_type: {target_type}. Use: class, method, field, package"}
+
+    @mcp.tool()
+    @with_busy_check
+    async def apply_proguard_mapping_tool(
+        mapping_content: str,
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Apply a ProGuard/R8 mapping.txt to batch-rename all obfuscated classes at once.
+
+        Accepts the standard ProGuard mapping format produced by R8/ProGuard:
+            original.package.ClassName -> a.b.c:
+                int originalField -> d
+                void originalMethod() -> e
+
+        All obfuscated class names found in the loaded APK that match mapping entries
+        are renamed in bulk. This is orders of magnitude faster than calling rename()
+        for each class individually and is the recommended approach when a mapping file
+        is available.
+
+        Input validation: mapping_content must be non-empty and must contain at least
+        one '->' arrow (the core ProGuard mapping separator). Empty or malformed content
+        is rejected before sending to the JADX instance.
+
+        Args:
+            mapping_content: Complete contents of a ProGuard/R8 mapping.txt file.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {applied: int, failed: int, errors: [str], total: int, format: str}
+        """
+        if not mapping_content or not mapping_content.strip():
+            return format_error_response(
+                "INVALID_INPUT",
+                "mapping_content cannot be empty",
+                {"hint": "Provide the full contents of a ProGuard/R8 mapping.txt file"},
+            )
+        if "->" not in mapping_content:
+            return format_error_response(
+                "INVALID_INPUT",
+                "mapping_content does not appear to be a valid ProGuard mapping file",
+                {
+                    "hint": (
+                        "ProGuard/R8 mapping files contain '->' arrows, e.g.:\n"
+                        "  com.example.RealName -> a.b:\n"
+                        "      void realMethod() -> c\n"
+                        "Ensure you are pasting the complete mapping.txt content."
+                    )
+                },
+            )
+        return await apply_proguard_mapping(
+            mapping_content=mapping_content,
+            instance_id=instance_id,
+        )
