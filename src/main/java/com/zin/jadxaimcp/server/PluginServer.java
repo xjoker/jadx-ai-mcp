@@ -574,7 +574,7 @@ public class PluginServer {
                 memoryInfo.put("total_mb", totalMemory / (1024 * 1024));
                 memoryInfo.put("used_mb", usedMemory / (1024 * 1024));
                 memoryInfo.put("free_mb", freeMemory / (1024 * 1024));
-                memoryInfo.put("usage_percentage", totalMemory > 0 ? (int)(usedMemory * 100 / totalMemory) : 0);
+                memoryInfo.put("usage_percentage", maxMemory > 0 ? (int)(usedMemory * 100 / maxMemory) : 0);
                 response.put("memory", memoryInfo);
                 
                 // === Thread Statistics (real data from ThreadMXBean) ===
