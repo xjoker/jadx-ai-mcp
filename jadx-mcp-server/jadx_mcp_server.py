@@ -32,30 +32,47 @@ JADX AI MCP Server - Android APK Reverse Engineering Tools
 
 IMPORTANT: Call get_decompile_status() before any resource-intensive operation.
 
-DECISION GUIDE (from get_decompile_status response):
-- cached_percentage < 20%  → use search_in='class'/'method' only (avoid 'code')
+DECISION GUIDE:
+Step 1 — call get_decompile_status():
 - memory.usage_percentage > 85%  → reduce batch size to ≤5, avoid get_smali_of_class
-- search_lock.locked = true  → wait 5s and retry
+- search_lock.locked = true       → wait 5s and retry
+
+Step 2 — call get_index_stats() to check trigram coverage before any code search:
+- trigram_index.indexed_classes / total_classes < 30% → metadata search only (class/method/field)
+- trigram_index.indexed_classes / total_classes ≥ 50% → search_in='code' is viable for normal patterns
+- Even at 100% trigram coverage: some patterns still trigger non-indexed fallback (see below)
+
+CODE SEARCH HARD LIMITS — NEVER use search_in='code' for:
+- Hex strings ≥ 8 chars (e.g. AES keys, hashes, device IDs): "0C0BDA827B5BC7C6D87988F52E5A2609"
+- UUID / random-looking alphanumeric tokens
+- Base64 blobs or binary-encoded strings
+- URL paths with many segments: "/api/v1/some/deep/path"
+These patterns either live in native libs (invisible to JADX) or in large classes excluded
+from the trigram index. Use search_in='class'/'method' to find the owning class, then
+call get_class_source() on the specific class instead.
 
 PERFORMANCE EXPECTATIONS:
-| Operation              | Expected Time | Notes                          |
-|------------------------|--------------|--------------------------------|
-| search_in=class/method | <100ms       | Always fast, no cache needed   |
-| search_in=code         | 1-60s        | Slow, may timeout on large APK |
-| get_class_source       | <1s          | Fast when cached               |
-| batch_get_*            | <3s          | Up to 20 items per batch       |
+| Operation              | Expected Time | Notes                              |
+|------------------------|--------------|-------------------------------------|
+| search_in=class/method | <100ms       | Always fast, no cache needed        |
+| search_in=code         | 10ms–60s     | Fast only when trigram index hits   |
+| get_class_source       | <1s          | Fast when cached                    |
+| batch_get_*            | <3s          | Up to 20 items per batch            |
 
 RECOMMENDED WORKFLOW:
 1. Call get_file_info() once to identify file type and available tools
-2. Call get_decompile_status() to check cache and memory
-3. Use metadata searches first: search_in='class'/'method'/'field' (always fast)
-4. Use search_in='code' only when cached_percentage > 50%
-5. Always pass package= filter to narrow scope and avoid library noise
-6. For large APKs (>50k classes): use list_packages() first to orient analysis
+2. Call get_decompile_status() to check memory and search lock
+3. Call get_index_stats() to check trigram coverage
+4. Use metadata searches first: search_in='class'/'method'/'field' (always fast)
+5. Use search_in='code' only for short human-readable tokens (method names, string literals ≤20 chars)
+6. Always pass package= filter to narrow scope and avoid library noise
+7. For large APKs (>50k classes): use list_packages() first to orient analysis
 
 SEARCH STRATEGY:
 - search_classes_by_keyword is the primary search tool — use it for everything
 - Use search_in='method' for method name searches (fast, uses metadata only)
+- When search_info.trigram_definitively_empty=true in a result: the term is absent from all
+  indexed classes; if still 0 results after scanning non-indexed classes, the term is not in Java code
 - Batch tools cap at 20 items — use create_transfer_token for larger downloads
 
 RENAME / REFACTOR:
@@ -108,6 +125,7 @@ from src.server.tools import (
     register_workflow_tools,
     register_analysis_surface_tools,
     register_string_literal_tools,
+    register_task_tools,
 )
 from src.server.instance_registry import InstanceRegistry
 from src.server.busy_tracker import with_busy_check, InstanceBusyTracker
@@ -160,6 +178,7 @@ register_diagnostics_tools(mcp, with_busy_check)
 register_workflow_tools(mcp, with_busy_check)
 register_analysis_surface_tools(mcp, with_busy_check)
 register_string_literal_tools(mcp, with_busy_check)
+register_task_tools(mcp, with_busy_check)
 
 # Load balancer status tool
 from src.server.load_balancer import register_loadbalancer_tools

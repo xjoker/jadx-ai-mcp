@@ -13,8 +13,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
@@ -25,6 +28,11 @@ public final class CodeSearchCoordinator {
 
     public static final int CACHE_TTL_SECONDS = 45;
     public static final int MAX_CACHE_ENTRIES = 32;
+
+    /** Async ticket registry: maps opaque ticket ID → in-flight future for submit-then-poll. */
+    private static final ConcurrentHashMap<String, TicketEntry> TICKET_REGISTRY = new ConcurrentHashMap<>();
+    /** How long a ticket stays valid after it was issued (seconds). */
+    public static final int TICKET_TTL_SECONDS = 120;
 
     private static final Object CACHE_LOCK = new Object();
     private static final ConcurrentHashMap<SearchKey, CompletableFuture<SearchResult>> IN_FLIGHT = new ConcurrentHashMap<>();
@@ -265,6 +273,105 @@ public final class CodeSearchCoordinator {
         } catch (Exception e) {
             signature.append("|unknown-input");
             return signature.toString();
+        }
+    }
+
+    // ------------------------------- Async Ticket API --------------------------
+
+    /**
+     * Registers a CompletableFuture under a new opaque ticket ID.
+     * Used by the submit-then-poll async search path.
+     *
+     * @param future the future that will be completed (or exceptionally completed) by the search
+     * @return a 16-char hex ticket ID the caller can use to poll via {@link #pollByTicket}
+     */
+    public static String registerTicket(CompletableFuture<SearchResult> future) {
+        pruneExpiredTickets();
+        String ticket = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        TICKET_REGISTRY.put(ticket, new TicketEntry(future, System.currentTimeMillis()));
+        return ticket;
+    }
+
+    /**
+     * Polls the result of a previously submitted async search.
+     *
+     * @param ticket the ticket ID returned by {@link #registerTicket}
+     * @return a {@link TicketPollResult} describing the current status
+     */
+    public static TicketPollResult pollByTicket(String ticket) {
+        pruneExpiredTickets();
+        TicketEntry entry = TICKET_REGISTRY.get(ticket);
+        if (entry == null) {
+            return TicketPollResult.notFound();
+        }
+        CompletableFuture<SearchResult> future = entry.future;
+        if (!future.isDone()) {
+            return TicketPollResult.running();
+        }
+        TICKET_REGISTRY.remove(ticket);
+        try {
+            SearchResult result = future.getNow(null);
+            if (result != null) {
+                return TicketPollResult.done(result);
+            }
+            return TicketPollResult.error("Search returned null result");
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof TimeoutException) {
+                return TicketPollResult.timedOut();
+            }
+            if (cause instanceof CancellationException) {
+                return TicketPollResult.cancelled();
+            }
+            return TicketPollResult.error(cause.getMessage());
+        } catch (CancellationException e) {
+            return TicketPollResult.cancelled();
+        } catch (Exception e) {
+            return TicketPollResult.error(e.getMessage());
+        }
+    }
+
+    private static void pruneExpiredTickets() {
+        long now = System.currentTimeMillis();
+        TICKET_REGISTRY.entrySet().removeIf(e ->
+            (now - e.getValue().createdAtMs) > (TICKET_TTL_SECONDS * 1000L)
+        );
+    }
+
+    // ------------------------------- Inner Classes ----------------------------
+
+    public static final class TicketPollResult {
+        public enum Status { RUNNING, DONE, TIMED_OUT, CANCELLED, ERROR, NOT_FOUND }
+
+        private final Status status;
+        private final SearchResult result;
+        private final String message;
+
+        private TicketPollResult(Status status, SearchResult result, String message) {
+            this.status = status;
+            this.result = result;
+            this.message = message;
+        }
+
+        public static TicketPollResult running()             { return new TicketPollResult(Status.RUNNING,    null,   null); }
+        public static TicketPollResult done(SearchResult r)  { return new TicketPollResult(Status.DONE,       r,      null); }
+        public static TicketPollResult timedOut()            { return new TicketPollResult(Status.TIMED_OUT,  null,   "Search exceeded server timeout (60s)"); }
+        public static TicketPollResult cancelled()           { return new TicketPollResult(Status.CANCELLED,  null,   "Search invalidated by file change. Resubmit."); }
+        public static TicketPollResult error(String msg)     { return new TicketPollResult(Status.ERROR,      null,   msg); }
+        public static TicketPollResult notFound()            { return new TicketPollResult(Status.NOT_FOUND,  null,   "Ticket not found or expired"); }
+
+        public Status getStatus()       { return status; }
+        public SearchResult getResult() { return result; }
+        public String getMessage()      { return message; }
+    }
+
+    private static final class TicketEntry {
+        final CompletableFuture<SearchResult> future;
+        final long createdAtMs;
+
+        TicketEntry(CompletableFuture<SearchResult> future, long createdAtMs) {
+            this.future = future;
+            this.createdAtMs = createdAtMs;
         }
     }
 

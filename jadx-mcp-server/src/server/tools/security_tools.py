@@ -15,6 +15,7 @@ import time
 from typing import Optional
 from src.server.logging_config import get_logger
 from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
+from src.server.config import TIMEOUT_CODE_READ
 
 logger = get_logger("security_tools")
 
@@ -265,8 +266,10 @@ async def _run_security_scan(
                 params["package"] = package
 
             try:
+                req_timeout = TIMEOUT_CODE_READ if search_in == "code" else None
                 result = await get_from_jadx(
-                    "search-classes-by-keyword", params, instance_id=instance_id
+                    "search-classes-by-keyword", params, instance_id=instance_id,
+                    timeout=req_timeout,
                 )
             except Exception:
                 logger.warning(

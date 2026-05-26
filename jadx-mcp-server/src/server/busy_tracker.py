@@ -50,6 +50,8 @@ METADATA_OPERATIONS = {
     "get_xrefs",
     "batch_get_xrefs",
     "get_all_resource_file_names",
+    "get_code_search_result",   # poll-only, instant read
+    "get_task_result",           # poll-only, instant read
 }
 
 CODE_READ_OPERATIONS = {

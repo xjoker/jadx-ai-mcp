@@ -486,6 +486,136 @@ public class SearchRoutes {
         }
     }
 
+    // ------------------------------- Async Submit/Poll Handlers ---------------
+
+    /**
+     * POST /submit-code-search — submits a code search as a background task.
+     * Returns a ticket ID immediately; use GET /code-search-status?ticket=... to poll.
+     */
+    public void handleSubmitCodeSearch(Context ctx) {
+        String searchTerm = ctx.queryParam("search_term");
+        if (searchTerm == null || searchTerm.isEmpty()) {
+            JadxAIMCPPluginError.handleError(ctx, 400, "Missing 'search_term' parameter.", logger);
+            return;
+        }
+
+        String packageFilter = ctx.queryParam("package");
+        String searchInParam = ctx.queryParam("search_in");
+        String excludeParam = ctx.queryParam("exclude");
+        MatchMode matchMode = parseMatchMode(ctx.queryParam("match_mode"));
+
+        List<String> excludePrefixes = new ArrayList<>();
+        if (excludeParam != null && !excludeParam.isEmpty()) {
+            for (String prefix : excludeParam.split(",")) {
+                String trimmed = prefix.trim();
+                if (!trimmed.isEmpty()) {
+                    excludePrefixes.add(trimmed);
+                }
+            }
+        }
+
+        Set<SearchLocation> searchLocations = parseSearchLocations(searchInParam);
+        boolean isCodeSearch = searchLocations.contains(SearchLocation.CODE)
+            || searchLocations.contains(SearchLocation.COMMENT);
+        if (!isCodeSearch) {
+            ctx.status(400).json(Map.of("error",
+                "submit-code-search only supports search_in=code|comment. Use /search-classes-by-keyword for metadata searches."));
+            return;
+        }
+
+        try {
+            JadxWrapper wrapper = mainWindow.getWrapper();
+            List<JavaClass> allClasses = wrapper.getIncludedClassesWithInners();
+            List<JavaClass> filteredClasses = filterSearchClasses(allClasses, packageFilter, excludePrefixes);
+
+            CodeSearchCoordinator.SearchReservation reservation = CodeSearchCoordinator.reserve(
+                wrapper, searchTerm, packageFilter, excludeParam, searchInParam);
+
+            // Cache hit: register a pre-completed future so poll returns "done" immediately
+            if (reservation.hasCachedResult()) {
+                CompletableFuture<CodeSearchCoordinator.SearchResult> preDone =
+                    CompletableFuture.completedFuture(reservation.getCachedResult());
+                String ticket = CodeSearchCoordinator.registerTicket(preDone);
+                ctx.json(Map.of("ticket", ticket, "status", "done", "retry_after_seconds", 0));
+                return;
+            }
+
+            CompletableFuture<CodeSearchCoordinator.SearchResult> future = reservation.getFuture();
+            String ticket = CodeSearchCoordinator.registerTicket(future);
+
+            if (reservation.isLeader()) {
+                CodeSearchCoordinator.SearchKey key = reservation.getKey();
+                final List<JavaClass> allClassesFinal = allClasses;
+                final List<JavaClass> filteredClassesFinal = filteredClasses;
+                final Set<SearchLocation> locationsFinal = searchLocations;
+                searchExecutor.submit(() -> {
+                    try {
+                        SearchExecution execution = executeSearch(
+                            wrapper, allClassesFinal, filteredClassesFinal,
+                            searchTerm, locationsFinal, true, Integer.MAX_VALUE);
+                        if (execution.isTimedOut()) {
+                            CodeSearchCoordinator.completeFailure(
+                                key, future, new TimeoutException("Code search exceeded timeout window"));
+                        } else {
+                            CodeSearchCoordinator.completeSuccess(
+                                key, future, execution.getResult(), execution.getElapsedMs());
+                        }
+                    } catch (Exception e) {
+                        CodeSearchCoordinator.completeFailure(key, future, e);
+                    }
+                });
+            }
+            // Follower: another identical search is already running; ticket is bound to the same future
+
+            ctx.json(Map.of("ticket", ticket, "status", "submitted", "retry_after_seconds", 5));
+        } catch (Exception e) {
+            JadxAIMCPPluginError.handleError(ctx, "Failed to submit code search: " + e.getMessage(), e, logger);
+        }
+    }
+
+    /**
+     * GET /code-search-status?ticket=...&offset=...&count=... — polls a submitted search task.
+     */
+    public void handleCodeSearchStatus(Context ctx) {
+        String ticket = ctx.queryParam("ticket");
+        if (ticket == null || ticket.isEmpty()) {
+            ctx.status(400).json(Map.of("error", "Missing 'ticket' parameter"));
+            return;
+        }
+
+        int offset = paginationUtils.getIntParam(ctx, "offset", 0);
+        int count = Math.min(paginationUtils.getIntParam(ctx, "count", DEFAULT_RESULT_LIMIT), MAX_RESULT_LIMIT);
+        MatchMode matchMode = parseMatchMode(ctx.queryParam("match_mode"));
+
+        CodeSearchCoordinator.TicketPollResult poll = CodeSearchCoordinator.pollByTicket(ticket);
+
+        switch (poll.getStatus()) {
+            case DONE:
+                ctx.json(buildSearchResponse(poll.getResult(), offset, count, matchMode));
+                break;
+            case RUNNING:
+                ctx.json(Map.of("status", "running", "retry_after_seconds", 5,
+                    "message", "Search in progress. Poll again shortly."));
+                break;
+            case TIMED_OUT:
+                ctx.json(Map.of("status", "timed_out", "retry_after_seconds", 0,
+                    "message", poll.getMessage()));
+                break;
+            case CANCELLED:
+                ctx.json(Map.of("status", "cancelled", "retry_after_seconds", 1,
+                    "message", poll.getMessage()));
+                break;
+            case NOT_FOUND:
+                ctx.status(404).json(Map.of("status", "not_found",
+                    "message", poll.getMessage()));
+                break;
+            case ERROR:
+            default:
+                ctx.status(500).json(Map.of("status", "error", "message", poll.getMessage()));
+                break;
+        }
+    }
+
     private List<JavaClass> filterSearchClasses(
         List<JavaClass> allClasses,
         String packageFilter,
@@ -539,7 +669,13 @@ public class SearchRoutes {
         boolean requiresContentSearch = requiresContentSearch(searchLocations);
 
         // --- Trigram pre-filter ---
+        // Three-way result from CodeContentIndex.candidatesForTerm():
+        //   non-null non-empty → only these classes can match (fast path)
+        //   non-null empty    → term definitively absent from all indexed classes;
+        //                       skip indexed classes in fallback, only scan non-indexed large classes
+        //   null              → index can't help (disabled / trigram missing); full scan required
         final Set<JavaClass> trigramCandidates;
+        final boolean trigramDefinitivelyEmpty;
         if (requiresContentSearch && searchLocations.contains(SearchLocation.CODE)) {
             BitSet candidateBits = CodeContentIndex.candidatesForTerm(term);
             if (candidateBits != null && !candidateBits.isEmpty()) {
@@ -551,15 +687,27 @@ public class SearchRoutes {
                     }
                 }
                 trigramCandidates = tc.isEmpty() ? null : tc;
+                trigramDefinitivelyEmpty = false;
                 if (trigramCandidates != null) {
                     logger.debug("[JAI] Trigram pre-filter: '{}' → {} candidates (down from {} filtered)",
                             term, trigramCandidates.size(), filteredClasses.size());
                 }
-            } else {
+            } else if (candidateBits != null) {
+                // Empty BitSet: all trigrams present in index but intersection is zero.
+                // Term is definitively absent from every indexed class — only non-indexed large
+                // classes remain as candidates, cutting the fallback scan significantly.
                 trigramCandidates = null;
+                trigramDefinitivelyEmpty = true;
+                logger.debug("[JAI] Trigram pre-filter: '{}' → 0 indexed candidates (definitive); "
+                        + "fallback limited to non-indexed classes only", term);
+            } else {
+                // null: index disabled or a trigram had no entries — full fallback scan required
+                trigramCandidates = null;
+                trigramDefinitivelyEmpty = false;
             }
         } else {
             trigramCandidates = null;
+            trigramDefinitivelyEmpty = false;
         }
 
         if (collectAllResults && filteredClasses.size() > 100) {
@@ -643,6 +791,9 @@ public class SearchRoutes {
                     if (trigramCandidates != null && !trigramCandidates.contains(cls)) {
                         continue;
                     }
+                    if (trigramDefinitivelyEmpty && CodeContentIndex.isIndexed(cls)) {
+                        continue; // Indexed class definitively doesn't contain this term
+                    }
                     if (classMatchesAnyContentLocation(cls, term, searchLocations)
                             && matchedClasses.add(cls.getFullName())) {
                         int total = totalMatches.incrementAndGet();
@@ -674,6 +825,9 @@ public class SearchRoutes {
                     if (trigramCandidates != null && !trigramCandidates.contains(cls)) {
                         continue;
                     }
+                    if (trigramDefinitivelyEmpty && CodeContentIndex.isIndexed(cls)) {
+                        continue; // Indexed class definitively doesn't contain this term
+                    }
                     if (classMatchesAnyContentLocation(cls, term, searchLocations)
                             && matchedClasses.add(cls.getFullName())) {
                         int total = totalMatches.incrementAndGet();
@@ -696,6 +850,9 @@ public class SearchRoutes {
         searchInfo.put("search_locations", searchLocations.toString());
         if (requiresContentSearch && trigramCandidates != null) {
             searchInfo.put("trigram_pre_filter_candidates", trigramCandidates.size());
+        }
+        if (requiresContentSearch) {
+            searchInfo.put("trigram_definitively_empty", trigramDefinitivelyEmpty);
         }
         searchInfo.put("trigram_index_size", CodeContentIndex.trigramCount());
         searchInfo.put("trigram_indexed_classes", CodeContentIndex.indexedClassCount());

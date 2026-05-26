@@ -11,6 +11,68 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+## [6.5.4] - 2026-05-26
+
+### Added
+
+- **`submit_security_scan` / `submit_callgraph` / `get_task_result` MCP tools** — async
+  submit-then-poll wrappers for long-running Python-side operations. Both submit tools
+  return a ticket in <5 ms; poll `get_task_result(ticket)` until `status="done"`.
+  Backed by the generic `async_tasks` module (Python `asyncio.create_task`, 300 s TTL).
+
+### Fixed
+
+- **`run_security_scan` code-search timeout** — code-pattern searches inside
+  `_run_security_scan` were hitting the 30 s metadata timeout instead of the 120 s
+  `TIMEOUT_CODE_READ` budget, causing silent skips on loaded APKs. Fix: pass
+  `timeout=TIMEOUT_CODE_READ` when `search_in == "code"`.
+
+## [6.5.3] - 2026-05-26
+
+### Added
+
+- **`submit_code_search` / `get_code_search_result` MCP tools** — submit-then-poll async code
+  search that eliminates MCP client timeouts entirely. `submit_code_search` returns a ticket in
+  <100 ms; `get_code_search_result(ticket)` polls until `status="done"`. Cache hits return
+  `status="done"` immediately. Follower deduplication: identical concurrent submits share one
+  background task. Java side: `POST /submit-code-search` + `GET /code-search-status` endpoints.
+- `CodeSearchCoordinator.registerTicket(future)` and `pollByTicket(ticket)` — UUID-based async
+  ticket registry with `TICKET_TTL_SECONDS=120` TTL; handles RUNNING / DONE / TIMED_OUT /
+  CANCELLED / ERROR / NOT_FOUND states.
+
+## [6.5.2] - 2026-05-26
+
+### Fixed
+
+- **`search_in='code'` always timing out** — `search-classes-by-keyword` was misclassified in
+  `_METADATA_ENDPOINTS` (30 s timeout). Code searches on large APKs take 38–40 s; they exceeded
+  the 30 s client timeout before the Java server could reply. Fix: when `search_in` contains
+  `'code'`, the Python layer now passes `timeout=TIMEOUT_CODE_READ` (120 s) to the HTTP call,
+  overriding the metadata-tier default.
+
+## [6.5.1] - 2026-05-26
+
+### Fixed
+
+- **Code search timeout on hex/UUID patterns** — `CodeContentIndex.candidatesForTerm()` previously
+  returned `null` when all trigrams existed in the index but their intersection was empty, causing
+  `SearchRoutes` to fall back to a full scan of all 237k classes (including ~113k non-indexed large
+  classes that require disk I/O per class). Now returns an empty `BitSet` to signal "definitively
+  absent from indexed classes", allowing the fallback to skip already-indexed classes and only scan
+  the non-indexed large classes. Worst-case scan reduced by ~50% for patterns like AES keys, hashes,
+  and UUIDs.
+- Added `CodeContentIndex.isIndexed(JavaClass)` public method for O(1) indexed-class check.
+- `search_info` response now includes `trigram_definitively_empty` field so callers can observe
+  which optimization path was taken.
+
+### Changed
+
+- MCP decision guide updated: `get_index_stats()` trigram coverage replaces `cached_percentage`
+  as the primary metric for code-search viability. Added explicit prohibition list for pattern
+  types that always cause full scans (hex strings ≥8 chars, UUID, Base64, long URL paths).
+
+### Added
+
 - **`warm_cache(skip_libraries)` MCP tool** — triggers full background decompilation of all classes
   so `search_in='code'` works without waiting for the cache to warm organically.
   `skip_libraries=True` (default) filters out known third-party SDK prefixes

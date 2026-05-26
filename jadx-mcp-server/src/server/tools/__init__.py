@@ -93,6 +93,7 @@ from . import file_management_tools
 from . import diagnostics_tools
 from . import workflow_tools
 from . import string_literal_tools
+from . import task_tools
 
 from .class_tools import register_class_tools
 from .search_tools import register_search_tools
@@ -117,3 +118,4 @@ from .file_management_tools import register_file_management_tools
 from .diagnostics_tools import register_diagnostics_tools
 from .workflow_tools import register_workflow_tools
 from .string_literal_tools import register_string_literal_tools
+from .task_tools import register_task_tools

@@ -475,6 +475,8 @@ public class PluginServer {
         app.get("/main-application-classes-names", batchRoutes::handleMainApplicationClassesNames);
         app.get("/main-activity", batchRoutes::handleMainActivity);
         app.get("/search-classes-by-keyword", searchRoutes::handleSearchClassesByKeyword);
+        app.post("/submit-code-search", searchRoutes::handleSubmitCodeSearch);
+        app.get("/code-search-status", searchRoutes::handleCodeSearchStatus);
         app.get("/class-info", classRoutes::handleClassInfo);
 
 

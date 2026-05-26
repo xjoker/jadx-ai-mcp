@@ -12,6 +12,7 @@ from typing import Optional
 from src.PaginationUtils import PaginationUtils
 from src.server.logging_config import get_logger
 from src.server.request_context import get_from_jadx_for_current_user as get_from_jadx
+from src.server.config import TIMEOUT_CODE_READ
 from src.server.types import format_error_response
 
 _VALID_MATCH_MODES = frozenset({"substring", "exact", "prefix", "regex"})
@@ -201,7 +202,9 @@ async def search_classes_by_keyword(
         "count": count,
         "match_mode": match_mode,
     }
-    return await get_from_jadx("search-classes-by-keyword", params, instance_id=instance_id)
+    # code search can take 30-120s; override the default 30s metadata timeout
+    req_timeout = TIMEOUT_CODE_READ if "code" in search_in.split(",") else None
+    return await get_from_jadx("search-classes-by-keyword", params, instance_id=instance_id, timeout=req_timeout)
 
 
 async def get_method_signature(class_name: str, method_name: str, instance_id: Optional[str] = None) -> dict:
@@ -316,6 +319,66 @@ async def search_native_methods(
     if "error" in result:
         logger.warning(f"search_native_methods error: {result.get('error')}")
     return result
+
+
+async def submit_code_search(
+    search_term: str,
+    package: str = "",
+    exclude: str = "",
+    search_in: str = "code",
+    match_mode: str = "substring",
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Submit a code search as a background task; returns a ticket immediately.
+
+    Use get_code_search_result(ticket) to poll for the result.
+    Avoids client-side timeouts because the HTTP call returns in <100 ms.
+
+    Args:
+        search_term: Keyword to search for in decompiled code.
+        package: Package prefix filter (recommended to narrow scope).
+        exclude: Comma-separated package prefixes to exclude.
+        search_in: code|comment (only content searches are async; use
+            search_classes_by_keyword for class/method/field metadata).
+        match_mode: substring (default) | exact | prefix | regex.
+        instance_id: Target JADX instance name.
+
+    Returns:
+        dict: {ticket, status: "submitted"|"done", retry_after_seconds}
+    """
+    params = {
+        "search_term": search_term,
+        "package": package,
+        "exclude": exclude,
+        "search_in": search_in,
+        "match_mode": match_mode,
+    }
+    return await get_from_jadx("submit-code-search", params, method="POST", instance_id=instance_id, timeout=15)
+
+
+async def get_code_search_result(
+    ticket: str,
+    offset: int = 0,
+    count: int = 20,
+    instance_id: Optional[str] = None,
+) -> dict:
+    """
+    Poll the result of a previously submitted code search.
+
+    Args:
+        ticket: Ticket ID returned by submit_code_search().
+        offset: Pagination offset. Default: 0.
+        count: Max results to return. Default: 20.
+        instance_id: Target JADX instance name.
+
+    Returns:
+        dict: {status: "running"|"done"|"timed_out"|"cancelled"|"not_found"}
+              When status="done": includes classes list and search_info.
+              When status="running": includes retry_after_seconds (poll again after this).
+    """
+    params = {"ticket": ticket, "offset": offset, "count": count}
+    return await get_from_jadx("code-search-status", params, instance_id=instance_id, timeout=15)
 
 
 def register_search_tools(mcp, with_busy_check):
@@ -433,3 +496,47 @@ def register_search_tools(mcp, with_busy_check):
             dict: {native_methods: [{class_name, method_name, param_types_frida}], has_more: bool}
         """
         return await search_native_methods(package, offset, count, instance_id=instance_id)
+
+    @mcp.tool(name="submit_code_search")
+    async def submit_code_search_tool(
+        search_term: str,
+        package: str = "",
+        exclude: str = "",
+        search_in: str = "code",
+        match_mode: str = "substring",
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Submit a code/comment search as a background task. Returns ticket immediately (no timeout risk).
+
+        Use get_code_search_result(ticket) to poll until status="done".
+        Prefer this over search_classes_by_keyword(search_in='code') for large APKs.
+
+        Args:
+            search_term: Keyword to search. package: Package filter (recommended).
+            search_in: code|comment only. match_mode: substring|exact|prefix|regex.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: {ticket, status: "submitted"|"done", retry_after_seconds}
+        """
+        return await submit_code_search(
+            search_term, package, exclude, search_in, match_mode, instance_id=instance_id)
+
+    @mcp.tool(name="get_code_search_result")
+    @with_busy_check
+    async def get_code_search_result_tool(
+        ticket: str,
+        offset: int = 0,
+        count: int = 20,
+        instance_id: Optional[str] = None,
+    ) -> dict:
+        """Poll the result of a code search submitted via submit_code_search().
+
+        Args:
+            ticket: Ticket ID from submit_code_search(). offset: Pagination start. count: Max results.
+            instance_id: Target JADX instance name.
+        Returns:
+            dict: status="running" (poll again after retry_after_seconds) |
+                  status="done" + classes list |
+                  status="timed_out"|"cancelled"|"not_found"
+        """
+        return await get_code_search_result(ticket, offset, count, instance_id=instance_id)

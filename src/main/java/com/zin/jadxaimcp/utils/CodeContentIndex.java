@@ -282,8 +282,14 @@ public final class CodeContentIndex {
      * iterate it safely without synchronisation.</p>
      *
      * @param term the <strong>lowercased</strong> search term
-     * @return intersection BitSet, or {@code null} if the index is disabled / not
-     *         applicable (term too short, or any trigram has no entries)
+     * @return <ul>
+     *   <li>non-empty {@link BitSet} – IDs of indexed classes that contain all trigrams of {@code term}</li>
+     *   <li>empty {@link BitSet} – all of {@code term}'s trigrams exist in the index but their
+     *       intersection is empty; the term is <em>definitively absent</em> from every indexed class
+     *       (callers may skip indexed classes and only scan non-indexed large classes)</li>
+     *   <li>{@code null} – the index cannot narrow the candidate set (disabled, term &lt; 3 chars,
+     *       or a trigram has no entries — the term may still exist in non-indexed large classes)</li>
+     * </ul>
      */
     public static BitSet candidatesForTerm(String term) {
         if (!ENABLED || term == null || term.length() < 3) {
@@ -300,7 +306,8 @@ public final class CodeContentIndex {
             String trigram = term.substring(i, i + 3);
             BitSet bs = s.trigramIndex.get(trigram);
             if (bs == null) {
-                // No class contains this trigram → intersection is empty
+                // This trigram was never indexed — term may exist in non-indexed large classes;
+                // return null so the caller falls back to a full scan rather than skipping indexed ones.
                 return null;
             }
             BitSet copy;
@@ -312,7 +319,7 @@ public final class CodeContentIndex {
             } else {
                 result.and(copy);
                 if (result.isEmpty()) {
-                    return null; // Intersection already empty — short-circuit
+                    return result; // Empty BitSet: term definitively absent from all indexed classes
                 }
             }
         }
@@ -415,6 +422,21 @@ public final class CodeContentIndex {
      */
     public static int indexedClassCount() {
         return state.classCount.get();
+    }
+
+    /**
+     * Return {@code true} if {@code cls} has been successfully entered into the trigram index.
+     *
+     * <p>An indexed class that does not appear in a {@link #candidatesForTerm} result
+     * <em>definitively</em> does not contain the searched term — callers may skip its
+     * content scan when they received an empty (non-null) BitSet from
+     * {@link #candidatesForTerm}.</p>
+     */
+    public static boolean isIndexed(JavaClass cls) {
+        if (!ENABLED || cls == null) {
+            return false;
+        }
+        return state.classToId.containsKey(cls);
     }
 
     /**

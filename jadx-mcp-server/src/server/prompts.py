@@ -43,33 +43,54 @@ Call `get_decompile_status()` first and interpret the results:
 
 | Scenario | Recommended Action |
 |----------|-------------------|
-| cached_percentage < 10% | Use `search_in=class/method/field` only |
-| cached_percentage > 50% | `search_in=code` is viable |
+| trigram indexed_classes / total_classes < 30% | Use `search_in=class/method/field` only |
+| trigram indexed_classes / total_classes ≥ 50% | `search_in=code` viable for short readable tokens |
 | memory.usage_percentage > 90% | Reduce count to 10, avoid batch ops |
 | search_lock.locked = true | Wait and retry after 5 seconds |
 | threads.active_count > 100 | JADX overloaded, pause operations |
+| search term is hex/UUID/Base64/long URL | **Never** use `search_in=code` regardless of coverage |
+
+## Code Search Hard Limits
+Never use `search_in='code'` for these pattern types — they are invisible to trigram index
+and will cause full scans of non-indexed large classes (→ timeout):
+- Hex strings ≥ 8 chars: AES keys, hashes, device fingerprints
+- UUID / random alphanumeric tokens
+- Base64 blobs
+- URL paths with > 3 segments
+
+Instead: use `search_in='class'` or `search_in='method'` to locate the owning class,
+then call `get_class_source()` to read the content directly.
 
 ## Example Workflow
 ```python
-# 1. Check status first
+# 1. Check memory and search lock
 status = get_decompile_status()
 
-# 2. Make informed decision
-if status["cached_percentage"] < 20:
-    # Use fast metadata search
-    results = search_classes_by_keyword(search_term="login", search_in="class")
-else:
-    # Code search is viable
-    results = search_classes_by_keyword(search_term="login", search_in="code")
+# 2. Check trigram coverage (the real code-search readiness metric)
+idx = get_index_stats()
+trigram_coverage = idx["trigram_index"]["indexed_classes"] / status["total_classes"]
 
-# 3. Monitor memory for batch operations
+# 3. Make informed decision
+if trigram_coverage < 0.3:
+    # Use fast metadata search only
+    results = search_classes_by_keyword(search_term="login", search_in="class")
+elif trigram_coverage >= 0.5 and is_short_readable_token(search_term):
+    # Code search is viable for human-readable tokens
+    results = search_classes_by_keyword(search_term="login", search_in="code")
+else:
+    # Fall back to metadata + get_class_source pattern
+    cls = search_classes_by_keyword(search_term="login", search_in="class")
+    source = get_class_source(cls[0]["name"])
+
+# 4. Monitor memory for batch operations
 if status["memory"]["usage_percentage"] > 80:
     batch_size = 5  # Smaller batches
 else:
     batch_size = 20  # Full batch
 ```
 
-**Core Principle**: Always check status before heavy operations. React to real metrics, don't guess.
+**Core Principle**: Use `get_index_stats()` trigram coverage — not `cached_percentage` — to decide
+whether code search is viable. Even at full trigram coverage, avoid code search for opaque tokens.
 """
 
     @mcp.prompt("analyze-activity")
