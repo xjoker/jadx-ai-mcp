@@ -61,3 +61,48 @@ async def http_client():
     """HTTP client for integration tests"""
     async with httpx.AsyncClient(timeout=30.0) as client:
         yield client
+
+
+# =============================================================================
+# XHS smoke test fixtures (Layer 1) - production server at 10.0.5.31
+# =============================================================================
+
+@pytest.fixture(scope="session")
+def xhs_jadx_url():
+    """XHS production JADX Plugin API base URL"""
+    return os.getenv("JADX_BASE_URL", "http://10.0.5.31:8650")
+
+
+@pytest.fixture(scope="session")
+def xhs_mcp_url():
+    """XHS production MCP Server base URL"""
+    return os.getenv("MCP_BASE_URL", "http://10.0.5.31:8651")
+
+
+@pytest.fixture(scope="session")
+def xhs_auth_headers():
+    """Authorization headers for XHS JADX plugin"""
+    token = os.getenv("JADX_AUTH_TOKEN", "jadx-plugin-secret-token")
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture(scope="function")
+async def xhs_http_client():
+    """HTTP client for XHS smoke tests (longer timeout for large APK)"""
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        yield client
+
+
+@pytest_asyncio.fixture(scope="session")
+async def xhs_first_class(xhs_jadx_url, xhs_auth_headers):
+    """动态获取第一个类名，避免硬编码"""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            f"{xhs_jadx_url}/all-classes",
+            headers=xhs_auth_headers,
+            params={"offset": 0, "count": 1}
+        )
+        data = resp.json()
+        classes = data.get("classes", [])
+        first = classes[0] if classes else {"name": "com.xingin.xhs.MainActivity"}
+        return first.get("name") if isinstance(first, dict) else str(first)

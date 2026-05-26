@@ -1,0 +1,15 @@
+{
+  "version": "6.5.6",
+  "mode": "gui",
+  "apk": "xhs_237k_classes",
+  "timestamp": "2026-05-26T12:55:35.543676",
+  "server_url": "http://10.0.5.31:8650",
+  "results": {
+    "class_source_p50_ms": 26.0,
+    "metadata_search_p50_ms": 52.4,
+    "total_classes": 237931,
+    "cached_percentage": 69,
+    "memory_usage_pct": 67,
+    "trigram_coverage_pct": 56.87
+  }
+}

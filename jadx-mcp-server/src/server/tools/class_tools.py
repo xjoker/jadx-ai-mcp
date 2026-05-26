@@ -474,6 +474,10 @@ async def get_decompile_status(instance_id: Optional[str] = None) -> dict:
     result = await get_from_jadx("decompile-status", instance_id=instance_id)
     if "error" in result:
         logger.warning(f"get_decompile_status error: {result.get('error')}")
+    elif result.get("status") == "loading":
+        logger.info("get_decompile_status: JADX still initializing")
+        result["retry_after_seconds"] = 3
+        result["suggestion"] = "JADX is still loading the file. Retry in 3 seconds."
     else:
         status = result.get("status", "unknown")
         pct = result.get("percentage", 0)

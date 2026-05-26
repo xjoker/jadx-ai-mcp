@@ -32,10 +32,9 @@ name = "admin"
 token = "admin-secret-token"
 is_admin = true
 
-# 多实例配置示例（取消注释并修改）
-#
-# [[jadx_instances]]
-# name = "remote-instance"
-# host = "192.168.1.100"
-# port = 8650
-# enabled = true
+# 生产服务器实例
+[[jadx_instances]]
+name = "prod"
+host = "10.0.5.31"
+port = 8650
+enabled = true

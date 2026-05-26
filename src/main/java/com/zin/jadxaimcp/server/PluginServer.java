@@ -593,8 +593,19 @@ public class PluginServer {
                     cachedOnDisk  = cached.cachedOnDisk;
                     cacheHit = true;
                 } else {
-                    java.util.List<jadx.api.JavaClass> classes = wrapper.getIncludedClassesWithInners();
-                    total = classes.size();
+                    java.util.List<jadx.api.JavaClass> snapshot;
+                    try {
+                        // Take a snapshot to avoid ConcurrentModificationException if JADX is
+                        // still loading a new file and modifying the class list concurrently.
+                        snapshot = new java.util.ArrayList<>(wrapper.getIncludedClassesWithInners());
+                    } catch (Exception e) {
+                        ctx.status(202).json(java.util.Map.of(
+                            "status", "loading",
+                            "message", "JADX is still initializing, please retry in a moment."
+                        ));
+                        return;
+                    }
+                    total = snapshot.size();
                     processed = 0;
                     cachedInMemory = 0;
                     cachedOnDisk = 0;
@@ -609,12 +620,20 @@ public class PluginServer {
                         // fallback to memory-only counting if ICodeCache unavailable
                     }
 
-                    for (jadx.api.JavaClass cls : classes) {
-                        boolean inMem = cls.getClassNode() != null && cls.getClassNode().getState().isProcessComplete();
-                        boolean onDisk = codeCache != null && codeCache.contains(cls.getRawName());
-                        if (inMem) cachedInMemory++;
-                        if (onDisk) cachedOnDisk++;
-                        if (inMem || onDisk) processed++;
+                    try {
+                        for (jadx.api.JavaClass cls : snapshot) {
+                            boolean inMem = cls.getClassNode() != null && cls.getClassNode().getState().isProcessComplete();
+                            boolean onDisk = codeCache != null && codeCache.contains(cls.getRawName());
+                            if (inMem) cachedInMemory++;
+                            if (onDisk) cachedOnDisk++;
+                            if (inMem || onDisk) processed++;
+                        }
+                    } catch (Exception e) {
+                        ctx.status(202).json(java.util.Map.of(
+                            "status", "loading",
+                            "message", "JADX is still initializing, please retry in a moment."
+                        ));
+                        return;
                     }
 
                     // Store in cache

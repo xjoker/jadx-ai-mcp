@@ -9,12 +9,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -23,10 +20,11 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Background full-cache warmup manager.
  *
- * <p>Two-phase warmup matching the pattern in {@code PluginServer.runPredecompileWarmup}:
+ * <p>Two-phase warmup:
  * <ol>
- *   <li>Phase 1 — serial decompile under {@link JadxSearchLock} with per-class timeout
- *       (allows API requests to interleave between classes).</li>
+ *   <li>Phase 1 — parallel decompile using up to {@code JADX_MCP_WARMUP_DECOMPILE_WORKERS}
+ *       threads (default 8). No {@link JadxSearchLock} held: JADX handles its own
+ *       per-class concurrency internally, so searches can run freely during warmup.</li>
  *   <li>Phase 2 — parallel trigram index fill from the already-populated JADX code cache
  *       (no lock needed; {@link CodeContentIndex} is thread-safe).</li>
  * </ol>
@@ -46,18 +44,18 @@ public class WarmupManager {
         "com.tencent.", "com.alibaba.", "com.umeng.", "com.adjust."
     };
 
-    // Per-class decompile timeout — configurable via JADX_MCP_WARMUP_PER_CLASS_TIMEOUT
-    private static final int PER_CLASS_TIMEOUT_SEC;
+    // Phase-1 parallel decompile worker count — configurable via JADX_MCP_WARMUP_DECOMPILE_WORKERS
+    private static final int DECOMPILE_WORKERS;
     // Phase-2 index worker count — configurable via JADX_MCP_WARMUP_INDEX_WORKERS
     private static final int INDEX_WORKERS;
 
     static {
-        int perClass = 30;
-        String raw = System.getenv("JADX_MCP_WARMUP_PER_CLASS_TIMEOUT");
+        int decompileWorkers = 8;
+        String raw = System.getenv("JADX_MCP_WARMUP_DECOMPILE_WORKERS");
         if (raw != null && !raw.isEmpty()) {
-            try { perClass = Math.max(5, Integer.parseInt(raw.trim())); } catch (NumberFormatException ignored) {}
+            try { decompileWorkers = Math.max(1, Integer.parseInt(raw.trim())); } catch (NumberFormatException ignored) {}
         }
-        PER_CLASS_TIMEOUT_SEC = perClass;
+        DECOMPILE_WORKERS = decompileWorkers;
 
         int workers = 4;
         raw = System.getenv("JADX_MCP_WARMUP_INDEX_WORKERS");
@@ -219,77 +217,70 @@ public class WarmupManager {
         }
     }
 
-    /** Phase 1: serial decompile under JadxSearchLock with per-class timeout. */
+    /**
+     * Phase 1: parallel decompile without JadxSearchLock.
+     *
+     * JADX handles per-class concurrency internally (each ClassNode has its own lock),
+     * so calling cls.getCode() from multiple threads is safe. Removing the global
+     * write lock allows searches to run freely while warmup is in progress.
+     */
     private static void runPhase1(List<JavaClass> targets) {
         long phaseStart = System.currentTimeMillis();
-        int decompiled = 0;
-        int lockSkipped = 0;
+        int workers = Math.min(DECOMPILE_WORKERS, Math.max(1, targets.size()));
+        java.util.concurrent.atomic.AtomicInteger indexPos = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger decompiled = new java.util.concurrent.atomic.AtomicInteger(0);
 
-        // Single-thread executor that can be recycled when a class stalls.
-        ExecutorService decompileExecutor = newDecompileExecutor();
+        ExecutorService pool = Executors.newFixedThreadPool(workers, r -> {
+            Thread t = new Thread(r, "jadx-warmup-decompile");
+            t.setDaemon(true);
+            return t;
+        });
+        CountDownLatch latch = new CountDownLatch(workers);
 
-        for (JavaClass cls : targets) {
-            if (cancelRequested.get() || Thread.currentThread().isInterrupted()) {
-                break;
-            }
-
-            // Pause if memory pressure is critical
-            if (isHighMemoryPressure()) {
-                logger.debug("[JAI] Warmup: high memory pressure — pausing 2s");
-                try { Thread.sleep(2000); } catch (InterruptedException ie) { break; }
-                System.gc();
-            }
-
-            final String clsName = cls.getFullName();
-            Future<Boolean> task = decompileExecutor.submit(() -> {
-                if (!JadxSearchLock.tryAcquire(PER_CLASS_TIMEOUT_SEC)) {
-                    return Boolean.FALSE;
-                }
+        for (int w = 0; w < workers; w++) {
+            pool.submit(() -> {
                 try {
-                    cls.getCode();
-                    return Boolean.TRUE;
-                } catch (Exception ignored) {
-                    return Boolean.FALSE;
+                    int pos;
+                    while ((pos = indexPos.getAndIncrement()) < targets.size()) {
+                        if (cancelRequested.get() || Thread.currentThread().isInterrupted()) break;
+
+                        if (isHighMemoryPressure()) {
+                            logger.debug("[JAI] Warmup: high memory pressure — pausing 2s");
+                            try { Thread.sleep(2000); } catch (InterruptedException ie) { break; }
+                            System.gc();
+                        }
+
+                        JavaClass cls = targets.get(pos);
+                        try {
+                            cls.getCode();
+                            processed.incrementAndGet();
+                            decompiled.incrementAndGet();
+                        } catch (Exception ignored) {
+                            failed.incrementAndGet();
+                        }
+
+                        int proc = processed.get();
+                        if (proc % 500 == 0 && proc > 0) {
+                            logger.info("[JAI] Warmup phase-1: {}/{} decompiled", proc, total.get());
+                        }
+                    }
                 } finally {
-                    JadxSearchLock.release();
+                    latch.countDown();
                 }
             });
-
-            try {
-                if (Boolean.TRUE.equals(task.get(PER_CLASS_TIMEOUT_SEC, TimeUnit.SECONDS))) {
-                    processed.incrementAndGet();
-                    decompiled++;
-                } else {
-                    failed.incrementAndGet();
-                    lockSkipped++;
-                }
-            } catch (TimeoutException te) {
-                task.cancel(true);
-                failed.incrementAndGet();
-                lockSkipped++;
-                logger.warn("[JAI] Warmup: class {} exceeded {}s timeout, skipping. Recycling thread.",
-                    clsName, PER_CLASS_TIMEOUT_SEC);
-                decompileExecutor.shutdownNow();
-                decompileExecutor = newDecompileExecutor();
-            } catch (ExecutionException | InterruptedException e) {
-                failed.incrementAndGet();
-                lockSkipped++;
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-
-            int proc = processed.get();
-            if (proc > 0 && proc % 50 == 0) {
-                logger.info("[JAI] Warmup phase-1: {}/{} decompiled", proc, total.get());
-            }
         }
 
-        decompileExecutor.shutdownNow();
+        try {
+            latch.await(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            pool.shutdownNow();
+        }
+
         long phaseMs = System.currentTimeMillis() - phaseStart;
-        logger.info("[JAI] Warmup phase-1 done: {} decompiled, {} lock-skipped in {}ms",
-            decompiled, lockSkipped, phaseMs);
+        logger.info("[JAI] Warmup phase-1 done: {} decompiled, {} failed, {} workers in {}ms",
+            decompiled.get(), failed.get(), workers, phaseMs);
     }
 
     /** Phase 2: parallel trigram index fill from already-cached code (no lock needed). */
@@ -334,14 +325,6 @@ public class WarmupManager {
         double coverage = totalClasses > 0 ? 100.0 * totalIndexed / totalClasses : 0.0;
         logger.info("[JAI] Warmup phase-2 done: {} newly indexed, trigram coverage {}% in {}ms",
             indexed.get(), String.format("%.1f", coverage), phaseMs);
-    }
-
-    private static ExecutorService newDecompileExecutor() {
-        return Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "jadx-warmup-decompile");
-            t.setDaemon(true);
-            return t;
-        });
     }
 
     private static boolean isLibraryClass(String fullName) {

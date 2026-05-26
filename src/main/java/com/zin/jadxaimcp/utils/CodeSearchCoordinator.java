@@ -32,7 +32,7 @@ public final class CodeSearchCoordinator {
     /** Async ticket registry: maps opaque ticket ID → in-flight future for submit-then-poll. */
     private static final ConcurrentHashMap<String, TicketEntry> TICKET_REGISTRY = new ConcurrentHashMap<>();
     /** How long a ticket stays valid after it was issued (seconds). */
-    public static final int TICKET_TTL_SECONDS = 120;
+    public static final int TICKET_TTL_SECONDS = 600;
 
     private static final Object CACHE_LOCK = new Object();
     private static final ConcurrentHashMap<SearchKey, CompletableFuture<SearchResult>> IN_FLIGHT = new ConcurrentHashMap<>();

@@ -39,4 +39,6 @@ testpaths = ["tests"]
 addopts = "--ignore=tests/integration"
 markers = [
     "integration: Integration tests that require a running JADX service",
+    "headless_contract: Contract tests verifying GUI/headless behavioral equivalence",
+    "stress: Stress and baseline capture tests against production JADX instance",
 ]

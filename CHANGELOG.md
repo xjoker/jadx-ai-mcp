@@ -9,7 +9,55 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-05-26 *(final release — project archived)*
+
 ### Added
+
+- **Three-layer test suite covering all 39 MCP tools** — establishes a quantified baseline
+  for the future headless rewrite (`jadx-mcp-core`):
+  - **Layer 1 — Smoke tests** (`test_smoke_xhs.py`): 16 happy-path tests against the live XHS
+    APK instance; full suite completes in <5 s and validates every endpoint is reachable after
+    deploy. Fixtures dynamically resolve the first class name to avoid hardcoding.
+  - **Layer 2 — Unit tests** (10 new files, 195 tests): pure mock coverage for every previously
+    untested tool module — `class_tools`, `xrefs_tools`, `resource_tools`, `string_literal_tools`,
+    `task_tools`, `analysis_surface_tools`, `transfer_tools`, `diagnostics_tools`,
+    `file_management_tools`, `refactor_tools` (extended), `search_tools` (async). Total unit test
+    count raised from 119 to **314 passing**.
+  - **Layer 3 — Stress + GUI baseline** (`test_stress_baseline.py`): concurrent class-source
+    (10 parallel), metadata vs code search P95 comparison, decompile-status stability (20 samples),
+    batch operations (10 / 20 classes). Captured baseline written to
+    `tests/integration/fixtures/baseline_gui_results.json` — key values: class_source P50 = 26 ms,
+    metadata search P50 = 52 ms, memory = 67 %, trigram coverage = 57 %.
+  - **Headless contract tests** (`test_headless_contract.py`): 8 skip-marked contract cases
+    defining GUI ↔ headless equivalence constraints (source diff < 5 %, xrefs set-equal,
+    performance within 2× GUI baseline). Remove `@pytest.mark.skip` when `jadx-mcp-core` is ready.
+
+## [6.5.6] - 2026-05-26
+
+### Fixed
+
+- **`get_decompile_status` no longer crashes the plugin during APK load** — iterating the live class
+  list while JADX was still loading a large APK triggered `ConcurrentModificationException`, which
+  cascaded into `NoClassDefFoundError` for all subsequent plugin class loads, breaking the entire
+  JADX plugin until restart. Fix: take a snapshot (`new ArrayList<>()`) before iterating, and
+  return HTTP 202 `{"status":"loading"}` on any exception during the counting phase instead of
+  propagating a fatal error.
+- **Friendly "loading" status instead of 500 during APK initialization** — Python `get_decompile_status`
+  now surfaces `{"status":"loading","retry_after_seconds":3,"suggestion":"..."}` when JADX returns
+  HTTP 202, so AI clients know to retry instead of seeing an opaque INTERNAL_ERROR.
+
+## [6.5.5] - 2026-05-26
+
+### Fixed
+
+- **Warmup Phase 1 no longer blocks searches** — `WarmupManager.runPhase1()` previously acquired
+  a per-class `JadxSearchLock` write lock serially, creating a continuous write-lock blackout
+  for the entire warmup duration (hours on large APKs). Replaced with parallel 8-worker
+  `CountDownLatch` pool (`JADX_MCP_WARMUP_DECOMPILE_WORKERS` env, default 8). JADX's
+  `cls.getCode()` is thread-safe internally; the global write lock is not needed.
+- **Java ticket TTL raised to 600 s** — `CodeSearchCoordinator.TICKET_TTL_SECONDS` was 120 s,
+  too short for warmup-phase searches that start before cache is warm. Raised to 600 s to
+  match the Python-side async task window.
 
 ## [6.5.4] - 2026-05-26
 
